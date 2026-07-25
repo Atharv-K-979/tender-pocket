@@ -51,33 +51,18 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username and password required"));
         }
 
-        // Auto-seed default accounts if missing
+        // Auto-seed primary accounts if missing
         if (!userRepository.existsById("admin")) {
-            userRepository.save(new User("admin", passwordEncoder.encode("admin123"), "Admin", "anuthibhansali+admin@gmail.com"));
+            userRepository.save(new User("admin", passwordEncoder.encode("admin123"), "Admin", "admin@company.com"));
         }
         if (!userRepository.existsById("misteam")) {
-            userRepository.save(new User("misteam", passwordEncoder.encode("misteam123"), "MIS Team", "anuthibhansali+misteam@gmail.com"));
-        }
-        if (!userRepository.existsById("misteam1")) {
-            userRepository.save(new User("misteam1", passwordEncoder.encode("misteam123"), "MIS Team", "anuthibhansali+misteam1@gmail.com"));
-        }
-        if (!userRepository.existsById("misteam2")) {
-            userRepository.save(new User("misteam2", passwordEncoder.encode("misteam223"), "MIS Team", "anuthibhansali+misteam2@gmail.com"));
+            userRepository.save(new User("misteam", passwordEncoder.encode("misteam123"), "MIS Team", "misteam@company.com"));
         }
         if (!userRepository.existsById("misexec1")) {
-            userRepository.save(new User("misexec1", passwordEncoder.encode("misexec123"), "MIS Executive", "anuthibhansali+misexec1@gmail.com"));
-        }
-        if (!userRepository.existsById("misexec2")) {
-            userRepository.save(new User("misexec2", passwordEncoder.encode("misexec223"), "MIS Executive", "anuthibhansali+misexec2@gmail.com"));
-        }
-        if (!userRepository.existsById("misexec3")) {
-            userRepository.save(new User("misexec3", passwordEncoder.encode("misexec323"), "MIS Executive", "anuthibhansali+misexec3@gmail.com"));
-        }
-        if (!userRepository.existsById("executive")) {
-            userRepository.save(new User("executive", passwordEncoder.encode("executive123"), "MIS Executive", "anuthibhansali+executive@gmail.com"));
+            userRepository.save(new User("misexec1", passwordEncoder.encode("misexec123"), "MIS Executive", "misexec1@company.com"));
         }
         if (!userRepository.existsById("specteam")) {
-            userRepository.save(new User("specteam", passwordEncoder.encode("specteam123"), "Specification Team", "anuthibhansali+specteam@gmail.com"));
+            userRepository.save(new User("specteam", passwordEncoder.encode("specteam123"), "Specification Team", "specteam@company.com"));
         }
 
         Optional<User> opt = userRepository.findById(username);
