@@ -53,8 +53,8 @@ public class EmailNotificationService {
                         LocalDate dueDate = LocalDate.parse(cleanDueDate, formatter);
                         long daysDiff = ChronoUnit.DAYS.between(today, dueDate);
 
-                        // If due date is in exactly 3 days or today, alert the executive
-                        if (daysDiff == 3 || daysDiff == 0) {
+                        // If due date is within 3 days (3, 2, 1, 0 days), alert the executive
+                        if (daysDiff >= 0 && daysDiff <= 3) {
                             sendEmailToExecutive(t, daysDiff);
                         }
                     } catch (Exception e) {
