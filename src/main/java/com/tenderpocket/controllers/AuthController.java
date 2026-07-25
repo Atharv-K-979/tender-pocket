@@ -51,18 +51,9 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username and password required"));
         }
 
-        // Auto-seed primary accounts if missing
+        // Auto-seed admin account if missing
         if (!userRepository.existsById("admin")) {
             userRepository.save(new User("admin", passwordEncoder.encode("admin123"), "Admin", "admin@company.com"));
-        }
-        if (!userRepository.existsById("misteam")) {
-            userRepository.save(new User("misteam", passwordEncoder.encode("misteam123"), "MIS Team", "misteam@company.com"));
-        }
-        if (!userRepository.existsById("misexec1")) {
-            userRepository.save(new User("misexec1", passwordEncoder.encode("misexec123"), "MIS Executive", "misexec1@company.com"));
-        }
-        if (!userRepository.existsById("specteam")) {
-            userRepository.save(new User("specteam", passwordEncoder.encode("specteam123"), "Specification Team", "specteam@company.com"));
         }
 
         Optional<User> opt = userRepository.findById(username);
