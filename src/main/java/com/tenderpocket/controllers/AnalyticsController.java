@@ -36,6 +36,8 @@ public class AnalyticsController {
 
         List<Tender> tenders = "MIS Executive".equalsIgnoreCase(userRole)
                 ? tenderRepository.findByMisExecutive(username)
+                : "Specification Team".equalsIgnoreCase(userRole)
+                ? tenderRepository.findByAssignedMisMemberSpec(username)
                 : tenderRepository.findAll();
 
         int issuedCount = 0;
@@ -50,6 +52,11 @@ public class AnalyticsController {
         int t2TodayCount = 0;
         int t2_3DaysCount = 0;
 
+        int specPendingCount = 0;
+        int specApprovedCount = 0;
+        int specRejectedCount = 0;
+        int specTotalCount = tenders.size();
+
         LocalDate today = LocalDate.now();
         LocalDate threeDaysLater = today.plusDays(3);
 
@@ -58,6 +65,10 @@ public class AnalyticsController {
         for (Tender t : tenders) {
             String status = resolveStatus(t, todayIST);
             double val = t.getEstimatedCost() != null ? t.getEstimatedCost() : 0.0;
+
+            if ("Pending".equalsIgnoreCase(t.getSpecVerificationStatus())) specPendingCount++;
+            else if ("Approved".equalsIgnoreCase(t.getSpecVerificationStatus())) specApprovedCount++;
+            else if ("Rejected".equalsIgnoreCase(t.getSpecVerificationStatus())) specRejectedCount++;
 
             if ("New".equals(status)) { issuedCount++; valNew += val; }
             else if ("Participating".equals(status)) { participatingCount++; valPart += val; }
@@ -184,6 +195,10 @@ public class AnalyticsController {
         metrics.put("notAwardedCount", notAwardedCount);
         metrics.put("nonSubmissionLossCount", nonSubmissionLossCount);
         metrics.put("nonParticipationLossCount", nonParticipationLossCount);
+        metrics.put("specTotalCount", specTotalCount);
+        metrics.put("specPendingCount", specPendingCount);
+        metrics.put("specApprovedCount", specApprovedCount);
+        metrics.put("specRejectedCount", specRejectedCount);
         metrics.put("status", statusRows);
 
         return ResponseEntity.ok(Map.of(

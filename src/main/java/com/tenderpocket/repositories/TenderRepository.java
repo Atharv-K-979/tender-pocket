@@ -12,6 +12,8 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
     
     List<Tender> findByMisExecutive(String misExecutive);
 
+    List<Tender> findByAssignedMisMemberSpec(String assignedMisMemberSpec);
+
     @Query("SELECT DISTINCT t.location FROM Tender t WHERE t.location IS NOT NULL AND t.location != '' ORDER BY t.location")
     List<String> findUniqueLocations();
 

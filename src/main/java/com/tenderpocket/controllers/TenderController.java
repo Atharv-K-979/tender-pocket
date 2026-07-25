@@ -125,6 +125,9 @@ public class TenderController {
             if ("MIS Executive".equalsIgnoreCase(userRole) && !username.equalsIgnoreCase(t.getMisExecutive())) {
                 continue;
             }
+            if ("Specification Team".equalsIgnoreCase(userRole) && !username.equalsIgnoreCase(t.getAssignedMisMemberSpec())) {
+                continue;
+            }
             if (misExecutive != null && !misExecutive.isEmpty() && !misExecutive.equalsIgnoreCase(t.getMisExecutive())) {
                 continue;
             }
@@ -146,7 +149,11 @@ public class TenderController {
 
             // Filter by status
             if (status != null && !status.isEmpty()) {
-                if ("Missed".equalsIgnoreCase(status)) {
+                if ("Pending".equalsIgnoreCase(status) || "Approved".equalsIgnoreCase(status) || "Rejected".equalsIgnoreCase(status)) {
+                    if (!status.equalsIgnoreCase(t.getSpecVerificationStatus())) {
+                        continue;
+                    }
+                } else if ("Missed".equalsIgnoreCase(status)) {
                     if (!"Missed Deadline".equalsIgnoreCase(resolvedStatus)
                             && !"Missed Opportunity".equalsIgnoreCase(resolvedStatus)
                             && !"Lapsed".equalsIgnoreCase(resolvedStatus)) {
