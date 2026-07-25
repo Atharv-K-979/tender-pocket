@@ -1,0 +1,66 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,Ankle Binder ,Ankle Binder ,5,Nos,vikassingh.318n,15
+2,Healing Pads ,Healing Pads ,5,Nos ,vikassingh.318n,15
+3,Lumber Support Monitor ,Lumber Support Monitor ,5,Nos,vikassingh.318n,15
+4,Red Blanket ,Red Blanket ,5,Nos,vikassingh.318n,15
+5,Multipara Monitor ,Multipara Monitor ,1,Nos,vikassingh.318n,15
+6,Laryngoscope ,Laryngoscope ,1,Nos,vikassingh.318n,15
+7,Paraguard Stretcher ,Paraguard Stretcher ,1,Nos,vikassingh.318n,15
+8,First Aid Bag ,First Aid Bag,5,Nos,vikassingh.318n,15
+9,Gulcometer ,Gulcometer,5,Nos,vikassingh.318n,15
+10,Oxygen Key ,Oxygen Key,5,Nos,vikassingh.318n,15
+11,Syrup Liv 52 100ml,Syrup Liv 52 100ml,10,Btls ,vikassingh.318n,15
+12,Syrup Digene 200ml ,Syrup Digene 200ml ,10,Btls ,vikassingh.318n,15
+13,Syrup Alkasol 100ml,Syrup Alkasol 100ml,10,Btls ,vikassingh.318n,15
+14,Syrup Cough ,Syrup Cough ,10,Btls ,vikassingh.318n,15
+15,Syrup Asthakind DX 60ml ,Syrup Asthakind DX 60ml ,10,Btls ,vikassingh.318n,15
+16,Spray Volini,Spray Volini ,10,Nos,vikassingh.318n,15
+17,Spray Move 20gm ,Spray Move 20gm,10,Nos,vikassingh.318n,15
+18,Spray Burnol 35gm ,Spray Burnol 35gm ,10,Nos,vikassingh.318n,15
+19,Cap Omeprazole ,Cap Omeprazole ,50,Pkts ,vikassingh.318n,15
+20,Cap Spasmo ,Cap Spasmo ,50,Pkts ,vikassingh.318n,15
+21,Cap Tramadol ,Cap Tramadol ,25,Pkts ,vikassingh.318n,15
+22,Cap Amoxy 500mg,Cap Amoxy 500mg,50,Pkts ,vikassingh.318n,15
+23,Tab Alprax 0.25mg,Tab Alprax 0.25mg,50,Pkts ,vikassingh.318n,15
+24,Tab Diazepam ,Tab Diazepam ,50,Pkts ,vikassingh.318n,15
+25,Tab Lorazepam ,Tab Lorazepam ,50,Pkts ,vikassingh.318n,15
+26,Tab Nimesulide ,Tab Nimesulide ,50,Pkts ,vikassingh.318n,15
+27,Tab NTG,Tab NTG,5,Nos,vikassingh.318n,15
+28,Tab Aspirin ,Tab Aspirin ,5,Nos,vikassingh.318n,15
+29,Tab Clopid 75mg ,Tab Clopid 75mg ,5,Nos,vikassingh.318n,15
+30,Tab Atorvastatin ,Tab Atorvastatin ,5,Nos,vikassingh.318n,15
+31,Tab Pantop ,Tab Pantop ,5,Pkts ,vikassingh.318n,15
+32,Tab Pantol ,Tab Pantol ,5,Pkts ,vikassingh.318n,15
+33,Iodex,Iodex ,10,Nos,vikassingh.318n,15
+34,Vicks Inhaler ,Vicks Inhaler ,10,Nos,vikassingh.318n,15
+35,Vicks Vaporub ,Vicks Vaporub ,10,Nos,vikassingh.318n,15
+36,Ear Drop CMC ,Ear Drop CMC ,10,Btls ,vikassingh.318n,15
+37,Ear Drop Maxitrol ,Ear Drop Maxitrol ,10,Btls ,vikassingh.318n,15
+38,Ear Drop Clear Wax ,Ear Drop Clear Wax,10,Btls ,vikassingh.318n,15
+39,Mouthgel Orasore ,Mouthgel Orasore ,10,Nos,vikassingh.318n,15
+40,Cervical Collar ,Cervical Collar ,5,Nos,vikassingh.318n,15
+41,Lumbor Support ,Lumbor Support ,5,Nos,vikassingh.318n,15
+42,Knee Support ,Knee Support ,5,Nos,vikassingh.318n,15
+43,Elbow Support ,Elbow Support ,5,Nos,vikassingh.318n,15
+44,Injection Neurobion Forte ,Injection Neurobion Forte ,5,Pkts ,vikassingh.318n,15
+45,Injection Piroxicam ,Injection Piroxicam ,5,Pkts ,vikassingh.318n,15
+46,Injection Levetalol ,Injection Levetalol ,5,Pkts ,vikassingh.318n,15
+47,Injection Clonazepam ,Injection Clonazepam ,5,Pkts ,vikassingh.318n,15
+48,Injection Ceftriaxone ,Injection Ceftriaxone ,5,Nos,vikassingh.318n,15
+49,Injection Amikacin ,Injection Amikacin ,5,Nos,vikassingh.318n,15
+50,Injection Thiamine ,Injection Thiamine ,5,Nos,vikassingh.318n,15
+51,Injection Dextrose ,Injection Dextrose ,5,Nos,vikassingh.318n,15
+52,Injection Morphine ,Injection Morphine ,5,Nos,vikassingh.318n,15
+53,Injection Vitamin B12,Injection Vitamin B12,5,Nos,vikassingh.318n,15
+54,Sun Fox Spandan ECG,Sun Fox Spandan ECG,1,Nos,vikassingh.318n,15
+55,Military Toriquet Proberos ,Military Toriquet Proberos ,2,Nos,vikassingh.318n,15
+56,BPL Oxymeter ,BPL Oxymeter ,1,Nos,vikassingh.318n,15
+57,BPL Aneroid Sphygmomanometer ,BPL Aneroid Sphygmomanometer ,1,Nos,vikassingh.318n,15
+58,Infrared Thermometer ,Infrared Thermometer ,1,Nos,vikassingh.318n,15
+59,Emergency Pressure Bandage ,Emergency Pressure Bandage ,2,Nos,vikassingh.318n,15
+60,Chest Seal Adhesive ,Chest Seal Adhesive ,1,Nos,vikassingh.318n,15
+61,Emergency Thermal Blankets ,Emergency Thermal Blankets,2,Nos,vikassingh.318n,15
+62,Otoscope ,Otoscope ,1,Nos,vikassingh.318n,15
+63,PVA Nasal Pack ,PVA Nasal Pack ,2,Nos,vikassingh.318n,15
+64,Vitamin D Sacket ,Vitamin D Sacket ,2,Nos,vikassingh.318n,15
+65,Light Weight First Aid Bag US Pattern ,Light Weight First Aid Bag US Pattern ,1,Nos,vikassingh.318n,15

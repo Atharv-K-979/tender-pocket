@@ -1,0 +1,51 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,Control Normal Beacon,Control Normal Beacon,2,Numbers,SDHCHADOORA,21
+2,Calibrator Beacon,Calibrator Beacon,2,Numbers,SDHCHADOORA,21
+3,Urea,Urea,3,Numbers,SDHCHADOORA,21
+4,Creatinine ,Creatinine ,3,Numbers,SDHCHADOORA,21
+5,Sr. Bilirubin Total,Sr. Bilirubin Total,4,Numbers,SDHCHADOORA,21
+6,SGOT ,SGOT ,2,Numbers,SDHCHADOORA,21
+7,SGPT,SGPT,2,Numbers,SDHCHADOORA,21
+8,ALP,ALP,2,Numbers,SDHCHADOORA,21
+9,Total Protein,Total Protein,5,Numbers,SDHCHADOORA,21
+10,Albumin,Albumin,5,Numbers,SDHCHADOORA,21
+11,HbA1C Reagent,HbA1C Reagent,2,Numbers,SDHCHADOORA,21
+12,Sr. Uric Acid Reagent,Sr. Uric Acid Reagent,2,Numbers,SDHCHADOORA,21
+13,Amylase,Amylase,2,Numbers,SDHCHADOORA,21
+14,Glucose Reagent,Glucose Reagent,3,Numbers,SDHCHADOORA,21
+15,Diluent for CBC analyzer,Diluent for CBC analyzer,2,Numbers,SDHCHADOORA,21
+16,Diff Lyse for CBC analyzer,Diff Lyse for CBC analyzer,7,Numbers,SDHCHADOORA,21
+17,LH Lyse for CBC analyzer,LH Lyse for CBC analyzer,12,Numbers,SDHCHADOORA,21
+18,Probe Clean  CBC Analyzer,Probe Clean  CBC Analyzer,12,Numbers,SDHCHADOORA,21
+19,HDC Lyse Reagent for VBG Analyzer ,HDC Lyse Reagent for VBG Analyzer ,5,Numbers,SDHCHADOORA,21
+20,HDC Lyse Cleaner with HDC Control ,HDC Lyse Cleaner with HDC Control ,2,Numbers,SDHCHADOORA,21
+21,Blood Grouping Kit ABO by tulip,Blood Grouping Kit ABO by tulip,1,tulip,SDHCHADOORA,21
+22,RF Reagent manual,RF Reagent manual,10,Numbers,SDHCHADOORA,21
+23,CRP Reagent manual,CRP Reagent manual,5,Numbers,SDHCHADOORA,21
+24,Wash Concentrate,Wash Concentrate,2,Numbers,SDHCHADOORA,21
+25,Urine Strips 10P,Urine Strips 10P,5000,Numbers,SDHCHADOORA,21
+26,Glucometer Strips,Glucometer Strips,150,Numbers,SDHCHADOORA,21
+27,Typhoid Cards,Typhoid Cards,1000,Numbers,SDHCHADOORA,21
+28,HIV Cards ,HIV Cards ,1000,Numbers,SDHCHADOORA,21
+29,HCV Cards ,HCV Cards ,1000,Numbers,SDHCHADOORA,21
+30,HBsAg Cards ,HBsAg Cards ,1000,Numbers,SDHCHADOORA,21
+31,Trop-T Cards Roche,Trop T Cards Roche,125,Numbers,SDHCHADOORA,21
+32,VDRL Cards,VDRL Cards,500,Numbers,SDHCHADOORA,21
+33,HCG Cards GT cards,HCG Cards GT cards,1000,Numbers,SDHCHADOORA,21
+34,ESR Pipettes,ESR Pipettes,250,Numbers,SDHCHADOORA,21
+35,Disposable Syringes,Disposable Syringes,6000,Numbers,SDHCHADOORA,21
+36,Purple Top Vials,Purple Top Vials,3000,Numbers,SDHCHADOORA,21
+37,Red Top Vials,Red Top Vials,500,Numbers,SDHCHADOORA,21
+38,SST Tubes Yellow Top Vials,SST Tubes Yellow Top Vials,500,Numbers,SDHCHADOORA,21
+39,Grey Top Tubes Sodium Fluoride,Grey Top Tubes Sodium Fluoride,500,Numbers,SDHCHADOORA,21
+40,Sodium Heparin Tubes Green Top Vials,Sodium Heparin Tubes Green Top Vials,4000,Numbers,SDHCHADOORA,21
+41,Absorbent Cotton,Absorbent Cotton,10,lb,SDHCHADOORA,21
+42,Tissue Paper,Tissue Paper,25,Numbers,SDHCHADOORA,21
+43,ST Gloves 6,ST Gloves 6,100,pairs,SDHCHADOORA,21
+44,Thermal Paper,Thermal Paper,250,Numbers,SDHCHADOORA,21
+45,Sodium Hypochlorite Solution,Sodium Hypochlorite Solution,1,liters,SDHCHADOORA,21
+46,Gauze Cloth,Gauze Cloth,3,Numbers,SDHCHADOORA,21
+47,Sample Cups ,Sample Cups ,1000,Numbers,SDHCHADOORA,21
+48,Cuvettes for Biochemistry Analyzer,Cuvettes for Biochemistry Analyzer,1,set,SDHCHADOORA,21
+49,Triglyceride Reagent ,Triglyceride Reagent ,2,Numbers,SDHCHADOORA,21
+50,Cholesterol Reagent ,Cholesterol Reagent ,2,Numbers,SDHCHADOORA,21

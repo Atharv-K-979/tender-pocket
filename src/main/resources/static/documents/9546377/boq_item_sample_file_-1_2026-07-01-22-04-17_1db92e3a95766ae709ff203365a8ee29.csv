@@ -1,0 +1,57 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,Study Table Lamp,Study Table Lamp,1,pieces,Jnvmconsignee,15
+2,Electronic Siren,Electronic Siren,1,pieces,Jnvmconsignee,15
+3,Electric Fan Motor,Electric Fan Motor,1,pieces,Jnvmconsignee,15
+4,Emergency Warning Light,Emergency Warning Light,1,pieces,Jnvmconsignee,15
+5,Laser Pointer Light,Laser Pointer Light,1,pieces,Jnvmconsignee,15
+6,Smart Luggage Guard,Smart Luggage Guard,1,pieces,Jnvmconsignee,15
+7,Fire Alert System,Fire Alert System,1,pieces,Jnvmconsignee,15
+8,Smart Tissue Dispenser,Smart Tissue Dispenser,1,pieces,Jnvmconsignee,15
+9,Automatic Light,Automatic Light,1,pieces,Jnvmconsignee,15
+10,Brightness Controller,Brightness Controller,1,pieces,Jnvmconsignee,15
+11,Light Sensitive Alarm,Light Sensitive Alarm,1,pieces,Jnvmconsignee,15
+12,AND Gate Concept,AND Gate Concept,1,pieces,Jnvmconsignee,15
+13,OR Gate Concept,OR Gate Concept,1,pieces,Jnvmconsignee,15
+14,Security Alarm,Security Alarm,1,pieces,Jnvmconsignee,15
+15,Room Occupancy Indicator,Room Occupancy Indicator,1,pieces,Jnvmconsignee,15
+16,Scarecrow Motor,Scarecrow Motor,1,pieces,Jnvmconsignee,15
+17,Electronic Fencing,Electronic Fencing,1,pieces,Jnvmconsignee,15
+18,House Doorbell,House Doorbell,1,pieces,Jnvmconsignee,15
+19,Pocket Torch Light,Pocket Torch Light,1,pieces,Jnvmconsignee,15
+20,Automatic Garden Light,Automatic Garden Light,1,pieces,Jnvmconsignee,15
+21,LED Blinking,LED Blinking,1,pieces,Jnvmconsignee,15
+22,Buzzer Beeping,Buzzer Beeping,1,pieces,Jnvmconsignee,15
+23,LED plus Buzzer Alert,LED plus Buzzer Alert,1,pieces,Jnvmconsignee,15
+24,Traffic Light System,Traffic Light System,1,pieces,Jnvmconsignee,15
+25,Smart Parking System,Smart Parking System,1,pieces,Jnvmconsignee,15
+26,RGB Color Mixing,RGB Color Mixing,1,pieces,Jnvmconsignee,15
+27,Toll Gate System,Toll Gate System,1,pieces,Jnvmconsignee,15
+28,Temperature and Humidity Display,Temperature and Humidity Display,1,pieces,Jnvmconsignee,15
+29,Obstacle Detector,Obstacle Detector,1,pieces,Jnvmconsignee,15
+30,Smart Weather Station,Smart Weather Station,1,pieces,Jnvmconsignee,15
+31,Smart Irrigation System,Smart Irrigation System,1,pieces,Jnvmconsignee,15
+32,Clap Controlled Fan,Clap Controlled Fan,1,pieces,Jnvmconsignee,15
+33,Dark Room Alarm,Dark Room Alarm,1,pieces,Jnvmconsignee,15
+34,LDR-Based Night Light,LDR-Based Night Light,1,pieces,Jnvmconsignee,15
+35,IR Object Detection Alarm,IR Object Detection Alarm,1,pieces,Jnvmconsignee,15
+36,Smart Pedestrian Traffic Light System,Smart Pedestrian Traffic Light System,1,pieces,Jnvmconsignee,15
+37,Digital Dice,Digital Dice,1,pieces,Jnvmconsignee,15
+38,Flame Alert Display,Flame Alert Display,1,pieces,Jnvmconsignee,15
+39,Smart Rain Detection System,Smart Rain Detection System,1,pieces,Jnvmconsignee,15
+40,Height Measurement Machine,Height Measurement Machine,1,pieces,Jnvmconsignee,15
+41,Water Level Alert System,Water Level Alert System,1,pieces,Jnvmconsignee,15
+42,Smart Home Automation,Smart Home Automation,1,pieces,Jnvmconsignee,15
+43,Digital Notice Board System,Digital Notice Board System,1,pieces,Jnvmconsignee,15
+44,Voting System Machine,Voting System Machine,1,pieces,Jnvmconsignee,15
+45,Laser Security System,Laser Security System,1,pieces,Jnvmconsignee,15
+46,Smart Dustbin,Smart Dustbin,1,pieces,Jnvmconsignee,15
+47,Entry Counter,Entry Counter,1,pieces,Jnvmconsignee,15
+48,Quiz Buzzer,Quiz Buzzer,1,pieces,Jnvmconsignee,15
+49,Touchless Doorbell,Touchless Doorbell,1,pieces,Jnvmconsignee,15
+50,Temperature-Controlled RGB System,Temperature-Controlled RGB System,1,pieces,Jnvmconsignee,15
+51,Obstacle Avoider Robot,Obstacle Avoider Robot,1,pieces,Jnvmconsignee,15
+52,Anti-Fall Robot,Anti-Fall Robot,1,pieces,Jnvmconsignee,15
+53,Smart Bluetooth-Controlled Car,Smart Bluetooth-Controlled Car,1,pieces,Jnvmconsignee,15
+54,Line Follower Robot,Line Follower Robot,1,pieces,Jnvmconsignee,15
+55,Light Following Robot,Light Following Robot,1,pieces,Jnvmconsignee,15
+56,Basic Movement Test Robot,Basic Movement Test Robot,1,pieces,Jnvmconsignee,15

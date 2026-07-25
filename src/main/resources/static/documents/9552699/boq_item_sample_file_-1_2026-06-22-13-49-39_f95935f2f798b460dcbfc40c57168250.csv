@@ -1,0 +1,12 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,Injection Prednisolone Acetate,Injection Prednisolone Acetate 10mg/ml vial of 10 ml,45,Vial,Buyer32MVH,15
+2,Injection 0.45 percentage Normal Saline Bott of 500ml,Injection 0.45 percentage Normal Saline Bott of 500ml,30,Bott,Buyer32MVH,15
+3,Syrup Multivitamin and amino acid bott of 200ml,Syrup Multivitamin and amino acid bott of 200ml,40,Bott,Buyer32MVH,15
+4,Adhesive Plaster Micro Porous ,Adhesive Plaster Micro Porous tape 1inch box of 12,20,Box ,Buyer32MVH,15
+5,Placentral extracts gel ,Placentral extracts gel tube of 20gm,20,Tube ,Buyer32MVH,15
+6,Syinge 5ml ,Syringe 5ml box of 100pcs ,15,Box,Buyer32MVH,15
+7,Syringe 2ml,Syringe 2ml box of 100pcs ,20,Box,Buyer32MVH,15
+8,Powder Gutwell,Powder Gutwell pkt of 100gm,10,Bott,Buyer32MVH,15
+9,Surgeons Cap ,Surgeons Cap Disposable ,300,Nos,Buyer32MVH,15
+10,Surgeons Mask ,Surgeons Mask Diposable ,300,Nos,Buyer32MVH,15
+11,Ointment Mupirocin ,Ointment Mupirocin tube of 5gm  ,50,Tube ,Buyer32MVH,15

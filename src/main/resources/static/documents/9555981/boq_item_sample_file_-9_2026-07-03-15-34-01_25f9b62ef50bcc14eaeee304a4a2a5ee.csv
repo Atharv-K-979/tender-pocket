@@ -1,0 +1,70 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,3D PRINTER FOR DIFFERENT POLYMERIC MATERIALS,3D PRINTER FOR DIFFERENT POLYMERIC MATERIALS,1,pieces,ecd_4,45
+2,Vinyl Cutter machine,Vinyl Cutter machine,1,pieces,ecd_4,45
+3,3D scanner ,3D scanner ,1,pieces,ecd_4,45
+4,PVC Pipe 75inch 10ft,PVC Pipe 75inch 10ft,10,pieces,ecd_4,45
+5,PVC Pipe 1 inch 10ft,PVC Pipe 1 inch 10ft,10,pieces,ecd_4,45
+6,PVC Pipe 1.5inch 10ft,PVC Pipe 1.5inch 10ft,10,pieces,ecd_4,45
+7,PVC Pipe 2.0 inch 10ft,PVC Pipe 2.0 inch 10ft,10,pieces,ecd_4,45
+8,"Aluminum channels L, C, Box, strip length 12ft","Aluminum channels (L, C, Box, strip length 12ft",2,pieces,ecd_4,45
+9,PCB Drill Bits 0.4mm,PCB Drill Bits 0.4mm,10,pieces,ecd_4,45
+10,PCB Drill Bits 0.8mm,PCB Drill Bits 0.8mm,10,pieces,ecd_4,45
+11,PCB Drill Bits 1mm,PCB Drill Bits 1mm,10,pieces,ecd_4,45
+12,Drill Bits 4mm,Drill Bits 4mm,10,pieces,ecd_4,45
+13,Drill Bits 5mm,Drill Bits 5mm,10,pieces,ecd_4,45
+14,Drill Bits 6mm,Drill Bits 6mm,10,pieces,ecd_4,45
+15,Arduino UNO R3,Arduino UNO R3,5,pieces,ecd_4,45
+16,Arduino NANO,Arduino NANO,5,pieces,ecd_4,45
+17,Arduino Mega,Arduino Mega,3,pieces,ecd_4,45
+18,"Raspberry Pi Model 4B, 4GB","Raspberry Pi Model 4B, 4GB",3,pieces,ecd_4,45
+19,ESP8266 Node MCU,ESP8266 Node MCU,2,pieces,ecd_4,45
+20,ESP32 Development Board,ESP32 Development Board,2,pieces,ecd_4,45
+21,Beagleboneblu,Beagleboneblu,1,pieces,ecd_4,45
+22,Beaglebone Black,Beaglebone Black,1,pieces,ecd_4,45
+23,Voltage Regulator Module,Voltage Regulator Module,2,pieces,ecd_4,45
+24,Mini Micro submersible Water Pump,Mini Micro submersible Water Pump,2,pieces,ecd_4,45
+25,Piezoelectric Plate,Piezoelectric Plate,2,pieces,ecd_4,45
+26,8 x 8 LED Matrix Module,8 x 8 LED Matrix Module,2,pieces,ecd_4,45
+27,Bluetooth,Bluetooth,2,pieces,ecd_4,45
+28,7 Segment LED Display,7 Segment LED Display,2,pieces,ecd_4,45
+29,GSM GPRS GPS Module,GSM GPRS GPS Module,2,pieces,ecd_4,45
+30,Laser Module,Laser Module,2,pieces,ecd_4,45
+31,LDR Module,LDR Module,2,pieces,ecd_4,45
+32,4 X 4 Matrix Keypad,4 X 4 Matrix Keypad,2,pieces,ecd_4,45
+33,Joy Stick Module,Joy Stick Module,2,pieces,ecd_4,45
+34,Active Buzzer BIG,Active Buzzer BIG,2,pieces,ecd_4,45
+35,Active Buzzer SMALL,Active Buzzer SMALL,2,pieces,ecd_4,45
+36,Motor Driver,Motor Driver,2,pieces,ecd_4,45
+37,Sound Playback Module,Sound Playback Module,2,pieces,ecd_4,45
+38,BO Motors,BO Motors,10,pieces,ecd_4,45
+39,Vibrating Motor,Vibrating Motor,10,pieces,ecd_4,45
+40,Capacitive Touch Switch,Capacitive Touch Switch,2,pieces,ecd_4,45
+41,IR Sensors Obstacle Sensors,IR Sensors Obstacle Sensors,2,pieces,ecd_4,45
+42,Triple Axis Magnetometer,Triple Axis Magnetometer,2,pieces,ecd_4,45
+43,Humidity Sensor,Humidity Sensor,2,pieces,ecd_4,45
+44,MQ-2,MQ-2,2,pieces,ecd_4,45
+45,MQ-3,MQ-3,2,pieces,ecd_4,45
+46,MQ-4,MQ-4,2,pieces,ecd_4,45
+47,MQ-5,MQ-5,2,pieces,ecd_4,45
+48,MQ-7,MQ-7,2,pieces,ecd_4,45
+49,Ultrasonic Sensor Module,Ultrasonic Sensor Module,2,pieces,ecd_4,45
+50,Triple Axis accelerometer,Triple Axis accelerometer,2,pieces,ecd_4,45
+51,PIR Motion Detector Module,PIR Motion Detector Module,2,pieces,ecd_4,45
+52,Pulse Rate Heart Sensor,Pulse Rate Heart Sensor,2,pieces,ecd_4,45
+53,Relay Module,Relay Module,2,pieces,ecd_4,45
+54,Soil Moisture Sensor,Soil Moisture Sensor,2,pieces,ecd_4,45
+55,Touch Sensor,Touch Sensor,2,pieces,ecd_4,45
+56,Rain Drop Sensor,Rain Drop Sensor,2,pieces,ecd_4,45
+57,Flex Sensor,Flex Sensor,2,pieces,ecd_4,45
+58,Temperature Sensor,Temperature Sensor,2,pieces,ecd_4,45
+59,Force Pressure Sensor,Force Pressure Sensor,2,pieces,ecd_4,45
+60,Colour Recognition Sensor,Colour Recognition Sensor,2,pieces,ecd_4,45
+61,Water Flow Sensor,Water Flow Sensor,2,pieces,ecd_4,45
+62,Sound Sensor,Sound Sensor,2,pieces,ecd_4,45
+63,IR Sensor Array for Line Following,IR Sensor Array for Line Following,2,pieces,ecd_4,45
+64,RFID Reader-Tags,RFID Reader-Tags,2,pieces,ecd_4,45
+65,Servo Motor 360 rotation,Servo Motor 360 rotation,10,pieces,ecd_4,45
+66,Solder Wire 100grm,Solder Wire 100grm,10,pieces,ecd_4,45
+67,Copper Clad Board single side,Copper Clad Board single side,10,pieces,ecd_4,45
+68,Copper clad board double side,Copper clad board double side,10,pieces,ecd_4,45
+69,Male to Female Breadboard Jumper,Male to Female Breadboard Jumper,10,pieces,ecd_4,45

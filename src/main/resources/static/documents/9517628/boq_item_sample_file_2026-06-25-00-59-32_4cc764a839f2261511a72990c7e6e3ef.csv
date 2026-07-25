@@ -1,0 +1,63 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,Auloclave-1,As per ATC Document,1,pieces,gmc@kanker,60
+2,Autoclave-2,As per ATC Document,2,pieces,gmc-cimsbilaspur,60
+3,BOD Incubator-1,As per ATC Document,1,pieces,gmc@kanker,60
+4,BOD Incubator-2,As per ATC Document,1,pieces,gmc@raipur,60
+5,"Data Logger -80C, -20C",As per ATC Document,4,pieces,gmc@raipur,60
+6,"Data Logger -80c, -20c,  plus 4c 2no",As per ATC Document,4,pieces,gmc@kanker,60
+7,Elisa plate reader-1,As per ATC Document,1,pieces,gmc@kanker,60
+8,ELISA Plate Reader-2,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+9,Elisa Plate Reader-3,As per ATC Document,1,pieces,gmc@raipur,60
+10,Elisa plate washer-1,As per ATC Document,1,pieces,gmc@kanker,60
+11,ELISA Plate Washer-2,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+12,Elisa Plate Washer-3,As per ATC Document,1,pieces,gmc@raipur,60
+13,Floater Rack,As per ATC Document,20,pieces,gmc@kanker,60
+14,Gel Electrophoresis,As per ATC Document,1,pieces,gmc@kanker,60
+15,Gel electrophoresis and documentation unit,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+16,Gel Electrophoresis andDocumentation Unit,As per ATC Document,1,pieces,gmc@raipur,60
+17,Laminar Air Vertical Flow System,As per ATC Document,2,pieces,gmc@raipur,60
+18,Ice Buckets,As per ATC Document,1,pieces,gmc@kanker,60
+19,Ice flaker machine,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+20,Label Printer,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+21,Label Printer Brady Printer,As per ATC Document,1,pieces,gmc@kanker,60
+22,Laboratory Incubator,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+23,Laboratory Rocker and Shaker,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+24,Laminar Air Flow Horizontal,As per ATC Document,1,pieces,gmc@kanker,60
+25,Laminar air vertical flow 2 feet,As per ATC Document,2,pieces,gmc-cimsbilaspur,60
+26,Magnetic Stirrer-1,As per ATC Document,1,pieces,gmc@kanker,60
+27,Magnetic stirrer-2,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+28,Magnetic Stirrer-3,As per ATC Document,2,pieces,gmc@raipur,60
+29,Micro pipette 0.5 - 10 ul,As per ATC Document,2,pieces,gmc@kanker,60
+30,Micro pipette 10 - 100 ul,As per ATC Document,1,pieces,gmc@kanker,60
+31,Micro pipette 100 - 1000 ul,As per ATC Document,3,pieces,gmc@kanker,60
+32,Micro pipette 2 - 20 ul,As per ATC Document,2,pieces,gmc@kanker,60
+33,Micro pipette 20 - 200 ul,As per ATC Document,5,pieces,gmc@kanker,60
+34,Micropipettes ,As per ATC Document,2,pieces,gmc-cimsbilaspur,60
+35,Microwave Oven For Agarose gel,As per ATC Document,1,pieces,gmc@kanker,60
+36,Microwave Oven For agarose gels,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+37,Multi Channerl  30 - 300 ul ,As per ATC Document,1,pieces,gmc@kanker,60
+38,Multifunctional copier or printer or scannerFor office work,As per ATC Document,1,pieces,gmc@kanker,60
+39,Pan electronic weighing balance-1,As per ATC Document,1,pieces,gmc@kanker,60
+40,Pan Electronic Weighing Balance-2,As per ATC Document,1,pieces,gmc@raipur,60
+41,PCR Workstation,As per ATC Document,1,pieces,gmc@raipur,60
+42,PH Meter,As per ATC Document,1,pieces,gmc@raipur,60
+43,Quick Spin,As per ATC Document,5,pieces,gmc@kanker,60
+44,Quick Spinner-1,As per ATC Document,1,pieces,gmc@kanker,60
+45,Quick Spinner-2,As per ATC Document,2,pieces,gmc@raipur,60
+46,"Quickspin for 1.5, 2ml Tubes. PCR Tubes and Plates",As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+47,Refrigerated Micro centrifuge,As per ATC Document,1,pieces,gmc@kanker,60
+48,Refrigerated Microfuge,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+49,Refrigerator,As per ATC Document,2,pieces,gmc@raipur,60
+50,Refrigerator sample receiving,As per ATC Document,2,pieces,gmc-cimsbilaspur,60
+51,Themo Cycler-3,As per ATC Document,2,pieces,gmc@raipur,60
+52,Themocycler-2,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+53,Thermo cycler-1,As per ATC Document,1,pieces,gmc@kanker,60
+54,Timer-1,As per ATC Document,2,pieces,gmc@kanker,60
+55,Timer-2,As per ATC Document,2,pieces,gmc@raipur,60
+56,Ultrapure Water System,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+57,Unichannel and Multichannel Pipettes ,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+58,UV Dosimeter-1,As per ATC Document,1,pieces,gmc@kanker,60
+59,UV Dosimeter-2,As per ATC Document,1,pieces,gmc@kanker,60
+60,UV Dosimeter-3,As per ATC Document,2,pieces,gmc@raipur,60
+61,Vortex Mixer-1,As per ATC Document,1,pieces,gmc-cimsbilaspur,60
+62,Vortex Mixer-2,As per ATC Document,2,pieces,gmc@raipur,60

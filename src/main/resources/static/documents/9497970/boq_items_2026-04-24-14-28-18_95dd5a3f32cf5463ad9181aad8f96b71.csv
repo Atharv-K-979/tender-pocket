@@ -1,0 +1,7 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,Injection,Typhoid Vi Conjugate vaccine 0.5 ml ( TCV),70,vial or PFS,glory.healer@gov.in,15
+2,Vaccine,Inj HPV (Quadrivalent),100,vial or ampoule,glory.healer@gov.in,15
+3,Vaccine,Varicella Vaccine,100,vial or ampoule,glory.healer@gov.in,15
+4,MMR Vaccine,MMR Vaccine,150,vial or ampoule,glory.healer@gov.in,15
+5,Hepatitis A vaccine,Hepatitis A vaccine,100,vial or ampoule,glory.healer@gov.in,15
+6,DTaP Paediatric Vaccine,DTaP Paediatric Vaccine,90,vial or ampoule,glory.healer@gov.in,15

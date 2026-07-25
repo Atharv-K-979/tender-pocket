@@ -1,0 +1,65 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,lnI Fulvestrant 500 mg,lnI Fulvestrant 500 mg,4,PFS,HODSURG@4AFH,15
+2,Carbimazole 20 mg Tab,Carbimazole 20 mg Tab,500,No,HODSURG@4AFH,15
+3,Vigabatrin sachet 500mg,Vigabatrin sachet 500mg,200,No,HODSURG@4AFH,15
+4,Duloxetine 20 mg tab,Duloxetine 20 mg tab,600,No,HODSURG@4AFH,15
+5,Tab entecavir 0.5 mg,Tab entecavir 0.5 mg,600,No,HODSURG@4AFH,15
+6,Tab Lamotrigine 100 mg,Tab Lamotrigine 100 mg,200,No,HODSURG@4AFH,15
+7,Myo Inositol D chiro inositol metformin methyl folate calcium and mecobalamine tab,Myo Inositol D chiro inositol metformin methyl folate calcium and mecobalamine tab,600,No,HODSURG@4AFH,15
+8,Tab Trimetazidine MR 35 mg ,Tab Trimetazidine MR 35 mg ,1800,No,HODSURG@4AFH,15
+9,Danazol 100 mg cap,Danazol 100 mg cap,600,No,HODSURG@4AFH,15
+10,Sumatriptan 25 mg  Tab,Sumatriptan 25 mg  Tab,180,No,HODSURG@4AFH,15
+11,Tab Amitriptyiline 10 mg,Tab Amitriptyiline 10 mg,600,No,HODSURG@4AFH,15
+12,clotrimazole plus clindamycin vaginal pessaries,clotrimazole plus clindamycin vaginal pessaries,630,No,HODSURG@4AFH,15
+13,human diploid cell rabies vaccine,human diploid cell rabies vaccine,300,Vial,HODSURG@4AFH,15
+14,clotrimazole vaginal pessary 100 mg,clotrimazole vaginal pessary 100 mg,200,No,HODSURG@4AFH,15
+15,"Midazolam 5 mg,1 ml injection","Midazolam 5 mg,1 ml injection",54,amp,HODSURG@4AFH,15
+16,pheniramine maleate  25 mg tab,pheniramine maleate  25 mg tab,2000,No,HODSURG@4AFH,15
+17,syp zinc 20mg per 5 ml bottle of 100 ml,syp zinc 20mg per 5 ml bottle of 100 ml,500,bott,HODSURG@4AFH,15
+18,domperidone  syrup 1 mg per ml bottle of  30 ml,domperidone  syrup 1 mg per ml bottle of  30 ml,300,bott,HODSURG@4AFH,15
+19,Hydroxycine hcl 25 mg tab,Hydroxycine hcl 25 mg tab,300,no,HODSURG@4AFH,15
+20,iso propanol 60 to 65 percentage and benzalkonium  chloride skin disinfectant,iso propanol 60 to 65 percentage and benzalkonium  chloride  skin disinfectant,24,bott,HODSURG@4AFH,15
+21,adrenaline tartrate 1.1000 in 1 ml injection,adrenaline tartrate 1.1000 in 1 ml injection,100,amp,HODSURG@4AFH,15
+22,Bupivacaine hcl 5 mg per ml 20 ml injection,Bupivacaine hcl 5 mg per ml 20 ml injection,12,amp,HODSURG@4AFH,15
+23,Bupivacaine hcl 5 mg per ml heavy 4 ml injection,Bupivacaine hcl 5 mg per ml heavy 4 ml injection,30,amp,HODSURG@4AFH,15
+24,Ketamine hcl 50 mg per ml 2 ml injection,Ketamine hcl 50 mg per ml 2 ml injection,12,amp,HODSURG@4AFH,15
+25,Succiniyl choline  chloride 50 mg per ml 2 ml injection,Succiniyl choline  chloride 50 mg per ml 2 ml injection,30,amp,HODSURG@4AFH,15
+26,Vecuronium bromide 4 mg per ml 1 ml injection,Vecuronium bromide 4 mg per ml 1 ml injection,30,amp,HODSURG@4AFH,15
+27,Digoxin 0. 5mg 2 ml injection,Digoxin 0. 5mg 2 ml injection,30,amp,HODSURG@4AFH,15
+28,vasopressin 20 unit per ml injection 1 ml ampoule,vasopressin 20 unit per ml injection 1 ml ampoule,30,amp,HODSURG@4AFH,15
+29,isoflurane bottle of 100 ml,isoflurane bottle of 100 ml,30,Bott,HODSURG@4AFH,15
+30,lignocaine 100 mg and ethanol 28 percentage v per v spray container of 500 ml,lignocaine 100 mg and ethanol 28 percentage v per v spray container of 500 ml,6,bott,HODSURG@4AFH,15
+31,neosporin powder,neosporin powder,50,bott,HODSURG@4AFH,15
+32,human chorionic gonadotropin 5000iu injection,human chorionic gonadotropin 5000iu injection,20,amp,HODSURG@4AFH,15
+33,thiamine 100 mg tab,thiamine 100 mg tab,500,No,HODSURG@4AFH,15
+34,Tranexamic acid 500 mgper  5 ml injection,Tranexamic acid 500 mgper  5 ml injection,150,amp,HODSURG@4AFH,15
+35,Rabies human monoclonal antibodies ,Rabies human monoclonal antibodies ,20,Vial,HODSURG@4AFH,15
+36,Tab cilostazole 50 mg,Tab cilostazole 50 mg,600,No,HODSURG@4AFH,15
+37,olopatadine 0.2 percentage ophthalmic solution bott of 5 ml,olopatadine 0.2 percentage ophthalmic solution bott of 5 ml,200,Bott,HODSURG@4AFH,15
+38,Atropine sulphate 0.6 mg 1 ml injection,Atropine sulphate 0.6 mg 1 ml injection,60,amp,HODSURG@4AFH,15
+39,pheniramine maleate injection 22.75 mg per ml  amp of 2 ml,pheniramine maleate injection 22.75 mg per ml  amp of 2 ml,200,amp,HODSURG@4AFH,15
+40,Mesalazine 1.2 gm SR Tab,Mesalazine 1.2 gm SR Tab,600,No,HODSURG@4AFH,15
+41,Ethinyl estradiol 30 mcg plus drosperinone33 mg  pack of 21 tab,Ethinyl estradiol 30 mcg plus drosperinone33 mg  pack of 21 tab,20,pkt,HODSURG@4AFH,15
+42,Ethinyl estradiol 0.035 mg plus cyproterone acetate 2 mg pack of 21 tab,Ethinyl estradiol 0.035 mg plus cyproterone acetate 2 mg pack of 21 tab,150,pkt,HODSURG@4AFH,15
+43,Ethinyl estradiol 30 mcg plus dienogest 2 mg  pack of 21 taB,Ethinyl estradiol 30 mcg plus dienogest 2 mg  pack of 21 taq,20,pkt,HODSURG@4AFH,15
+44,Dorzolamide 2 percentage  eye drop,Dorzolamide 2 percentage  eye drop,30,bott,HODSURG@4AFH,15
+45,tab Mebeverine hydrochloridecl 135 ,tab Mebeverine hydrochloridecl 135 ,600,No,HODSURG@4AFH,15
+46,Bilastine 40 mg tab,Bilastine 40 mg tab,300,No,HODSURG@4AFH,15
+47,Dehydroepianderosterone SR 75 mg tab,Dehydroepianderosterone SR 75 mg tab,200,No,HODSURG@4AFH,15
+48,carbidopa 25 mg plus levodopa 100 mg tab,carbidopa 25 mg plus levodopa 100 mg tab,600,No,HODSURG@4AFH,15
+49,Glycerine suppositories child size 2 g mould,Glycerine suppositories child size 2 g mould,60,No,HODSURG@4AFH,15
+50,Baricitinib 4 mg tab,Baricitinib 4 mg tab,56,No,HODSURG@4AFH,15
+51,Tab Dienogest 2 mg tab,Tab Dienogest 2 mg tab,500,No,HODSURG@4AFH,15
+52,Dexmedetomidine 100 mcg per ml injection,Dexmedetomidine 100 mcg per ml injection,20,Vial,HODSURG@4AFH,15
+53,colchicine 0 point 5 mg tab,colchicine 0 point 5 mg tab,100,No,HODSURG@4AFH,15
+54,Activated charcoal powder 100 gm pkt,Activated charcoal powder 100 gm pkt,20,pkt,HODSURG@4AFH,15
+55,Sodium valproate CR 400 MG TAB,Sodium valproate CR 400 MG TAB,600,No,HODSURG@4AFH,15
+56,Injection ropivacaine 0 point 75 percentage of 20 ml,Injection ropivacaine 0 point 75 percentage of 20 ml,10,Vial,HODSURG@4AFH,15
+57,Tab clonazepam 1 point 25 mg,Tab clonazepam 1 point 25 mg,1000,No,HODSURG@4AFH,15
+58,injection ondansetron 2mg per ml  4 ml injection,injection ondansetron 2mg per ml  4 ml injection,360,amp,HODSURG@4AFH,15
+59,Bacillus clausii 2 billion spores per 5 ml,Bacillus clausii 2 billion spores per 5 ml,120,bott,HODSURG@4AFH,15
+60,Inj Romiplostim 250 mcg per vial,Inj Romiplostim 250 mcg per vial,12,Vial,HODSURG@4AFH,15
+61,Lactobacillus  probiotic sachet,Lactobacillus  probiotic sachet,1000,sachet,HODSURG@4AFH,15
+62,diclofenac plus linseed oil plus menthol plus methyl salicylate spray,diclofenac plus linseed oil plus menthol plus methyl salicylate spray,30,bott,HODSURG@4AFH,15
+63,Adapalene 0 point 1 percentage tube of 15 gm,Adapalene 0 point 1 percentage tube of 15 gm,60,No,HODSURG@4AFH,15
+64,Atracurium 10 mg per ml 2.5 ml injection,Atracurium 10 mg per ml 2.5 ml injection,50,amp,HODSURG@4AFH,15

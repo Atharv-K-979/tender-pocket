@@ -3,5 +3,29 @@
 **/out
 **/target
 **/app.log
-backend/public/documents/
-backend/src/main/resources/static/documents/
+**/public/documents/
+**/src/main/resources/static/documents/
+
+# Maven / Java
+*.class
+*.jar
+*.war
+*.ear
+*.rar
+
+# Databases & WAL files
+*.db
+*.db-shm
+*.db-wal
+tenders.db
+
+# OS / IDE files
+.DS_Store
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# Logs
+*.log

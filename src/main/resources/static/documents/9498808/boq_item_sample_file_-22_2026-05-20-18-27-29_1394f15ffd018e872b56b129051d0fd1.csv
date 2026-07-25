@@ -1,0 +1,59 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,HEMOGLOBIN STRIPS,HEMOGLOBIN STRIPS,55000,pieces,nodaldmh.mo-up@gov.in,30
+2,LANCET,LANCET,110000,pieces,nodaldmh.mo-up@gov.in,30
+3,PREGNANCY CARD,PREGNANCY CARD,27500,pieces,nodaldmh.mo-up@gov.in,30
+4,URINE TEST,URINE TEST,27500,pieces,nodaldmh.mo-up@gov.in,30
+5,GLUCOSTRIP,GLUCOSTRIP,22000,pieces,nodaldmh.mo-up@gov.in,30
+6,MALERIYA RAPID TEST,MALERIYA RAPID TEST,11000,pieces,nodaldmh.mo-up@gov.in,30
+7,HIV RAPID TEST KIT,HIV RAPID TEST KIT,11000,pieces,nodaldmh.mo-up@gov.in,30
+8,SYPHILIS RAPID TEST KIT,SYPHILIS RAPID TEST KIT,550,pieces,nodaldmh.mo-up@gov.in,30
+9,DENGUE RAPID TEST CARD,DENGUE RAPID TEST CARD,660,pieces,nodaldmh.mo-up@gov.in,30
+10,TEST FOR IODINE IN SALT,TEST FOR IODINE IN SALT,5500,pieces,nodaldmh.mo-up@gov.in,30
+11,WATER TESTING KIT,WATER TESTING KIT,2750,pieces,nodaldmh.mo-up@gov.in,30
+12,HBSAG RAPID TEST KIT,HBSAG RAPID TEST KIT,13750,pieces,nodaldmh.mo-up@gov.in,30
+13,FILARIASIS RAPID TEST KIT,FILARIASIS RAPID TEST KIT,2750,pieces,nodaldmh.mo-up@gov.in,30
+14,SPUTUM COLLECTION FOR AFB,SPUTUM COLLECTION FOR AFB,2750,pieces,nodaldmh.mo-up@gov.in,30
+15,GLASS SLIDE,GLASS SLIDE,2750,pieces,nodaldmh.mo-up@gov.in,30
+16,EDTA VIAL,EDTA VIAL,2750,pieces,nodaldmh.mo-up@gov.in,30
+17,PLAIN VIAL,PLAIN VIAL,2750,pieces,nodaldmh.mo-up@gov.in,30
+18,TEST TUBE,TEST TUBE,2750,pieces,nodaldmh.mo-up@gov.in,30
+19,URIEN CONTAINER,URIEN CONTAINER,2750,pieces,nodaldmh.mo-up@gov.in,30
+20,EXAMINATION GLOVES,EXAMINATION GLOVES,2750,pieces,nodaldmh.mo-up@gov.in,30
+21,MICRIPIPATE TIPS LARGE,MICRIPIPATE TIPS LARGE,2750,pieces,nodaldmh.mo-up@gov.in,30
+22,MICROPIPATE TIPS SMALL,MICROPIPATE TIPS SMALL,2750,pieces,nodaldmh.mo-up@gov.in,30
+23,ISO PROPEL ALKOHAL 500ML,ISO PROPEL ALKOHAL 500ML,275,pieces,nodaldmh.mo-up@gov.in,30
+24,COTTON 500GM,COTTON 500GM,110,pieces,nodaldmh.mo-up@gov.in,30
+25,DISTILLED WATER,DISTILLED WATER,110,pieces,nodaldmh.mo-up@gov.in,30
+26,SYRINGE 3ML,SYRINGE 3ML,5500,pieces,nodaldmh.mo-up@gov.in,30
+27,SYRINGE 5ML,SYRINGE 5ML,5500,pieces,nodaldmh.mo-up@gov.in,30
+28,ACETIC ACID,ACETIC ACID,550,pieces,nodaldmh.mo-up@gov.in,30
+29,TOURNIQUET,TOURNIQUET,550,pieces,nodaldmh.mo-up@gov.in,30
+30,HEMOGLOBIN STRIPS,HEMOGLOBIN STRIPS,15000,pieces,nodaldmh.mo-up@gov.in,30
+31,LANCET,LANCET,15000,pieces,nodaldmh.mo-up@gov.in,30
+32,PREGNANCY CARD,PREGNANCY CARD,3000,pieces,nodaldmh.mo-up@gov.in,30
+33,URINE TEST ,URINE TEST ,3000,pieces,nodaldmh.mo-up@gov.in,30
+34,GLUCOSTRIP,GLUCOSTRIP,3000,pieces,nodaldmh.mo-up@gov.in,30
+35,MALERIYA RAPID TEST,MALERIYA RAPID TEST,3000,pieces,nodaldmh.mo-up@gov.in,30
+36,HIV RAPID TEST KIT,HIV RAPID TEST KIT,3000,pieces,nodaldmh.mo-up@gov.in,30
+37,SYPHILIS RAPID TEST KIT,SYPHILIS RAPID TEST KIT,150,pieces,nodaldmh.mo-up@gov.in,30
+38,DENGUE RAPID TEST CARD,DENGUE RAPID TEST CARD,150,pieces,nodaldmh.mo-up@gov.in,30
+39,TEST FOR IODINE IN SALT,TEST FOR IODINE IN SALT,600,pieces,nodaldmh.mo-up@gov.in,30
+40,WATER TESTING KIT,WATER TESTING KIT,300,pieces,nodaldmh.mo-up@gov.in,30
+41,HBSAG RAPID TEST KIT,HBSAG RAPID TEST KIT,675,pieces,nodaldmh.mo-up@gov.in,30
+42,FILARIASIS RAPID TEST KIT,FILARIASIS RAPID TEST KIT,300,pieces,nodaldmh.mo-up@gov.in,30
+43,SPUTUM COLLECTION FOR AFB,SPUTUM COLLECTION FOR AFB,300,pieces,nodaldmh.mo-up@gov.in,30
+44,GLASS SLIDE,GLASS SLIDE,3000,pieces,nodaldmh.mo-up@gov.in,30
+45,EDTA VIAL,EDTA VIAL,300,pieces,nodaldmh.mo-up@gov.in,30
+46,PLAIN VIAL,PLAIN VIAL,300,pieces,nodaldmh.mo-up@gov.in,30
+47,TEST TUBE,TEST TUBE,600,pieces,nodaldmh.mo-up@gov.in,30
+48,URIEN CONTAINER,URIEN CONTAINER,600,pieces,nodaldmh.mo-up@gov.in,30
+49,EXAMINATION GLOVES,EXAMINATION GLOVES,600,pieces,nodaldmh.mo-up@gov.in,30
+50,MICRIPIPATE TIPS LARGE,MICRIPIPATE TIPS LARGE,300,pieces,nodaldmh.mo-up@gov.in,30
+51,MICROPIPATE TIPS SMALL,MICROPIPATE TIPS SMALL,300,pieces,nodaldmh.mo-up@gov.in,30
+52,ISO PROPEL ALKOHAL 500ML,ISO PROPEL ALKOHAL 500ML,60,pieces,nodaldmh.mo-up@gov.in,30
+53,COTTON 500GM,COTTON 500GM,30,pieces,nodaldmh.mo-up@gov.in,30
+54,DISTILLED WATER,DISTILLED WATER,30,pieces,nodaldmh.mo-up@gov.in,30
+55,SYRINGE 3ML,SYRINGE 3ML,750,pieces,nodaldmh.mo-up@gov.in,30
+56,SYRINGE 5ML,SYRINGE 5ML,750,pieces,nodaldmh.mo-up@gov.in,30
+57,ACETIC ACID,ACETIC ACID,75,pieces,nodaldmh.mo-up@gov.in,30
+58,TOURNIQUET,TOURNIQUET,75,pieces,nodaldmh.mo-up@gov.in,30

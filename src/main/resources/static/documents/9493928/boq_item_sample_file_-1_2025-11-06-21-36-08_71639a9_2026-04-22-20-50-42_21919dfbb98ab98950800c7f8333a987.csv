@@ -1,0 +1,76 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,Arduino UNO With IC,Atmega 328P 8Bit AVR family,27,pieces,buycon1060.atl.mh,15
+2,Arduino Nano soldered,Atmega 328P 8Bit AVR family,20,pieces,buycon1060.atl.mh,15
+3,Arduino Mega,Arduino Mega,5,pieces,buycon1060.atl.mh,15
+4,Breadboards and Mini Breadboard,Solderless 400 points,30,pieces,buycon1060.atl.mh,15
+5,General purpose Soldering Board,Female Berg Strip 40 Pins,30,pieces,buycon1060.atl.mh,15
+6,General purpose Soldering Board,Male Berg Strip 40 Pins Single Row,30,pieces,buycon1060.atl.mh,15
+7,I2C Module for Display soldered,Dot matrix LCD display with 16 characters x 2 lines with I2C,20,pieces,buycon1060.atl.mh,15
+8,USB Cable Set,USB Cable Set (A to B),40,pieces,buycon1060.atl.mh,15
+9,9 Volt battery,9V Battery Rechargeable battery,20,pieces,buycon1060.atl.mh,15
+10,Line Voltage Regulator,7805,5,pieces,buycon1060.atl.mh,15
+11,Water Pump Module,"DC 12V,4W,Submersible water Pump",20,pieces,buycon1060.atl.mh,15
+12,8 in to 8 LED Matrix Module,Max 7219 Dot LED Matrix Module MCU control LED Display Module,10,pieces,buycon1060.atl.mh,15
+13,Bluetooth,HC 05 working voltage 5 Volt,5,pieces,buycon1060.atl.mh,15
+14,LDR Module,Photosensitive LDR light sensor module,10,pieces,buycon1060.atl.mh,15
+15,Joy Stick,Joy stick module for Arduino,10,pieces,buycon1060.atl.mh,15
+16,Active Buzzer,Small 5 Volt,20,pieces,buycon1060.atl.mh,15
+17,Motor Driver,L298N Moter Driver module,30,pieces,buycon1060.atl.mh,15
+18,DC Plastic Gear motor with wheel,"12V,150 RPM,Side
+shaft,Battery operated",40,pieces,buycon1060.atl.mh,15
+19,NodeMCU with Wi-fi,"ESP  32 I2C,1 Wire,Plug and Play",20,pieces,buycon1060.atl.mh,15
+20,RGB LEDs,Regular 5mm 3-5 volt Range,50,pieces,buycon1060.atl.mh,15
+21,LEDs Red,Regular 5mm 3-5 volt Range,50,pieces,buycon1060.atl.mh,15
+22,LEDs Green,Regular 5mm 3-5 volt Range,50,pieces,buycon1060.atl.mh,15
+23,LEDs Blue,Regular 5mm 3-5 volt Range,50,pieces,buycon1060.atl.mh,15
+24,LeD yellow,Regular 5mm 3-5 volt Range,50,pieces,buycon1060.atl.mh,15
+25,LEDs White,Regular 5mm 3-5 volt Range,50,pieces,buycon1060.atl.mh,15
+26,555 Timer IC,555 Timer IC 4.5V to 16 Volt,5,pieces,buycon1060.atl.mh,15
+27,Diode  Kit,1N4007-25 1N 4006-25Zener diode  2.5V-25Zener Diode 4.6V-25,2,pieces,buycon1060.atl.mh,15
+28,Transistor Kit,BC-547-25 BC 557-25,2,pieces,buycon1060.atl.mh,15
+29,Push Button Switch,Tactile Switch Micro  Push Button Toggle switch,20,pieces,buycon1060.atl.mh,15
+30,MQ 2 Smoke detection,MQ-2 Smoke detection,5,pieces,buycon1060.atl.mh,15
+31,MQ 3 Alcohol-Ethanol sensor,MQ-3 Alcohol-Ethanol sensor,5,pieces,buycon1060.atl.mh,15
+32,MQ 4 Methane Natural Gas Sensor,MQ-4 Methane Natural Gas Sensor,5,pieces,buycon1060.atl.mh,15
+33,MQ 5 Methane Liquified Gas Sensor,MQ-5 Methane Liquified Gas Sensor,5,pieces,buycon1060.atl.mh,15
+34,MQ 6 Liquified Petroleum Gas Sensor,MQ-6 Liquified Petroleum Gas Sensor,5,pieces,buycon1060.atl.mh,15
+35,MQ 7 High Sensitivity CO Carbon Monoxide Sensor Detector,MQ-7 High Sensitivity CO Carbon Monoxide Sensor Detector,5,pieces,buycon1060.atl.mh,15
+36,MQ 8 Hydrogen Gas Sensor,MQ-8 Hydrogen Gas Sensor,5,pieces,buycon1060.atl.mh,15
+37,MQ 135 Air Quality Sensor,MQ-135 Air Quality Sensor (Smoke Fast response Stable and long life Simple drive circuit),5,pieces,buycon1060.atl.mh,15
+38,Ultrasonic Sensor Module HC SR 04 or compatible,Power supply Quiescent current Working current Effectual angle Ranging distance Resolution Working angle & dimension,12,pieces,buycon1060.atl.mh,15
+39,Soil Moisture sensor module,"FC-28with LM 293
+Comparator Operating Voltage 3.3V to 5 Volt",15,pieces,buycon1060.atl.mh,15
+40,Rain Drop Sensor,"Rain Sensitive, Rain Drop Detection Sensor Module",15,pieces,buycon1060.atl.mh,15
+41,Temperature Sensor,Temperature Sensor Lm35,10,pieces,buycon1060.atl.mh,15
+42,Temperature sensor and Humidity sensor Module,DTH 11 Voltage range 3v-5V,15,pieces,buycon1060.atl.mh,15
+43,10000 mAh 5 volt Power Bank,10000 mAH 5 volt Power Bank,2,pieces,buycon1060.atl.mh,15
+44,Lithium-ion Battery,18650 Battery,20,pieces,buycon1060.atl.mh,15
+45,Lithium-ion Battery charger,TP4056 Charging module,4,pieces,buycon1060.atl.mh,15
+46,Lithium-ion Battery Holder,18650 Battery holder x 1,5,pieces,buycon1060.atl.mh,15
+47,18650 Battery holder x 2,18650 Battery holder x 2,10,pieces,buycon1060.atl.mh,15
+48,Solder Wire,250g Spool,5,pieces,buycon1060.atl.mh,15
+49,Sensor Add on kit,Solenoidal lock 5-12v,2,pieces,buycon1060.atl.mh,15
+50,Filament for 3D printer,Compatible 700/1000 Grams Filament,3,pieces,buycon1060.atl.mh,15
+51,Filament Storage Box,Filament Storage Box,3,pieces,buycon1060.atl.mh,15
+52,String Only Mtr,String Only (Mtr),50,pieces,buycon1060.atl.mh,15
+53,Rubber band,Rubber band,100,pieces,buycon1060.atl.mh,15
+54,Popsicle Sticks,Popsicle Sticks,500,pieces,buycon1060.atl.mh,15
+55,Wood Glue Bottle,Wood Glue Bottle,5,pieces,buycon1060.atl.mh,15
+56,Wire Cutter,Micro cutter / Nipper Cutter,2,pieces,buycon1060.atl.mh,15
+57,Flexible cutting Mat,A3 size with Marked Pattern and Grids 18 x 12 inch,2,pieces,buycon1060.atl.mh,15
+58,Stepped Drill Bit,HSS Titanium Coated Hex Shank 4-32 MM Stepped Drill Bit,1,pieces,buycon1060.atl.mh,15
+59,Glue Stick,11mm x 200mm hot melt Glue stick,100,pieces,buycon1060.atl.mh,15
+60,Nuts Bolts and Screw,various size 20 each (20 packet),5,pieces,buycon1060.atl.mh,15
+61,Sand paper,Various Grit-80,10,pieces,buycon1060.atl.mh,15
+62,Various Grit 100,Various Grit-100,10,pieces,buycon1060.atl.mh,15
+63,Various Grit 120,Various Grit- 120,10,pieces,buycon1060.atl.mh,15
+64,NEO 6M GPS Module,NEO-6M GPS Module,10,pieces,buycon1060.atl.mh,15
+65,Tello Drone Battery,Tello Drone Battery,2,pieces,buycon1060.atl.mh,15
+66,Pressure Sensor LPS22HB,Pressure Sensor LPS22HB,10,pieces,buycon1060.atl.mh,15
+67,Prime kit,The PCB board should have handling protection and should have dimensions of 83mm x 50mm,10,pieces,buycon1060.atl.mh,15
+68,male to male jumper wires Bundles,male to male jumper wires(Bundles),5,pieces,buycon1060.atl.mh,15
+69,male to female jumper wires Bundles,male to female jumper wires(Bundles),5,pieces,buycon1060.atl.mh,15
+70,female to female jumper wires Bundles,female to female jumper wires(Bundles),5,pieces,buycon1060.atl.mh,15
+71,512GB SSD,512GB SSD,2,pieces,buycon1060.atl.mh,15
+72,1000 VA microtec,1000 VA microtec,1,pieces,buycon1060.atl.mh,15
+73,19v 3.42 Amp,19v-3.42 Amp,1,pieces,buycon1060.atl.mh,15

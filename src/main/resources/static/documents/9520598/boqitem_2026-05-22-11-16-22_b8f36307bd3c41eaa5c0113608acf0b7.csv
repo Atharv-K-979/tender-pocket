@@ -1,0 +1,72 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,High back chair,Court Room,4,pieces,buyer@rajkot,45
+2,Table for Members,Court Room,4,pieces,buyer@rajkot,45
+3,Table for Court staff,Court Room,4,pieces,buyer@rajkot,45
+4,Table for Authorized Representatives,Court Room,4,pieces,buyer@rajkot,45
+5,Chair for Court Staff,Court Room,4,pieces,buyer@rajkot,45
+6,Chair for ARs,Court Room,12,pieces,buyer@rajkot,45
+7,Chairs for visitors,Court Room,60,pieces,buyer@rajkot,45
+8,Cabinets,Court Room,4,pieces,buyer@rajkot,45
+9,L Shape Table with Attached Pedestrial and Drawers,Member Room,2,pieces,buyer@rajkot,45
+10,Table Back Unit,Member Room,2,pieces,buyer@rajkot,45
+11,High Back Chair,Member Room,2,pieces,buyer@rajkot,45
+12,Mid Back Chair for Visitors,Member Room,12,pieces,buyer@rajkot,45
+13,Sofa 3 Seater,Member Room,2,pieces,buyer@rajkot,45
+14,Sofa 1 Seater,Member Room,4,pieces,buyer@rajkot,45
+15,Coffee Table,Member Room,2,pieces,buyer@rajkot,45
+16,Book Shelf Big,Member Room,2,pieces,buyer@rajkot,45
+17,Officers Table with Drawers,President or Member PS Room,2,pieces,buyer@rajkot,45
+18,Side Table,President or Member PS Room,2,pieces,buyer@rajkot,45
+19,Officers Chair,President or Member PS Room,2,pieces,buyer@rajkot,45
+20,Chair for Visitors,President or Member PS Room,4,pieces,buyer@rajkot,45
+21,Staff Chair,President or Member PS Room,2,pieces,buyer@rajkot,45
+22,Almirah,President or Member PS Room,2,pieces,buyer@rajkot,45
+23,Officers L shape table with drawers,Asstt Registrar Room,1,pieces,buyer@rajkot,45
+24,Side table,Asstt Registrar Room,1,pieces,buyer@rajkot,45
+25,Officers Chair,Asstt Registrar Room,1,pieces,buyer@rajkot,45
+26,Chair for Visitors,Asstt Registrar Room,6,pieces,buyer@rajkot,45
+27,Almirah Small,Asstt Registrar Room,1,pieces,buyer@rajkot,45
+28,Sofa 3 Seater,Asstt Registrar Room,1,pieces,buyer@rajkot,45
+29,Coffee or Lunch Table,Asstt Registrar Room,1,pieces,buyer@rajkot,45
+30,Officers Table with Drawers,Court Officer Room,2,pieces,buyer@rajkot,45
+31,Side Table,Court Officer Room,2,pieces,buyer@rajkot,45
+32,Officers Chair,Court Officer Room,2,pieces,buyer@rajkot,45
+33,Chair for Visitors,Court Officer Room,6,pieces,buyer@rajkot,45
+34,Almirah Small,Court Officer Room,2,pieces,buyer@rajkot,45
+35,Table Big,Conference Room,1,pieces,buyer@rajkot,45
+36,Chairs,Conference Room,16,pieces,buyer@rajkot,45
+37,High back Chair,Conference Room,2,pieces,buyer@rajkot,45
+38,Movable Compactor,Strong/Store Room,2,pieces,buyer@rajkot,45
+39,Almirah,Strong/Store Room,2,pieces,buyer@rajkot,45
+40,Table,Server/ CCTV Room,1,pieces,buyer@rajkot,45
+41,Chair,Server/ CCTV Room,2,pieces,buyer@rajkot,45
+42,Tables,Pantry/canteen,4,pieces,buyer@rajkot,45
+43,Chair,Pantry/canteen,16,pieces,buyer@rajkot,45
+44,Sofa 3-Seater with 2 Arms,Waiting Area,2,pieces,buyer@rajkot,45
+45,Sofa 2-seater with 2 Arms,Waiting Area,4,pieces,buyer@rajkot,45
+46,Table,Waiting Area,2,pieces,buyer@rajkot,45
+47,Chair,Advocate waiting lounge,10,pieces,buyer@rajkot,45
+48,Sofa 3-Seater with 2 Arms,Advocate waiting lounge,1,pieces,buyer@rajkot,45
+49,Front Table,Reception,1,pieces,buyer@rajkot,45
+50,Chair,Reception,4,pieces,buyer@rajkot,45
+51,Side table with Drawers,Reception,1,pieces,buyer@rajkot,45
+52,Table,Seva Kendra,3,pieces,buyer@rajkot,45
+53,Chairs,Seva Kendra,6,pieces,buyer@rajkot,45
+54,Side table,Seva Kendra,2,pieces,buyer@rajkot,45
+55,Sofa 3-Seater with 2 Arms,Seva Kendra,2,pieces,buyer@rajkot,45
+56,Officers Chair,NIC Area,2,pieces,buyer@rajkot,45
+57,Table,NIC Area,2,pieces,buyer@rajkot,45
+58,Chair for Visitors,NIC Area,4,pieces,buyer@rajkot,45
+59,Chair for Staff,NIC Area,2,pieces,buyer@rajkot,45
+60,Workstation  Table,NIC Area,2,pieces,buyer@rajkot,45
+61,Workstation  Table,Work Stations,5,pieces,buyer@rajkot,45
+62,Chair,Work Stations,10,pieces,buyer@rajkot,45
+63,Chair,Drivers and MTS room,4,pieces,buyer@rajkot,45
+64,Book Shelf Big,Library,4,pieces,buyer@rajkot,45
+65,Chair,Library,4,pieces,buyer@rajkot,45
+66,Table,Library,2,pieces,buyer@rajkot,45
+67,Table,Inspection Room,1,pieces,buyer@rajkot,45
+68,Chair,Inspection Room,3,pieces,buyer@rajkot,45
+69,Table,Record Room,2,pieces,buyer@rajkot,45
+70,Chair,Record Room,2,pieces,buyer@rajkot,45
+71,Almirah,Record Room,2,pieces,buyer@rajkot,45

@@ -1,0 +1,23 @@
+Item Number,Item Title,Item Description,Item Quantity,Unit of Measure,Consignee ID,Delivery Period (In number of days)
+1,Disposable Syringe 1 ml,As per attached spec,10000,pieces,CMSDSTORE,15
+2,Disposable Syringe 2 ml,As per attached spec,10000,pieces,CMSDSTORE,15
+3,Disposable Syringe 3 ml,As per attached spec,60000,pieces,CMSDSTORE,15
+4,Disposable Syringe 5 ml,As per attached spec,60000,pieces,CMSDSTORE,15
+5,Disposable Syringe 10 ml,As per attached spec,10000,pieces,CMSDSTORE,15
+6,Surgical Gloves,As per attached spec,20000,pieces,CMSDSTORE,15
+7,Examination Gloves,As per attached spec,20000,pieces,CMSDSTORE,15
+8,Cotton 500 grm,As per attached spec,3500,pieces,CMSDSTORE,15
+9,Glass Slide,As per attached spec,10000,pieces,CMSDSTORE,15
+10,Head Cover,As per attached spec,10000,pieces,CMSDSTORE,15
+11,Shoe Cover,As per attached spec,10000,pieces,CMSDSTORE,15
+12,Surgical Mask 3 Ply,As per attached spec,10000,pieces,CMSDSTORE,15
+13,Sprit,As per attached spec,400,pieces,CMSDSTORE,15
+14,Alchohal Swab,As per attached spec,20000,pieces,CMSDSTORE,15
+15,Lancet,As per attached spec,20000,pieces,CMSDSTORE,15
+16,Distilled Water 5 ltr,As per attached spec,200,pieces,CMSDSTORE,15
+17,Dengue Rapid Card,As per attached spec,6000,pieces,CMSDSTORE,15
+18,HCV Rapid Card,As per attached spec,6000,pieces,CMSDSTORE,15
+19,HIV Rapid Card,As per attached spec,6000,pieces,CMSDSTORE,15
+20,HbsAg Rapid Card,As per attached spec,6000,pieces,CMSDSTORE,15
+21,Leishman Stain 1,As per attached spec,200,pieces,CMSDSTORE,15
+22,Leishman Stain 2,As per attached spec,200,pieces,CMSDSTORE,15
