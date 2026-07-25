@@ -172,7 +172,7 @@ public class TenderController {
                             LocalDate due = LocalDate.parse(dueStr);
                             LocalDate todayDate = LocalDate.parse(todayIST);
                             long days = ChronoUnit.DAYS.between(todayDate, due);
-                            if (days >= 0 && days <= 3) {
+                            if (days >= 1 && days <= 3) {
                                 isDueSoon = true;
                             }
                         } catch (Exception e) {}
