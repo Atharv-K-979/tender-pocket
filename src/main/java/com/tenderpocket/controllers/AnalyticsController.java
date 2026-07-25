@@ -34,7 +34,7 @@ public class AnalyticsController {
 
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
 
-        List<Tender> tenders = "MIS Executive".equalsIgnoreCase(userRole)
+        List<Tender> tenders = ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole))
                 ? tenderRepository.findByMisExecutive(username)
                 : "Specification Team".equalsIgnoreCase(userRole)
                 ? tenderRepository.findByAssignedMisMemberSpec(username)
@@ -86,12 +86,12 @@ public class AnalyticsController {
                     String cleanDue = t.getDueDate().split(" ")[0];
                     LocalDate due = LocalDate.parse(cleanDue);
                     if (cleanDue.equals(todayIST)) {
-                        if ("New".equals(status) || "Lapsed".equals(status) || "Participating".equals(status)) {
+                        if ("New".equals(status) || "Lapsed".equals(status) || "Participating".equals(status) || "Submitted".equals(status)) {
                             t2TodayCount++;
                         }
                     }
                     if (due.isAfter(today) && !due.isAfter(threeDaysLater)) {
-                        if ("New".equals(status) || "Lapsed".equals(status) || "Participating".equals(status)) {
+                        if ("New".equals(status) || "Lapsed".equals(status) || "Participating".equals(status) || "Submitted".equals(status)) {
                             t2_3DaysCount++;
                         }
                     }
