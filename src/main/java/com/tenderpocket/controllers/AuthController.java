@@ -74,9 +74,9 @@ public class AuthController {
 
     @GetMapping("/users")
     public ResponseEntity<?> getUsers(@RequestHeader("x-user-role") String userRole) {
-        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Specification Team".equalsIgnoreCase(userRole)) {
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole) && !"Specification Team".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, MIS Executive, or Specification Team only"));
+                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, Executive, or Specification Team only"));
         }
 
         List<User> rawUsers = userRepository.findAll();
@@ -99,7 +99,7 @@ public class AuthController {
             uMap.put("username", user.getUsername());
             uMap.put("role", user.getRole());
 
-            if ("MIS Executive".equalsIgnoreCase(user.getRole())) {
+            if ("MIS Executive".equalsIgnoreCase(user.getRole()) || "Tender Executive".equalsIgnoreCase(user.getRole())) {
                 List<Tender> tenders = tendersByExec.getOrDefault(user.getUsername(), Collections.emptyList());
                 
                 int live = 0;
@@ -219,10 +219,13 @@ public class AuthController {
 
     @GetMapping("/executives")
     public ResponseEntity<?> getExecutives() {
-        List<User> execs = userRepository.findByRole("MIS Executive");
+        List<User> execs = new ArrayList<>(userRepository.findByRole("MIS Executive"));
+        execs.addAll(userRepository.findByRole("Tender Executive"));
         List<String> result = new ArrayList<>();
         for (User u : execs) {
-            result.add(u.getUsername());
+            if (!result.contains(u.getUsername())) {
+                result.add(u.getUsername());
+            }
         }
         return ResponseEntity.ok(Map.of("success", true, "executives", result));
     }

@@ -122,7 +122,7 @@ public class TenderController {
 
         for (Tender t : list) {
             // Apply role restriction
-            if ("MIS Executive".equalsIgnoreCase(userRole) && !username.equalsIgnoreCase(t.getMisExecutive())) {
+            if (("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) && !username.equalsIgnoreCase(t.getMisExecutive())) {
                 continue;
             }
             if ("Specification Team".equalsIgnoreCase(userRole) && !username.equalsIgnoreCase(t.getAssignedMisMemberSpec())) {
