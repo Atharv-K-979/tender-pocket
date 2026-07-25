@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  tender-pocket-spring:
+    build: .
+    container_name: tender-pocket-java-app
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./tenders.db:/app/tenders.db
+      - ./public/documents:/app/public/documents
+    restart: always
