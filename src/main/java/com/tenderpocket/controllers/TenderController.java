@@ -299,18 +299,20 @@ public class TenderController {
         }
 
         if (body.containsKey("mis_executive")) {
-            String oldExec = tender.getMisExecutive();
             String newExec = (String) body.get("mis_executive");
+            String currentStatus = tender.getStatus();
             tender.setMisExecutive(newExec);
-            tender.setAssignedBy(newExec != null ? username : null);
-            tender.setAssignedAt(newExec != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) : null);
+            tender.setAssignedBy(newExec != null && !newExec.trim().isEmpty() ? username : null);
+            tender.setAssignedAt(newExec != null && !newExec.trim().isEmpty() ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) : null);
 
-            // Auto-participate if currently New/Lapsed
-            if (newExec != null && ("Issued".equalsIgnoreCase(oldExec) || oldExec == null)) {
-                tender.setStatus("Participating");
-                logDetails.add("status auto-changed to 'Participating' on assignment");
+            // Auto-participate if currently New, Issued, or Lapsed
+            if (newExec != null && !newExec.trim().isEmpty()) {
+                if (currentStatus == null || "Issued".equalsIgnoreCase(currentStatus) || "New".equalsIgnoreCase(currentStatus) || "Lapsed".equalsIgnoreCase(currentStatus) || "Lapsed (Unreviewed)".equalsIgnoreCase(currentStatus)) {
+                    tender.setStatus("Participating");
+                    logDetails.add("status auto-changed to 'Participating' on executive assignment");
+                }
             }
-            logDetails.add(newExec != null ? "assigned to executive '" + newExec + "'" : "unassigned executive");
+            logDetails.add(newExec != null && !newExec.trim().isEmpty() ? "assigned to executive '" + newExec + "'" : "unassigned executive");
         }
 
         if (body.containsKey("working_path") || body.containsKey("workingPath")) {
