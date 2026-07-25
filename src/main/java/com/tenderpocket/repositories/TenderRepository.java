@@ -26,6 +26,12 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
     @Query("SELECT DISTINCT t.sector FROM Tender t WHERE t.sector IS NOT NULL AND t.sector != '' AND t.misExecutive = :executive ORDER BY t.sector")
     List<String> findUniqueSectorsByExecutive(String executive);
 
+    @Query("SELECT DISTINCT t.location FROM Tender t WHERE t.location IS NOT NULL AND t.location != '' AND t.assignedMisMemberSpec = :specMember ORDER BY t.location")
+    List<String> findUniqueLocationsBySpecMember(String specMember);
+
+    @Query("SELECT DISTINCT t.sector FROM Tender t WHERE t.sector IS NOT NULL AND t.sector != '' AND t.assignedMisMemberSpec = :specMember ORDER BY t.sector")
+    List<String> findUniqueSectorsBySpecMember(String specMember);
+
     @Query(value = "SELECT t.mis_executive, sh.to_status, sh.changed_at FROM status_history sh JOIN tenders t ON sh.tender_id = t.id", nativeQuery = true)
     List<Object[]> findStatusHistoryStats();
 }

@@ -206,11 +206,15 @@ public class TenderController {
         });
 
         // Get filter options
-        List<String> locations = "MIS Executive".equalsIgnoreCase(userRole)
+        List<String> locations = ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole))
                 ? tenderRepository.findUniqueLocationsByExecutive(username)
+                : "Specification Team".equalsIgnoreCase(userRole)
+                ? tenderRepository.findUniqueLocationsBySpecMember(username)
                 : tenderRepository.findUniqueLocations();
-        List<String> sectors = "MIS Executive".equalsIgnoreCase(userRole)
+        List<String> sectors = ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole))
                 ? tenderRepository.findUniqueSectorsByExecutive(username)
+                : "Specification Team".equalsIgnoreCase(userRole)
+                ? tenderRepository.findUniqueSectorsBySpecMember(username)
                 : tenderRepository.findUniqueSectors();
 
         return ResponseEntity.ok(Map.of(
