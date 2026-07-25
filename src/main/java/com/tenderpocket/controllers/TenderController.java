@@ -147,7 +147,7 @@ public class TenderController {
                 if (!matches) continue;
             }
 
-            // Filter by status
+            // Filter by status or urgency
             if (status != null && !status.isEmpty()) {
                 if ("Pending".equalsIgnoreCase(status) || "Approved".equalsIgnoreCase(status) || "Rejected".equalsIgnoreCase(status)) {
                     if (!status.equalsIgnoreCase(t.getSpecVerificationStatus())) {
@@ -157,6 +157,27 @@ public class TenderController {
                     if (!"Missed Deadline".equalsIgnoreCase(resolvedStatus)
                             && !"Missed Opportunity".equalsIgnoreCase(resolvedStatus)
                             && !"Lapsed".equalsIgnoreCase(resolvedStatus)) {
+                        continue;
+                    }
+                } else if ("T2".equalsIgnoreCase(status) || "Due Today".equalsIgnoreCase(status)) {
+                    boolean isDueToday = t.getDueDate() != null && t.getDueDate().startsWith(todayIST);
+                    if (!isDueToday) {
+                        continue;
+                    }
+                } else if ("T2-3 days".equalsIgnoreCase(status) || "Due in 3 Days".equalsIgnoreCase(status)) {
+                    boolean isDueSoon = false;
+                    if (t.getDueDate() != null && !t.getDueDate().isEmpty()) {
+                        try {
+                            String dueStr = t.getDueDate().split(" ")[0];
+                            LocalDate due = LocalDate.parse(dueStr);
+                            LocalDate todayDate = LocalDate.parse(todayIST);
+                            long days = ChronoUnit.DAYS.between(todayDate, due);
+                            if (days >= 0 && days <= 3) {
+                                isDueSoon = true;
+                            }
+                        } catch (Exception e) {}
+                    }
+                    if (!isDueSoon) {
                         continue;
                     }
                 } else if (!status.equalsIgnoreCase(resolvedStatus)) {
