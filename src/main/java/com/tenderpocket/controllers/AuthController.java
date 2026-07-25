@@ -53,7 +53,7 @@ public class AuthController {
 
         // Auto-seed admin account if missing
         if (!userRepository.existsById("admin")) {
-            userRepository.save(new User("admin", passwordEncoder.encode("admin123"), "Admin", "admin@company.com"));
+            userRepository.save(new User("admin", passwordEncoder.encode("Marken@123$"), "Admin", "admin@company.com"));
         }
 
         Optional<User> opt = userRepository.findById(username);
