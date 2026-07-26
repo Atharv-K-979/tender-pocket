@@ -45,12 +45,13 @@ public class SyncScheduler {
                 System.out.println("[Scheduler] Email sync skipped or failed (check IMAP credentials): " + e.getMessage());
             }
 
-            // 2. Sync GeM portal bids (for today only, hence allDates = false)
+            // 2. Sync GeM portal bids (all active ongoing bids)
             try {
-                int gemCount = geMScraperService.syncTenders(false, Collections.emptyList());
+                int gemCount = geMScraperService.syncTenders(true, Collections.emptyList());
                 System.out.println("[Scheduler] GeM Sync completed. Imported: " + gemCount);
             } catch (Exception e) {
-                System.err.println("[Scheduler] GeM Sync failed: " + e.getMessage());
+                String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+                System.err.println("[Scheduler] GeM Sync failed: " + errorMsg);
             }
 
             // 3. Process SLA and deadline warnings and dispatch alerts

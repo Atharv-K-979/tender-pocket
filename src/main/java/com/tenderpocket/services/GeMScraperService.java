@@ -185,8 +185,9 @@ public class GeMScraperService {
                 Thread.sleep(2500);
 
             } catch (Exception e) {
-                System.err.println(String.format("  - Error syncing GeM for keyword \"%s\": %s", keyword, e.getMessage()));
-                if (e.getMessage().contains("CSRF") || e.getMessage().contains("session")) {
+                String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+                System.err.println(String.format("  - Error syncing GeM for keyword \"%s\": %s", keyword, errorMsg));
+                if (errorMsg.contains("CSRF") || errorMsg.contains("session") || errorMsg.contains("non-200")) {
                     cachedCookieHeader = null;
                     cachedCsrfHash = null;
                 }
