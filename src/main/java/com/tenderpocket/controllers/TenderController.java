@@ -85,9 +85,15 @@ public class TenderController {
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
         }
         try {
-            System.out.println("[API Trigger] Initiating manual Email sync...");
-            int count = emailSyncService.syncEmails();
-            return ResponseEntity.ok(Map.of("success", true, "message", "Email Sync completed successfully", "importedCount", count));
+            System.out.println("[API Trigger] Initiating manual Email sync in background...");
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    emailSyncService.syncEmails();
+                } catch (Exception e) {
+                    System.out.println("[API Trigger] Email sync skipped or unconfigured: " + e.getMessage());
+                }
+            });
+            return ResponseEntity.ok(Map.of("success", true, "message", "Email sync started in the background.", "importedCount", 0));
         } catch (Exception e) {
             System.out.println("[API Trigger] Email sync skipped or unconfigured: " + e.getMessage());
             return ResponseEntity.ok(Map.of("success", true, "message", "Email sync skipped: " + e.getMessage(), "importedCount", 0));
