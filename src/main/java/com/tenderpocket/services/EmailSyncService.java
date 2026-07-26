@@ -57,6 +57,11 @@ public class EmailSyncService {
 
     public int syncEmails() throws Exception {
         int tendersImported = 0;
+        if (imapUsername == null || imapUsername.isEmpty() || imapPassword == null || imapPassword.isEmpty()) {
+            System.out.println("[EmailSync] IMAP credentials not configured. Skipping email sync.");
+            return 0;
+        }
+
         System.out.println(String.format("Connecting to IMAP mail server at %s:%d...", imapHost, imapPort));
 
         Properties properties = new Properties();
@@ -64,19 +69,21 @@ public class EmailSyncService {
         properties.put("mail.imaps.host", imapHost);
         properties.put("mail.imaps.port", String.valueOf(imapPort));
         properties.put("mail.imaps.ssl.enable", "true");
+        properties.put("mail.imaps.connectiontimeout", "5000");
+        properties.put("mail.imaps.timeout", "5000");
 
-        Session emailSession = Session.getDefaultInstance(properties);
+        Session emailSession = Session.getInstance(properties);
         Store store = emailSession.getStore("imaps");
         
-        int retries = 3;
+        int retries = 2;
         for (int i = 0; i < retries; i++) {
             try {
                 store.connect(imapHost, imapUsername, imapPassword);
                 break;
             } catch (Exception e) {
                 if (i == retries - 1) throw e;
-                System.out.println(String.format("[Network Retry] IMAP connection failed: %s. Retrying in 10s...", e.getMessage()));
-                Thread.sleep(10000);
+                System.out.println(String.format("[Network Retry] IMAP connection failed: %s. Retrying in 3s...", e.getMessage()));
+                Thread.sleep(3000);
             }
         }
 
