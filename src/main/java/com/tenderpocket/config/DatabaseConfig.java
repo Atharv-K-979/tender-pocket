@@ -15,10 +15,10 @@ public class DatabaseConfig {
     @Value("${spring.datasource.url}")
     private String dbUrl;
 
-    @Value("${SPRING_DATASOURCE_USERNAME:${DATABASE_USERNAME:}}")
+    @Value("${SPRING_DATASOURCE_USERNAME:${spring.datasource.username:}}")
     private String username;
 
-    @Value("${SPRING_DATASOURCE_PASSWORD:${DATABASE_PASSWORD:}}")
+    @Value("${SPRING_DATASOURCE_PASSWORD:${spring.datasource.password:}}")
     private String password;
 
     @Bean
