@@ -16,10 +16,10 @@ public class Tender {
     @Column(name = "ref_no")
     private String refNo;
 
-    @Column(name = "title", nullable = false)
+    @Column(name = "title", nullable = false, columnDefinition = "TEXT")
     private String title;
 
-    @Column(name = "authority")
+    @Column(name = "authority", columnDefinition = "TEXT")
     private String authority;
 
     @Column(name = "estimated_cost")
@@ -40,7 +40,7 @@ public class Tender {
     @Column(name = "document_fee_raw")
     private String documentFeeRaw;
 
-    @Column(name = "location")
+    @Column(name = "location", columnDefinition = "TEXT")
     private String location;
 
     @Column(name = "sector")
@@ -52,19 +52,19 @@ public class Tender {
     @Column(name = "opening_date")
     private String openingDate;
 
-    @Column(name = "document_url")
+    @Column(name = "document_url", columnDefinition = "TEXT")
     private String documentUrl;
 
-    @Column(name = "downloaded_docs")
+    @Column(name = "downloaded_docs", columnDefinition = "TEXT")
     private String downloadedDocs;
 
-    @Column(name = "original_url", nullable = false)
+    @Column(name = "original_url", nullable = false, columnDefinition = "TEXT")
     private String originalUrl;
 
     @Column(name = "status")
     private String status = "Issued";
 
-    @Column(name = "notes")
+    @Column(name = "notes", columnDefinition = "TEXT")
     private String notes = "";
 
     @Column(name = "scraped_at", nullable = false)
@@ -112,13 +112,13 @@ public class Tender {
     @Column(name = "pre_bid_date")
     private String preBidDate;
 
-    @Column(name = "corrigendum_remark")
+    @Column(name = "corrigendum_remark", columnDefinition = "TEXT")
     private String corrigendumRemark;
 
-    @Column(name = "product_name_as_per_tender")
+    @Column(name = "product_name_as_per_tender", columnDefinition = "TEXT")
     private String productNameAsPerTender;
 
-    @Column(name = "product_name_as_per_marken")
+    @Column(name = "product_name_as_per_marken", columnDefinition = "TEXT")
     private String productNameAsPerMarken;
 
     @Column(name = "bid_qty")
@@ -127,13 +127,13 @@ public class Tender {
     @Column(name = "quoted_qty")
     private Integer quotedQty;
 
-    @Column(name = "ai_details_summary")
+    @Column(name = "ai_details_summary", columnDefinition = "TEXT")
     private String aiDetailsSummary;
 
-    @Column(name = "ai_history_summary")
+    @Column(name = "ai_history_summary", columnDefinition = "TEXT")
     private String aiHistorySummary;
 
-    @Column(name = "working_path")
+    @Column(name = "working_path", columnDefinition = "TEXT")
     private String workingPath;
 
     @Column(name = "assigned_mis_member")
@@ -163,7 +163,7 @@ public class Tender {
     @Column(name = "emd_payment_date")
     private String emdPaymentDate;
 
-    @Column(name = "loss_reason")
+    @Column(name = "loss_reason", columnDefinition = "TEXT")
     private String lossReason;
 
     @Column(name = "payment_status")
