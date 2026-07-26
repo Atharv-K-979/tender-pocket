@@ -272,6 +272,24 @@ public class GeMScraperService {
         return false;
     }
 
+    private HttpClient buildHttpClient() {
+        HttpClient.Builder builder = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .connectTimeout(java.time.Duration.ofSeconds(15));
+
+        String proxyHost = System.getenv("HTTP_PROXY_HOST");
+        String proxyPort = System.getenv("HTTP_PROXY_PORT");
+        if (proxyHost != null && !proxyHost.isEmpty() && proxyPort != null && !proxyPort.isEmpty()) {
+            try {
+                builder.proxy(java.net.ProxySelector.of(new java.net.InetSocketAddress(proxyHost, Integer.parseInt(proxyPort))));
+            } catch (Exception e) {
+                System.err.println("Failed to set HTTP proxy: " + e.getMessage());
+            }
+        }
+        return builder.build();
+    }
+
     private JsonNode searchKeyword(String keyword) throws Exception {
         getCredentials();
 
@@ -294,14 +312,20 @@ public class GeMScraperService {
 
         String payloadStr = objectMapper.writeValueAsString(payload);
 
-        HttpClient client = HttpClient.newHttpClient();
+        HttpClient client = buildHttpClient();
         String formBody = "payload=" + java.net.URLEncoder.encode(payloadStr, "UTF-8") +
                 "&csrf_bd_gem_nk=" + cachedCsrfHash;
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("User-Agent", "Mozilla/5.0")
+                .version(HttpClient.Version.HTTP_1_1)
+                .timeout(java.time.Duration.ofSeconds(20))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .header("Accept-Language", "en-US,en;q=0.9")
                 .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+                .header("Referer", "https://bidplus.gem.gov.in/all-bids")
+                .header("X-Requested-With", "XMLHttpRequest")
                 .header("Cookie", cachedCookieHeader)
                 .POST(HttpRequest.BodyPublishers.ofString(formBody))
                 .build();
@@ -323,13 +347,15 @@ public class GeMScraperService {
 
         String mainUrl = "https://bidplus.gem.gov.in/all-bids";
         
-        HttpClient client = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.ALWAYS)
-                .build();
+        HttpClient client = buildHttpClient();
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(mainUrl))
-                .header("User-Agent", "Mozilla/5.0")
+                .version(HttpClient.Version.HTTP_1_1)
+                .timeout(java.time.Duration.ofSeconds(20))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
                 .GET()
                 .build();
 
