@@ -36,6 +36,9 @@ public class TenderController {
     private ActivityLogRepository activityLogRepository;
 
     @Autowired
+    private com.tenderpocket.repositories.StatusHistoryRepository statusHistoryRepository;
+
+    @Autowired
     private DocumentGeneratorService documentGeneratorService;
 
     @Autowired
@@ -286,6 +289,11 @@ public class TenderController {
             String newStatus = (String) body.get("status");
             tender.setStatus(newStatus);
             logDetails.add("status changed from '" + oldStatus + "' to '" + newStatus + "'");
+
+            try {
+                String nowStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+                statusHistoryRepository.save(new com.tenderpocket.models.StatusHistory(id, oldStatus, newStatus, username, nowStr));
+            } catch (Exception e) {}
         }
 
         if (body.containsKey("notes")) {
@@ -575,7 +583,13 @@ public class TenderController {
 
     @GetMapping("/stats")
     public ResponseEntity<?> getStats() {
-        List<Object[]> rows = tenderRepository.findStatusHistoryStats();
+        List<Object[]> rows;
+        try {
+            rows = tenderRepository.findStatusHistoryStats();
+        } catch (Exception e) {
+            System.out.println("[Stats] Status history query fallback: " + e.getMessage());
+            rows = Collections.emptyList();
+        }
         Map<String, Map<String, Object>> statsMap = new HashMap<>();
 
         LocalDate today = LocalDate.now();
