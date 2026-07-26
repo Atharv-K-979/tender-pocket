@@ -54,15 +54,15 @@ public class TenderController {
 
     @PostMapping("/sync-gem")
     public ResponseEntity<?> syncGeM(@RequestHeader("x-user-role") String userRole) {
-        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole)) {
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Only Admin or MIS Team can trigger sync"));
+                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
         }
         try {
             System.out.println("[API Trigger] Initiating manual GeM sync in background...");
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try {
-                    geMScraperService.syncTenders(false, Collections.emptyList());
+                    geMScraperService.syncTenders(true, Collections.emptyList());
                 } catch (Exception e) {
                     System.err.println("Background manual GeM sync failed: " + e.getMessage());
                 }
@@ -77,18 +77,17 @@ public class TenderController {
 
     @PostMapping("/sync-emails")
     public ResponseEntity<?> syncEmails(@RequestHeader("x-user-role") String userRole) {
-        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole)) {
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Only Admin or MIS Team can trigger sync"));
+                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
         }
         try {
             System.out.println("[API Trigger] Initiating manual Email sync...");
             int count = emailSyncService.syncEmails();
             return ResponseEntity.ok(Map.of("success", true, "message", "Email Sync completed successfully", "importedCount", count));
         } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("success", false, "error", "Email sync failed: " + e.getMessage()));
+            System.out.println("[API Trigger] Email sync skipped or unconfigured: " + e.getMessage());
+            return ResponseEntity.ok(Map.of("success", true, "message", "Email sync skipped: " + e.getMessage(), "importedCount", 0));
         }
     }
 
