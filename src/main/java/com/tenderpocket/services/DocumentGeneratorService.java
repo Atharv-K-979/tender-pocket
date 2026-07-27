@@ -159,8 +159,11 @@ public class DocumentGeneratorService {
         p0.setSpacingAfter(0);
         XWPFRun rLogo = p0.createRun();
         try {
-            try (InputStream logoStream = java.nio.file.Files.newInputStream(java.nio.file.Paths.get("public/images/logo.png"))) {
-                rLogo.addPicture(logoStream, XWPFDocument.PICTURE_TYPE_PNG, "logo.png", 857250, 714375);
+            byte[] logoData = loadImageBytes("public/images/logo.png", "/static/images/logo.png");
+            if (logoData != null) {
+                try (InputStream logoStream = new java.io.ByteArrayInputStream(logoData)) {
+                    rLogo.addPicture(logoStream, XWPFDocument.PICTURE_TYPE_PNG, "logo.png", 857250, 714375);
+                }
             }
         } catch (Exception e) {}
 
@@ -235,8 +238,11 @@ public class DocumentGeneratorService {
         p2.setAlignment(ParagraphAlignment.RIGHT);
         XWPFRun rPartner = p2.createRun();
         try {
-            try (InputStream partnerStream = java.nio.file.Files.newInputStream(java.nio.file.Paths.get("public/images/partner.png"))) {
-                rPartner.addPicture(partnerStream, XWPFDocument.PICTURE_TYPE_PNG, "partner.png", 1000125, 714375);
+            byte[] partnerData = loadImageBytes("public/images/partner.png", "/static/images/partner.png");
+            if (partnerData != null) {
+                try (InputStream partnerStream = new java.io.ByteArrayInputStream(partnerData)) {
+                    rPartner.addPicture(partnerStream, XWPFDocument.PICTURE_TYPE_PNG, "partner.png", 1000125, 714375);
+                }
             }
         } catch (Exception e) {}
 
@@ -341,13 +347,19 @@ public class DocumentGeneratorService {
         XWPFParagraph pSig = doc.createParagraph();
         XWPFRun rSig = pSig.createRun();
         try {
-            try (InputStream stampStream = java.nio.file.Files.newInputStream(java.nio.file.Paths.get("public/images/stamp.png"))) {
-                rSig.addPicture(stampStream, XWPFDocument.PICTURE_TYPE_PNG, "stamp.png", 666750, 666750);
+            byte[] stampData = loadImageBytes("public/images/stamp.png", "/static/images/stamp.png");
+            if (stampData != null) {
+                try (InputStream stampStream = new java.io.ByteArrayInputStream(stampData)) {
+                    rSig.addPicture(stampStream, XWPFDocument.PICTURE_TYPE_PNG, "stamp.png", 666750, 666750);
+                }
             }
         } catch (Exception e) {}
         try {
-            try (InputStream sigStream = java.nio.file.Files.newInputStream(java.nio.file.Paths.get("public/images/signature.png"))) {
-                rSig.addPicture(sigStream, XWPFDocument.PICTURE_TYPE_PNG, "signature.png", 571500, 381000);
+            byte[] sigData = loadImageBytes("public/images/signature.png", "/static/images/signature.png");
+            if (sigData != null) {
+                try (InputStream sigStream = new java.io.ByteArrayInputStream(sigData)) {
+                    rSig.addPicture(sigStream, XWPFDocument.PICTURE_TYPE_PNG, "signature.png", 571500, 381000);
+                }
             }
         } catch (Exception e) {}
 
@@ -1394,5 +1406,22 @@ public class DocumentGeneratorService {
             return m.group();
         }
         return "10";
+    }
+
+    private byte[] loadImageBytes(String relativePath, String resourcePath) {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(relativePath);
+            if (java.nio.file.Files.exists(path)) {
+                return java.nio.file.Files.readAllBytes(path);
+            }
+        } catch (Exception ignored) {}
+
+        try (java.io.InputStream in = getClass().getResourceAsStream(resourcePath)) {
+            if (in != null) {
+                return in.readAllBytes();
+            }
+        } catch (Exception ignored) {}
+
+        return null;
     }
 }
