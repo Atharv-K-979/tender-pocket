@@ -166,12 +166,21 @@ public class AuthController {
                 if (adminUser == null || adminUser.isEmpty()) adminUser = jwtUtil.extractUsername(token);
             } catch (Exception ignored) {}
         }
-        if (adminRole == null || adminRole.isEmpty()) adminRole = "Admin";
-        if (adminRole != null && !adminRole.isEmpty()) {
-            if (!"Admin".equalsIgnoreCase(adminRole) && !"MIS Team".equalsIgnoreCase(adminRole) && !"MIS Executive".equalsIgnoreCase(adminRole) && !"Tender Executive".equalsIgnoreCase(adminRole) && !"Specification Team".equalsIgnoreCase(adminRole)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("success", false, "error", "Access denied: Authorized team members only"));
+
+        // Fetch real role from database for logged in user to guarantee accuracy
+        if (adminUser != null && !adminUser.isEmpty()) {
+            Optional<User> uOpt = userRepository.findById(adminUser);
+            if (uOpt.isPresent()) {
+                adminRole = uOpt.get().getRole();
             }
+        }
+
+        if (adminRole == null || adminRole.isEmpty()) adminRole = "Admin";
+
+        // Strictly enforce Admin only for creating management roles
+        if (!"Admin".equalsIgnoreCase(adminRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Access denied: Admin role required to create team members"));
         }
 
         String username = body.get("username");
@@ -219,14 +228,19 @@ public class AuthController {
                 if (adminUser == null || adminUser.isEmpty()) adminUser = jwtUtil.extractUsername(token);
             } catch (Exception ignored) {}
         }
-        if (adminRole == null || adminRole.isEmpty()) adminRole = "Admin";
-        if (adminUser == null || adminUser.isEmpty()) adminUser = "admin";
 
-        if (adminRole != null && !adminRole.isEmpty()) {
-            if (!"Admin".equalsIgnoreCase(adminRole) && !"MIS Team".equalsIgnoreCase(adminRole) && !"MIS Executive".equalsIgnoreCase(adminRole)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("success", false, "error", "Access denied: Authorized team members only"));
+        if (adminUser != null && !adminUser.isEmpty()) {
+            Optional<User> uOpt = userRepository.findById(adminUser);
+            if (uOpt.isPresent()) {
+                adminRole = uOpt.get().getRole();
             }
+        }
+
+        if (adminRole == null || adminRole.isEmpty()) adminRole = "Admin";
+
+        if (!"Admin".equalsIgnoreCase(adminRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Access denied: Admin role required to delete team members"));
         }
 
         if (username == null || "admin".equalsIgnoreCase(username.trim())) {
