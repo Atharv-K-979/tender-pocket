@@ -48,6 +48,9 @@ public class DatabaseConfig {
             }
         }
 
+        // Auto-create database if it doesn't exist on local PostgreSQL server
+        createDatabaseIfNotExist(finalUrl, username, password);
+
         config.setDriverClassName("org.postgresql.Driver");
         config.setJdbcUrl(finalUrl);
 
@@ -84,5 +87,28 @@ public class DatabaseConfig {
         config.setLeakDetectionThreshold(60000);
 
         return new HikariDataSource(config);
+    }
+
+    private void createDatabaseIfNotExist(String jdbcUrl, String user, String pass) {
+        if (jdbcUrl == null || !jdbcUrl.startsWith("jdbc:postgresql:")) return;
+        try {
+            String clean = jdbcUrl.replace("jdbc:postgresql://", "");
+            if (clean.contains("@")) clean = clean.split("@")[1];
+            String hostPortAndDb = clean.split("\\?")[0];
+            String[] parts = hostPortAndDb.split("/");
+            if (parts.length < 2) return;
+            
+            String hostPort = parts[0];
+            String dbName = parts[1];
+
+            String baseUrl = "jdbc:postgresql://" + hostPort + "/postgres";
+            try (java.sql.Connection conn = java.sql.DriverManager.getConnection(baseUrl, user, pass);
+                 java.sql.Statement stmt = conn.createStatement()) {
+                stmt.executeUpdate("CREATE DATABASE \"" + dbName + "\"");
+                System.out.println("[DatabaseConfig] Auto-created PostgreSQL database: " + dbName);
+            } catch (Exception ignored) {
+                // Database already exists
+            }
+        } catch (Exception ignored) {}
     }
 }
