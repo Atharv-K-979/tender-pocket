@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for Tender Pocket Java Spring Boot Application
+# Multi-stage Dockerfile for Tender Pocket Java Spring Boot Application (PostgreSQL)
 
 # Stage 1: Build JAR with Maven
 FROM maven:3.9-eclipse-temurin-21-alpine AS build
@@ -12,8 +12,8 @@ RUN mvn package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-# Ensure directories for SQLite database and uploaded documents
-RUN mkdir -p /app/data /app/public/documents
+# Ensure directory for downloaded tender document PDFs
+RUN mkdir -p /app/public/documents
 
 # Copy built JAR from build stage
 COPY --from=build /app/target/tender-pocket-spring-0.0.1-SNAPSHOT.jar app.jar

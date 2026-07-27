@@ -1,15 +1,42 @@
 version: '3.8'
 
 services:
-  tender-pocket-spring:
-    build: .
-    container_name: tender-pocket-java-app
-    ports:
-      - "8080:8080"
-    environment:
-      - PORT=8080
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-    volumes:
-      - ./tenders.db:/app/tenders.db
-      - ./public/documents:/app/public/documents
+  postgres:
+    image: postgres:16-alpine
+    container_name: tender_pocket_postgres
     restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-tender_pocket}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres_secret_123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-tender_pocket}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: tender_pocket_app
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${DB_NAME:-tender_pocket}?sslmode=disable
+      - SPRING_DATASOURCE_USERNAME=${DB_USER:-postgres}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-postgres_secret_123}
+      - IMAP_USERNAME=${IMAP_USERNAME:-}
+      - IMAP_PASSWORD=${IMAP_PASSWORD:-}
+      - IMAP_SENDER_FILTER=${IMAP_SENDER_FILTER:-admin@bidsnrfp.com}
+    volumes:
+      - ./public/documents:/app/public/documents
+
+volumes:
+  postgres_data:
