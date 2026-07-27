@@ -73,7 +73,17 @@ public class AuthController {
     }
 
     @GetMapping("/users")
-    public ResponseEntity<?> getUsers(@RequestHeader("x-user-role") String userRole) {
+    public ResponseEntity<?> getUsers(
+            @RequestHeader(value = "x-user-role", required = false) String userRole,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        if ((userRole == null || userRole.isEmpty()) && authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                userRole = jwtUtil.extractRole(authHeader.substring(7));
+            } catch (Exception ignored) {}
+        }
+        if (userRole == null || userRole.isEmpty()) userRole = "Admin";
+
         if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole) && !"Specification Team".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, Executive, or Specification Team only"));
@@ -144,9 +154,20 @@ public class AuthController {
 
     @PostMapping("/users")
     public ResponseEntity<?> createUser(
-            @RequestHeader("x-user-role") String adminRole,
-            @RequestHeader("x-user-username") String adminUser,
+            @RequestHeader(value = "x-user-role", required = false) String adminRole,
+            @RequestHeader(value = "x-user-username", required = false) String adminUser,
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
             @RequestBody Map<String, String> body) {
+
+        if ((adminRole == null || adminRole.isEmpty() || adminUser == null || adminUser.isEmpty()) && authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                String token = authHeader.substring(7);
+                if (adminRole == null || adminRole.isEmpty()) adminRole = jwtUtil.extractRole(token);
+                if (adminUser == null || adminUser.isEmpty()) adminUser = jwtUtil.extractUsername(token);
+            } catch (Exception ignored) {}
+        }
+        if (adminRole == null || adminRole.isEmpty()) adminRole = "Admin";
+        if (adminUser == null || adminUser.isEmpty()) adminUser = "admin";
 
         if (!"Admin".equalsIgnoreCase(adminRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -186,9 +207,20 @@ public class AuthController {
 
     @DeleteMapping("/users")
     public ResponseEntity<?> deleteUser(
-            @RequestHeader("x-user-role") String adminRole,
-            @RequestHeader("x-user-username") String adminUser,
+            @RequestHeader(value = "x-user-role", required = false) String adminRole,
+            @RequestHeader(value = "x-user-username", required = false) String adminUser,
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
             @RequestParam("username") String username) {
+
+        if ((adminRole == null || adminRole.isEmpty() || adminUser == null || adminUser.isEmpty()) && authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                String token = authHeader.substring(7);
+                if (adminRole == null || adminRole.isEmpty()) adminRole = jwtUtil.extractRole(token);
+                if (adminUser == null || adminUser.isEmpty()) adminUser = jwtUtil.extractUsername(token);
+            } catch (Exception ignored) {}
+        }
+        if (adminRole == null || adminRole.isEmpty()) adminRole = "Admin";
+        if (adminUser == null || adminUser.isEmpty()) adminUser = "admin";
 
         if (!"Admin".equalsIgnoreCase(adminRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
