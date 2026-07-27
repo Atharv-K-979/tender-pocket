@@ -40,6 +40,14 @@ public class DatabaseConfig {
             finalUrl = finalUrl.replace("postgresql://", "jdbc:postgresql://");
         }
 
+        // Auto-convert internal Render hostname to external hostname if running locally outside Render cloud
+        if (System.getenv("RENDER") == null && finalUrl.contains("dpg-") && !finalUrl.contains(".render.com")) {
+            finalUrl = finalUrl.replace("dpg-d9iounv41pts73bisb50-a", "dpg-d9iounv41pts73bisb50-a.singapore-postgres.render.com");
+            if (!finalUrl.contains("sslmode=")) {
+                finalUrl += (finalUrl.contains("?") ? "&" : "?") + "sslmode=require";
+            }
+        }
+
         config.setJdbcUrl(finalUrl);
 
         if (finalUrl.startsWith("jdbc:postgresql:")) {
