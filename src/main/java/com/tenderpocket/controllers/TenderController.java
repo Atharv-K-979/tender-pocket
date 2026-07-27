@@ -659,4 +659,30 @@ public class TenderController {
 
         return ResponseEntity.ok(Map.of("success", true, "stats", new ArrayList<>(statsMap.values())));
     }
+
+    @GetMapping("/documents/{id}/{fileName:.+}")
+    public ResponseEntity<org.springframework.core.io.Resource> downloadDocumentFile(
+            @PathVariable("id") String id,
+            @PathVariable("fileName") String fileName) {
+        try {
+            java.nio.file.Path filePath = java.nio.file.Paths.get("public/documents", id, fileName).toAbsolutePath().normalize();
+            java.io.File file = filePath.toFile();
+            if (!file.exists()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(filePath.toUri());
+            String contentType = java.nio.file.Files.probeContentType(filePath);
+            if (contentType == null) {
+                contentType = "application/octet-stream";
+            }
+
+            return ResponseEntity.ok()
+                    .contentType(org.springframework.http.MediaType.parseMediaType(contentType))
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
+                    .body(resource);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 }
