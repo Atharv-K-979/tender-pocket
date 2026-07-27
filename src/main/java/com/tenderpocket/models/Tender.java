@@ -5,8 +5,19 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import jakarta.persistence.Index;
+
 @Entity
-@Table(name = "tenders")
+@Table(name = "tenders", indexes = {
+    @Index(name = "idx_tenders_status", columnList = "status"),
+    @Index(name = "idx_tenders_due_date", columnList = "due_date"),
+    @Index(name = "idx_tenders_mis_executive", columnList = "mis_executive"),
+    @Index(name = "idx_tenders_location", columnList = "location"),
+    @Index(name = "idx_tenders_sector", columnList = "sector"),
+    @Index(name = "idx_tenders_scraped_at", columnList = "scraped_at"),
+    @Index(name = "idx_tenders_source", columnList = "source"),
+    @Index(name = "idx_tenders_ref_no", columnList = "ref_no")
+})
 public class Tender {
 
     @Id
