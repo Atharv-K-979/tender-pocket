@@ -48,36 +48,32 @@ public class DatabaseConfig {
             }
         }
 
+        config.setDriverClassName("org.postgresql.Driver");
         config.setJdbcUrl(finalUrl);
 
-        if (finalUrl.startsWith("jdbc:postgresql:")) {
-            config.setDriverClassName("org.postgresql.Driver");
-            if (username != null && !username.isEmpty()) {
-                config.setUsername(username);
-            }
-            if (password != null && !password.isEmpty()) {
-                config.setPassword(password);
-            }
-            // Parse inline credentials if present (postgres://user:pass@host/db)
-            if (finalUrl.contains("@")) {
-                try {
-                    String clean = finalUrl.replace("jdbc:postgresql://", "");
-                    String userInfo = clean.split("@")[0];
-                    String[] userPass = userInfo.split(":");
-                    if (userPass.length >= 1) config.setUsername(userPass[0]);
-                    if (userPass.length >= 2) config.setPassword(userPass[1]);
-                    
-                    String hostAndDb = clean.split("@")[1];
-                    config.setJdbcUrl("jdbc:postgresql://" + hostAndDb);
-                } catch (Exception e) {
-                    System.err.println("[DatabaseConfig] Error parsing PostgreSQL URL credentials: " + e.getMessage());
-                }
-            }
-            System.out.println("[DatabaseConfig] Auto-configured PostgreSQL DataSource successfully.");
-        } else {
-            config.setDriverClassName("org.sqlite.JDBC");
-            System.out.println("[DatabaseConfig] Auto-configured SQLite DataSource successfully.");
+        if (username != null && !username.isEmpty()) {
+            config.setUsername(username);
         }
+        if (password != null && !password.isEmpty()) {
+            config.setPassword(password);
+        }
+
+        // Parse inline credentials if present (postgres://user:pass@host/db)
+        if (finalUrl.contains("@")) {
+            try {
+                String clean = finalUrl.replace("jdbc:postgresql://", "");
+                String userInfo = clean.split("@")[0];
+                String[] userPass = userInfo.split(":");
+                if (userPass.length >= 1) config.setUsername(userPass[0]);
+                if (userPass.length >= 2) config.setPassword(userPass[1]);
+                
+                String hostAndDb = clean.split("@")[1];
+                config.setJdbcUrl("jdbc:postgresql://" + hostAndDb);
+            } catch (Exception e) {
+                System.err.println("[DatabaseConfig] Error parsing PostgreSQL URL credentials: " + e.getMessage());
+            }
+        }
+        System.out.println("[DatabaseConfig] Configured PostgreSQL DataSource successfully.");
 
         config.setMaximumPoolSize(25);
         config.setMinimumIdle(5);
