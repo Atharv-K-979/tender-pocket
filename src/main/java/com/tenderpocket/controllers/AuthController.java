@@ -167,11 +167,11 @@ public class AuthController {
             } catch (Exception ignored) {}
         }
         if (adminRole == null || adminRole.isEmpty()) adminRole = "Admin";
-        if (adminUser == null || adminUser.isEmpty()) adminUser = "admin";
-
-        if (!"Admin".equalsIgnoreCase(adminRole)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Admin only"));
+        if (adminRole != null && !adminRole.isEmpty()) {
+            if (!"Admin".equalsIgnoreCase(adminRole) && !"MIS Team".equalsIgnoreCase(adminRole) && !"MIS Executive".equalsIgnoreCase(adminRole) && !"Tender Executive".equalsIgnoreCase(adminRole) && !"Specification Team".equalsIgnoreCase(adminRole)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "error", "Access denied: Authorized team members only"));
+            }
         }
 
         String username = body.get("username");
@@ -196,7 +196,7 @@ public class AuthController {
 
         // Audit Log
         ActivityLog log = new ActivityLog(
-                adminUser, "Admin", "Created User", null,
+                adminUser, adminRole, "Created User", null,
                 new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
                 "Created user account: " + username + " with role: " + role
         );
@@ -222,9 +222,11 @@ public class AuthController {
         if (adminRole == null || adminRole.isEmpty()) adminRole = "Admin";
         if (adminUser == null || adminUser.isEmpty()) adminUser = "admin";
 
-        if (!"Admin".equalsIgnoreCase(adminRole)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Admin only"));
+        if (adminRole != null && !adminRole.isEmpty()) {
+            if (!"Admin".equalsIgnoreCase(adminRole) && !"MIS Team".equalsIgnoreCase(adminRole) && !"MIS Executive".equalsIgnoreCase(adminRole)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "error", "Access denied: Authorized team members only"));
+            }
         }
 
         if (username == null || "admin".equalsIgnoreCase(username.trim())) {
