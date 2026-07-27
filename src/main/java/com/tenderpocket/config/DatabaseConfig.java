@@ -25,8 +25,14 @@ public class DatabaseConfig {
     @Primary
     public DataSource dataSource() {
         HikariConfig config = new HikariConfig();
-        
-        String finalUrl = dbUrl;
+
+        String envUrl = System.getenv("SPRING_DATASOURCE_URL");
+        if (envUrl == null || envUrl.isEmpty()) {
+            envUrl = System.getenv("DATABASE_URL");
+        }
+
+        String finalUrl = (envUrl != null && !envUrl.isEmpty()) ? envUrl : dbUrl;
+
         // Convert postgres:// or postgresql:// URI format to jdbc:postgresql://
         if (finalUrl.startsWith("postgres://")) {
             finalUrl = finalUrl.replace("postgres://", "jdbc:postgresql://");
