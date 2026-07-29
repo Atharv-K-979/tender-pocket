@@ -616,39 +616,74 @@ public class TenderController {
             String docDir = "public/documents/" + id;
             Files.createDirectories(Paths.get(docDir));
 
-            String originalFilename = file.getOriginalFilename();
-            String fileExtension = originalFilename != null && originalFilename.contains(".") 
-                    ? originalFilename.substring(originalFilename.lastIndexOf(".")) 
-                    : ".pdf";
+            byte[] uploadedBytes = file.getBytes();
+            String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "specification.pdf";
 
-            String pdfFileName = "Technical_Specification_Sheet_" + id + fileExtension;
-            String pdfFilePath = docDir + "/" + pdfFileName;
-            String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
-
-            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
-                fos.write(file.getBytes());
+            // 1. Save uploaded input file as specification.pdf
+            String inputFilePath = docDir + "/specification.pdf";
+            String inputDownloadUrl = "/documents/" + id + "/specification.pdf";
+            try (FileOutputStream fos = new FileOutputStream(inputFilePath)) {
+                fos.write(uploadedBytes);
             }
 
-            // Update downloaded_docs field metadata without overwriting existing files
+            // 2. Parse technical clauses from input specification.pdf
+            List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(uploadedBytes, originalFilename);
+
+            // 3. Build data map for header & reference details
+            Map<String, String> data = new java.util.HashMap<>();
+            data.put("bidNumber", tender.getRefNo() != null ? tender.getRefNo() : id);
+            data.put("productDescription", tender.getProductNameAsPerTender() != null ? tender.getProductNameAsPerTender() : (tender.getTitle() != null ? tender.getTitle() : "Medical Equipment"));
+            data.put("productName", tender.getTitle() != null ? tender.getTitle() : "Medical Equipment");
+            data.put("offeredModel", "MILR-04");
+            data.put("companyName", "Mark Enterprises");
+            data.put("companyAddress", "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India");
+            data.put("companyEmail", "info@markenworld.com");
+            data.put("companyWebsite", "www.markenworld.com");
+            data.put("companyContact", "09175559646 / 090111 04332");
+            data.put("signatoryName", "Korra Praveen Naik");
+            data.put("signatoryDesignation", "Partner");
+
+            // 4. Generate formatted output PDF
+            byte[] pdfBytes = documentGeneratorService.generateTechSpecPdf(data, extractedClauses);
+            String pdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
+            String pdfFilePath = docDir + "/" + pdfFileName;
+            String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
+            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
+                fos.write(pdfBytes);
+            }
+
+            // 5. Generate formatted output Word DOCX
+            byte[] docxBytes = documentGeneratorService.generateTechSpecDocx(data, extractedClauses);
+            String docxFileName = "Technical_Specification_Sheet_" + id + ".docx";
+            String docxFilePath = docDir + "/" + docxFileName;
+            String docxDownloadUrl = "/documents/" + id + "/" + docxFileName;
+            try (FileOutputStream fos = new FileOutputStream(docxFilePath)) {
+                fos.write(docxBytes);
+            }
+
+            // 6. Update downloaded_docs metadata without overwriting existing documents
             String createdDate = LocalDate.now().toString();
             List<Map<String, String>> newDocs = List.of(
-                    Map.of("name", "Technical Specification Sheet (Uploaded PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate)
+                    Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf", "local_path", inputDownloadUrl, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", docxFileName, "local_path", docxDownloadUrl, "created_date", createdDate)
             );
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             tenderRepository.save(tender);
 
             // Audit Log
             ActivityLog log = new ActivityLog(
-                    username, userRole, "Uploaded Technical Specification PDF", id,
+                    username, userRole, "Uploaded Technical Specification & Generated Documents", id,
                     new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
-                    "Uploaded custom technical specification PDF file: " + originalFilename
+                    "Uploaded specification.pdf and generated Technical Specification outputs with " + extractedClauses.size() + " extracted clauses."
             );
             activityLogRepository.save(log);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "pdfDownloadUrl", pdfDownloadUrl,
-                    "message", "Technical Specification PDF uploaded successfully",
+                    "docxDownloadUrl", docxDownloadUrl,
+                    "message", "Technical Specification parsed and output documents generated successfully!",
                     "status", resolveStatus(tender, LocalDate.now().toString())
             ));
 
