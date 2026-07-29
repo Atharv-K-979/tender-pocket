@@ -521,6 +521,86 @@ public class TenderController {
         }
     }
 
+    @PostMapping("/{id}/generate-tech-specs")
+    public ResponseEntity<?> generateTechSpecs(
+            @RequestHeader(value = "x-user-role", defaultValue = "Executive") String userRole,
+            @RequestHeader(value = "x-user-username", defaultValue = "system") String username,
+            @PathVariable("id") String id,
+            @RequestBody Map<String, String> body) {
+
+        Optional<Tender> opt = tenderRepository.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+        }
+
+        Tender tender = opt.get();
+
+        try {
+            String docDir = "public/documents/" + id;
+            Files.createDirectories(Paths.get(docDir));
+
+            // Generate Technical Specification PDF
+            byte[] pdfBytes = documentGeneratorService.generateTechSpecPdf(body);
+            String pdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
+            String pdfFilePath = docDir + "/" + pdfFileName;
+            String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
+            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
+                fos.write(pdfBytes);
+            }
+
+            // Generate Technical Specification DOCX
+            byte[] docxBytes = documentGeneratorService.generateTechSpecDocx(body);
+            String docFileName = "Technical_Specification_Sheet_" + id + ".docx";
+            String docFilePath = docDir + "/" + docFileName;
+            String docDownloadUrl = "/documents/" + id + "/" + docFileName;
+            try (FileOutputStream fos = new FileOutputStream(docFilePath)) {
+                fos.write(docxBytes);
+            }
+
+            // Update downloaded_docs metadata
+            String createdDate = LocalDate.now().toString();
+            String existingMeta = tender.getDownloadedDocs() != null ? tender.getDownloadedDocs() : "[]";
+            
+            String newEntryPdf = String.format("{\"name\":\"Technical Specification Sheet (PDF)\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}", pdfFileName, pdfDownloadUrl, createdDate);
+            String newEntryDoc = String.format("{\"name\":\"Technical Specification Sheet (Word DOCX)\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}", docFileName, docDownloadUrl, createdDate);
+            
+            String updatedMeta;
+            if (existingMeta.startsWith("[") && existingMeta.endsWith("]")) {
+                String inner = existingMeta.substring(1, existingMeta.length() - 1).trim();
+                if (inner.isEmpty()) {
+                    updatedMeta = String.format("[%s,%s]", newEntryPdf, newEntryDoc);
+                } else {
+                    updatedMeta = String.format("[%s,%s,%s]", inner, newEntryPdf, newEntryDoc);
+                }
+            } else {
+                updatedMeta = String.format("[%s,%s]", newEntryPdf, newEntryDoc);
+            }
+
+            tender.setDownloadedDocs(updatedMeta);
+            tenderRepository.save(tender);
+
+            // Audit Log
+            ActivityLog log = new ActivityLog(
+                    username, userRole, "Generated Technical Specifications", id,
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
+                    "Generated Technical Specification Sheet (PDF & Word DOCX)"
+            );
+            activityLogRepository.save(log);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "downloadUrl", docDownloadUrl,
+                    "pdfDownloadUrl", pdfDownloadUrl,
+                    "status", resolveStatus(tender, LocalDate.now().toString())
+            ));
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("success", false, "error", "Failed to generate technical specifications: " + e.getMessage()));
+        }
+    }
+
     private String resolveStatus(Tender t, String todayIST) {
         boolean hasPassedDueDate = t.getDueDate() != null && t.getDueDate().split(" ")[0].compareTo(todayIST) < 0;
 

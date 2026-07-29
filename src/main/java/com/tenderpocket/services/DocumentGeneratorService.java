@@ -1424,4 +1424,291 @@ public class DocumentGeneratorService {
 
         return null;
     }
+
+    // --- TECHNICAL SPECIFICATION SHEET GENERATION ---
+    public byte[] generateTechSpecPdf(Map<String, String> data) throws Exception {
+        String htmlContent = generateTechSpecHtml(data);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        
+        PdfRendererBuilder builder = new PdfRendererBuilder();
+        builder.useFastMode();
+
+        try {
+            builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Calibri.ttf"), "Calibri", 400, FontStyle.NORMAL, true);
+            builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Calibri Bold.ttf"), "Calibri", 700, FontStyle.NORMAL, true);
+            builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Calibri Italic.ttf"), "Calibri", 400, FontStyle.ITALIC, true);
+            builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Calibri Bold Italic.ttf"), "Calibri", 700, FontStyle.ITALIC, true);
+
+            builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Cambria.ttf"), "Cambria", 400, FontStyle.NORMAL, true);
+            builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Cambria Bold.ttf"), "Cambria", 700, FontStyle.NORMAL, true);
+            builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Cambria Italic.ttf"), "Cambria", 400, FontStyle.ITALIC, true);
+            builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Cambria Bold Italic.ttf"), "Cambria", 700, FontStyle.ITALIC, true);
+        } catch (Exception ex) {}
+
+        builder.withHtmlContent(htmlContent, "/");
+        builder.toStream(baos);
+        builder.run();
+        
+        return baos.toByteArray();
+    }
+
+    public byte[] generateTechSpecDocx(Map<String, String> data) throws Exception {
+        try (XWPFDocument document = new XWPFDocument();
+             ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+
+            CTSectPr sectPr = document.getDocument().getBody().addNewSectPr();
+            CTPageMar pageMar = sectPr.addNewPgMar();
+            pageMar.setTop(BigInteger.valueOf(1960));
+            pageMar.setBottom(BigInteger.valueOf(800));
+            pageMar.setLeft(BigInteger.valueOf(850));
+            pageMar.setRight(BigInteger.valueOf(850));
+
+            // Header
+            writeHeader(document, data, "TECHNICAL SPECIFICATION & COMPLIANCE SHEET", true);
+
+            // Equipment Summary Box
+            XWPFParagraph pBoxTitle = document.createParagraph();
+            pBoxTitle.setSpacingBefore(120);
+            pBoxTitle.setSpacingAfter(40);
+            XWPFRun rBoxTitle = pBoxTitle.createRun();
+            rBoxTitle.setBold(true);
+            rBoxTitle.setFontSize(11);
+            rBoxTitle.setText("EQUIPMENT & OFFERED PRODUCT SUMMARY:");
+
+            XWPFTable summaryTable = document.createTable(4, 2);
+            setTableBordersSingle(summaryTable);
+
+            setSummaryRow(summaryTable.getRow(0), "Product Name / Description:", data.getOrDefault("productDescription", "N/A"));
+            setSummaryRow(summaryTable.getRow(1), "Offered Model / Brand:", data.getOrDefault("offeredModel", data.getOrDefault("productName", "Standard Model")));
+            setSummaryRow(summaryTable.getRow(2), "Manufacturer Name:", data.getOrDefault("manufacturerName", data.getOrDefault("companyName", "N/A")));
+            setSummaryRow(summaryTable.getRow(3), "Warranty & Support Period:", data.getOrDefault("warrantyPeriod", "Five (5) years"));
+
+            // Compliance Table Title
+            XWPFParagraph pTableTitle = document.createParagraph();
+            pTableTitle.setSpacingBefore(160);
+            pTableTitle.setSpacingAfter(60);
+            XWPFRun rTableTitle = pTableTitle.createRun();
+            rTableTitle.setBold(true);
+            rTableTitle.setFontSize(11);
+            rTableTitle.setText("TECHNICAL COMPLIANCE TABLE:");
+
+            // Compliance Table (5 columns)
+            XWPFTable compTable = document.createTable(8, 5);
+            setTableBordersSingle(compTable);
+
+            // Table Header Row
+            XWPFTableRow headerRow = compTable.getRow(0);
+            setCellHeader(headerRow.getCell(0), "Sr.", "800");
+            setCellHeader(headerRow.getCell(1), "Tender Parameter / Requirement", "3200");
+            setCellHeader(headerRow.getCell(2), "Offered Specification", "3200");
+            setCellHeader(headerRow.getCell(3), "Compliance", "1200");
+            setCellHeader(headerRow.getCell(4), "Remarks / Deviation", "1600");
+
+            // Compliance Data Rows
+            String[][] rows = {
+                {"1", "Equipment Design & Construction", "Heavy-duty industrial grade construction with ISO certified standards", "YES", "Compliant"},
+                {"2", "Power Supply / Electrical Input", "220V - 240V AC, 50 Hz Single Phase input with surge protection", "YES", "Compliant"},
+                {"3", "Operational Temperature Range", "Standard operating ambient temperature range (2°C to 43°C)", "YES", "Compliant"},
+                {"4", "Quality & Safety Certifications", "ISO 9001 / ISO 13485 / CE / BIS Certified Equipment", "YES", "Compliant"},
+                {"5", "Performance Warranty & Service", "5 Years comprehensive warranty with prompt local service support", "YES", "Compliant"},
+                {"6", "Installation & Commissioning", "Free on-site installation, testing, and operational training", "YES", "Compliant"},
+                {"7", "Spares Availability Guarantee", "Guaranteed availability of spare parts for at least 10 years", "YES", "Compliant"}
+            };
+
+            for (int i = 0; i < rows.length; i++) {
+                XWPFTableRow tableRow = compTable.getRow(i + 1);
+                tableRow.getCell(0).setText(rows[i][0]);
+                tableRow.getCell(1).setText(rows[i][1]);
+                tableRow.getCell(2).setText(rows[i][2]);
+                
+                XWPFParagraph pCompStatus = tableRow.getCell(3).getParagraphs().get(0);
+                XWPFRun rCompStatus = pCompStatus.createRun();
+                rCompStatus.setBold(true);
+                rCompStatus.setColor("008000"); // Green
+                rCompStatus.setText(rows[i][3]);
+
+                tableRow.getCell(4).setText(rows[i][4]);
+            }
+
+            // Declaration statement
+            XWPFParagraph pDecl = document.createParagraph();
+            pDecl.setSpacingBefore(180);
+            pDecl.setSpacingAfter(80);
+            XWPFRun rDecl = pDecl.createRun();
+            rDecl.setText("Declaration: We hereby confirm and declare that the model and specifications offered above comply fully with all technical parameter requirements stated in Tender Ref No: ");
+            XWPFRun rDeclRef = pDecl.createRun();
+            rDeclRef.setBold(true);
+            rDeclRef.setText(data.getOrDefault("bidNumber", "") + ".");
+
+            writeSignatoryBlock(document, data, true);
+
+            document.write(baos);
+            return baos.toByteArray();
+        }
+    }
+
+    private void setTableBordersSingle(XWPFTable table) {
+        try {
+            table.getCTTbl().addNewTblPr().addNewTblBorders();
+            org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTblBorders borders = table.getCTTbl().getTblPr().getTblBorders();
+            borders.addNewLeft().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder.SINGLE);
+            borders.addNewRight().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder.SINGLE);
+            borders.addNewTop().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder.SINGLE);
+            borders.addNewBottom().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder.SINGLE);
+            borders.addNewInsideH().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder.SINGLE);
+            borders.addNewInsideV().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder.SINGLE);
+        } catch (Exception e) {}
+    }
+
+    private void setSummaryRow(XWPFTableRow row, String label, String val) {
+        row.getCell(0).setWidth("3200");
+        XWPFParagraph p0 = row.getCell(0).getParagraphs().get(0);
+        XWPFRun r0 = p0.createRun();
+        r0.setBold(true);
+        r0.setText(label);
+
+        row.getCell(1).setWidth("5800");
+        XWPFParagraph p1 = row.getCell(1).getParagraphs().get(0);
+        XWPFRun r1 = p1.createRun();
+        r1.setText(val);
+    }
+
+    private void setCellHeader(XWPFTableCell cell, String text, String width) {
+        cell.setWidth(width);
+        cell.setColor("4472C4");
+        XWPFParagraph p = cell.getParagraphs().get(0);
+        XWPFRun r = p.createRun();
+        r.setBold(true);
+        r.setColor("FFFFFF");
+        r.setText(text);
+    }
+
+    private String buildCompleteHtml(String bodyContent) {
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8" />
+              <style>
+                @page {
+                  size: A4;
+                  margin: 0;
+                }
+                body {
+                  margin: 0;
+                  padding: 0;
+                  background-color: #ffffff;
+                }
+                .page {
+                  box-sizing: border-box;
+                  width: 210mm;
+                  padding: 30px 42.5px 40px 42.5px;
+                  position: relative;
+                  page-break-after: always;
+                  font-family: 'Cambria', serif;
+                  font-size: 11pt;
+                  line-height: 1.25;
+                  color: #000000;
+                }
+                p { margin-top: 0; margin-bottom: 8px; }
+                .company-title { color: #4472c4; font-size: 18pt; font-family: 'Calibri', sans-serif; font-weight: bold; margin: 0; }
+                .company-addr { font-size: 8.5pt; color: #333333; margin: 1px 0; }
+                .company-info { font-size: 8.5pt; color: #555555; margin: 1px 0; }
+                .header-divider { border: 0; border-top: 1.5px solid #4472c4; margin: 8px 0 12px 0; }
+                .subject-ref-table { width: 100%; margin-bottom: 12px; font-size: 10pt; }
+                .logo-img { max-width: 80px; max-height: 60px; }
+                .partner-img { max-width: 95px; max-height: 60px; }
+                .signature-container { position: relative; height: 55px; margin: 5px 0; }
+                .sig-img { position: absolute; left: 45px; top: -5px; width: 60px; }
+                .stamp-img { position: absolute; left: 0px; top: 0px; width: 70px; }
+              </style>
+            </head>
+            <body>
+            """ + bodyContent + """
+            </body>
+            </html>
+            """;
+    }
+
+    public String generateTechSpecHtml(Map<String, String> rawData) {
+        Map<String, String> data = new java.util.HashMap<>();
+        for (Map.Entry<String, String> entry : rawData.entrySet()) {
+            data.put(entry.getKey(), escapeHtml(entry.getValue()));
+        }
+        String logoBase64 = "";
+        String partnerBase64 = "";
+        String stampBase64 = "";
+        String sigBase64 = "";
+        
+        byte[] logoBytes = loadImageBytes("public/images/logo.png", "/static/images/logo.png");
+        if (logoBytes != null) logoBase64 = "data:image/png;base64," + Base64.getEncoder().encodeToString(logoBytes);
+
+        byte[] partnerBytes = loadImageBytes("public/images/partner.png", "/static/images/partner.png");
+        if (partnerBytes != null) partnerBase64 = "data:image/png;base64," + Base64.getEncoder().encodeToString(partnerBytes);
+
+        byte[] stampBytes = loadImageBytes("public/images/stamp.png", "/static/images/stamp.png");
+        if (stampBytes != null) stampBase64 = "data:image/png;base64," + Base64.getEncoder().encodeToString(stampBytes);
+
+        byte[] sigBytes = loadImageBytes("public/images/signature.png", "/static/images/signature.png");
+        if (sigBytes != null) sigBase64 = "data:image/png;base64," + Base64.getEncoder().encodeToString(sigBytes);
+
+        String addr1 = data.getOrDefault("companyAddress", "");
+        String addr2 = "";
+        if (addr1.contains("MIDC Satpur,")) {
+            String[] parts = addr1.split("MIDC Satpur,");
+            addr1 = parts[0] + "MIDC Satpur,";
+            if (parts.length > 1) addr2 = parts[1].trim();
+        }
+
+        StringBuilder html = new StringBuilder();
+        html.append(renderSubjectRef("TECHNICAL SPECIFICATION & COMPLIANCE SHEET", data));
+        html.append("<div style=\"margin-top: 15px; margin-bottom: 10px;\">");
+        html.append("<h3 style=\"font-size: 11pt; margin-bottom: 6px; color: #4472c4;\">EQUIPMENT &amp; OFFERED PRODUCT SUMMARY:</h3>");
+        html.append("<table style=\"width: 100%; border-collapse: collapse; border: 1px solid #4472c4; font-size: 10pt;\">");
+        html.append("<tr style=\"background-color: #f2f4f8;\"><td style=\"padding: 6px; font-weight: bold; width: 35%; border: 1px solid #d0d7de;\">Product Description:</td><td style=\"padding: 6px; border: 1px solid #d0d7de;\">").append(data.getOrDefault("productDescription", "N/A")).append("</td></tr>");
+        html.append("<tr><td style=\"padding: 6px; font-weight: bold; border: 1px solid #d0d7de;\">Offered Model / Brand:</td><td style=\"padding: 6px; border: 1px solid #d0d7de;\">").append(data.getOrDefault("offeredModel", data.getOrDefault("productName", "Standard Model"))).append("</td></tr>");
+        html.append("<tr style=\"background-color: #f2f4f8;\"><td style=\"padding: 6px; font-weight: bold; border: 1px solid #d0d7de;\">Manufacturer Name:</td><td style=\"padding: 6px; border: 1px solid #d0d7de;\">").append(data.getOrDefault("manufacturerName", data.getOrDefault("companyName", "N/A"))).append("</td></tr>");
+        html.append("<tr><td style=\"padding: 6px; font-weight: bold; border: 1px solid #d0d7de;\">Warranty &amp; Service Period:</td><td style=\"padding: 6px; border: 1px solid #d0d7de;\">").append(data.getOrDefault("warrantyPeriod", "Five (5) years")).append("</td></tr>");
+        html.append("</table></div>");
+
+        html.append("<div style=\"margin-top: 15px; margin-bottom: 15px;\">");
+        html.append("<h3 style=\"font-size: 11pt; margin-bottom: 6px; color: #4472c4;\">TECHNICAL COMPLIANCE TABLE:</h3>");
+        html.append("<table style=\"width: 100%; border-collapse: collapse; border: 1px solid #4472c4; font-size: 9.5pt;\">");
+        html.append("<thead><tr style=\"background-color: #4472c4; color: #ffffff; text-align: left;\">");
+        html.append("<th style=\"padding: 6px; width: 6%; border: 1px solid #4472c4;\">Sr.</th>");
+        html.append("<th style=\"padding: 6px; width: 38%; border: 1px solid #4472c4;\">Tender Parameter / Requirement</th>");
+        html.append("<th style=\"padding: 6px; width: 38%; border: 1px solid #4472c4;\">Offered Specification</th>");
+        html.append("<th style=\"padding: 6px; width: 9%; border: 1px solid #4472c4; text-align: center;\">Compliance</th>");
+        html.append("<th style=\"padding: 6px; width: 9%; border: 1px solid #4472c4;\">Remarks</th></tr></thead><tbody>");
+
+        String[][] rows = {
+            {"1", "Equipment Design & Construction", "Heavy-duty industrial grade construction with ISO certified standards", "YES", "Compliant"},
+            {"2", "Power Supply / Electrical Input", "220V - 240V AC, 50 Hz Single Phase input with surge protection", "YES", "Compliant"},
+            {"3", "Operational Temperature Range", "Standard operating ambient temperature range (2°C to 43°C)", "YES", "Compliant"},
+            {"4", "Quality & Safety Certifications", "ISO 9001 / ISO 13485 / CE / BIS Certified Equipment", "YES", "Compliant"},
+            {"5", "Performance Warranty & Service", "5 Years comprehensive warranty with prompt local service support", "YES", "Compliant"},
+            {"6", "Installation & Commissioning", "Free on-site installation, testing, and operational training", "YES", "Compliant"},
+            {"7", "Spares Availability Guarantee", "Guaranteed availability of spare parts for at least 10 years", "YES", "Compliant"}
+        };
+
+        for (int i = 0; i < rows.length; i++) {
+            String bg = (i % 2 == 1) ? " style=\"background-color: #f9fafb;\"" : "";
+            html.append("<tr").append(bg).append(">");
+            html.append("<td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">").append(rows[i][0]).append("</td>");
+            html.append("<td style=\"padding: 5px; border: 1px solid #d0d7de;\">").append(rows[i][1]).append("</td>");
+            html.append("<td style=\"padding: 5px; border: 1px solid #d0d7de;\">").append(rows[i][2]).append("</td>");
+            html.append("<td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">").append(rows[i][3]).append("</td>");
+            html.append("<td style=\"padding: 5px; border: 1px solid #d0d7de;\">").append(rows[i][4]).append("</td>");
+            html.append("</tr>");
+        }
+
+        html.append("</tbody></table></div>");
+        html.append("<p style=\"margin-top: 10px; font-size: 10pt;\"><strong>Declaration:</strong> We hereby declare and confirm that the model and specifications offered above comply fully with all technical parameter requirements stated in Tender Ref No: <strong>").append(data.getOrDefault("bidNumber", "")).append("</strong>.</p>");
+        html.append(renderSignatoryBlock(data, stampBase64, sigBase64, true));
+
+        String pageContent = wrapPage(true, "page-tech-spec", data, logoBase64, partnerBase64, addr1, addr2,
+                "TECHNICAL SPECIFICATION & COMPLIANCE SHEET", html.toString());
+
+        return buildCompleteHtml(pageContent);
+    }
 }
