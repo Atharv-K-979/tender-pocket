@@ -581,6 +581,71 @@ public class TenderController {
         }
     }
 
+    @PostMapping("/{id}/upload-tech-spec")
+    public ResponseEntity<?> uploadTechSpec(
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
+            @PathVariable("id") String id,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+
+        Optional<Tender> opt = tenderRepository.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+        }
+
+        if (file.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "Uploaded file is empty"));
+        }
+
+        Tender tender = opt.get();
+
+        try {
+            String docDir = "public/documents/" + id;
+            Files.createDirectories(Paths.get(docDir));
+
+            String originalFilename = file.getOriginalFilename();
+            String fileExtension = originalFilename != null && originalFilename.contains(".") 
+                    ? originalFilename.substring(originalFilename.lastIndexOf(".")) 
+                    : ".pdf";
+
+            String pdfFileName = "Technical_Specification_Sheet_" + id + fileExtension;
+            String pdfFilePath = docDir + "/" + pdfFileName;
+            String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
+
+            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
+                fos.write(file.getBytes());
+            }
+
+            // Update downloaded_docs field metadata without overwriting existing files
+            String createdDate = LocalDate.now().toString();
+            List<Map<String, String>> newDocs = List.of(
+                    Map.of("name", "Technical Specification Sheet (Uploaded PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate)
+            );
+            tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
+            tenderRepository.save(tender);
+
+            // Audit Log
+            ActivityLog log = new ActivityLog(
+                    username, userRole, "Uploaded Technical Specification PDF", id,
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
+                    "Uploaded custom technical specification PDF file: " + originalFilename
+            );
+            activityLogRepository.save(log);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "pdfDownloadUrl", pdfDownloadUrl,
+                    "message", "Technical Specification PDF uploaded successfully",
+                    "status", resolveStatus(tender, LocalDate.now().toString())
+            ));
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("success", false, "error", "Failed to upload technical specification: " + e.getMessage()));
+        }
+    }
+
     @PostMapping("/{id}/generate-tech-specs")
     public ResponseEntity<?> generateTechSpecs(
             @RequestHeader(value = "x-user-role", defaultValue = "Executive") String userRole,
