@@ -1661,7 +1661,7 @@ public class DocumentGeneratorService {
         }
 
         StringBuilder html = new StringBuilder();
-        html.append(renderSubjectRef("TECHNICAL SPECIFICATION & COMPLIANCE SHEET", data));
+        html.append(renderSubjectRef("TECHNICAL SPECIFICATION &amp; COMPLIANCE SHEET", data));
         html.append("<div style=\"margin-top: 15px; margin-bottom: 10px;\">");
         html.append("<h3 style=\"font-size: 11pt; margin-bottom: 6px; color: #4472c4;\">EQUIPMENT &amp; OFFERED PRODUCT SUMMARY:</h3>");
         html.append("<table style=\"width: 100%; border-collapse: collapse; border: 1px solid #4472c4; font-size: 10pt;\">");
@@ -1682,12 +1682,12 @@ public class DocumentGeneratorService {
         html.append("<th style=\"padding: 6px; width: 9%; border: 1px solid #4472c4;\">Remarks</th></tr></thead><tbody>");
 
         String[][] rows = {
-            {"1", "Equipment Design & Construction", "Heavy-duty industrial grade construction with ISO certified standards", "YES", "Compliant"},
+            {"1", "Equipment Design &amp; Construction", "Heavy-duty industrial grade construction with ISO certified standards", "YES", "Compliant"},
             {"2", "Power Supply / Electrical Input", "220V - 240V AC, 50 Hz Single Phase input with surge protection", "YES", "Compliant"},
             {"3", "Operational Temperature Range", "Standard operating ambient temperature range (2°C to 43°C)", "YES", "Compliant"},
-            {"4", "Quality & Safety Certifications", "ISO 9001 / ISO 13485 / CE / BIS Certified Equipment", "YES", "Compliant"},
-            {"5", "Performance Warranty & Service", "5 Years comprehensive warranty with prompt local service support", "YES", "Compliant"},
-            {"6", "Installation & Commissioning", "Free on-site installation, testing, and operational training", "YES", "Compliant"},
+            {"4", "Quality &amp; Safety Certifications", "ISO 9001 / ISO 13485 / CE / BIS Certified Equipment", "YES", "Compliant"},
+            {"5", "Performance Warranty &amp; Service", "5 Years comprehensive warranty with prompt local service support", "YES", "Compliant"},
+            {"6", "Installation &amp; Commissioning", "Free on-site installation, testing, and operational training", "YES", "Compliant"},
             {"7", "Spares Availability Guarantee", "Guaranteed availability of spare parts for at least 10 years", "YES", "Compliant"}
         };
 
@@ -1707,7 +1707,7 @@ public class DocumentGeneratorService {
         html.append(renderSignatoryBlock(data, stampBase64, sigBase64, true));
 
         String pageContent = wrapPage(true, "page-tech-spec", data, logoBase64, partnerBase64, addr1, addr2,
-                "TECHNICAL SPECIFICATION & COMPLIANCE SHEET", html.toString());
+                "TECHNICAL SPECIFICATION &amp; COMPLIANCE SHEET", html.toString());
 
         return buildCompleteHtml(pageContent);
     }
