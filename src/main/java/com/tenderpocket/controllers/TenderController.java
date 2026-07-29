@@ -56,7 +56,7 @@ public class TenderController {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @PostMapping("/sync-gem")
-    public ResponseEntity<?> syncGeM(@RequestHeader("x-user-role") String userRole) {
+    public ResponseEntity<?> syncGeM(@RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
         if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
@@ -79,7 +79,7 @@ public class TenderController {
     }
 
     @PostMapping("/sync-emails")
-    public ResponseEntity<?> syncEmails(@RequestHeader("x-user-role") String userRole) {
+    public ResponseEntity<?> syncEmails(@RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
         if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
@@ -115,8 +115,8 @@ public class TenderController {
 
     @GetMapping
     public ResponseEntity<?> getTenders(
-            @RequestHeader("x-user-role") String userRole,
-            @RequestHeader("x-user-username") String username,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "location", required = false) String location,
@@ -257,7 +257,7 @@ public class TenderController {
 
     @PostMapping
     public ResponseEntity<?> createTender(
-            @RequestHeader("x-user-role") String userRole,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
             @RequestBody Tender tender) {
         if ("Admin".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -276,8 +276,8 @@ public class TenderController {
 
     @PatchMapping("/{id}")
     public ResponseEntity<?> updateTender(
-            @RequestHeader("x-user-role") String userRole,
-            @RequestHeader("x-user-username") String username,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id,
             @RequestBody Map<String, Object> body) {
 
@@ -428,8 +428,8 @@ public class TenderController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteTender(
-            @RequestHeader("x-user-role") String userRole,
-            @RequestHeader("x-user-username") String username,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id) {
 
 
@@ -454,8 +454,8 @@ public class TenderController {
 
     @PostMapping("/{id}/generate-bid-docs")
     public ResponseEntity<?> generateBidDocs(
-            @RequestHeader("x-user-role") String userRole,
-            @RequestHeader("x-user-username") String username,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id,
             @RequestBody Map<String, String> body) {
 
@@ -650,8 +650,8 @@ public class TenderController {
 
     @PostMapping("/{id}/comments")
     public ResponseEntity<?> postComment(
-            @RequestHeader("x-user-username") String username,
-            @RequestHeader("x-user-role") String role,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String role,
             @PathVariable("id") String id,
             @RequestBody Map<String, String> body) {
         String commentText = body.get("comment");
