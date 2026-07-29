@@ -468,6 +468,13 @@ public class TenderController {
 
         Tender tender = opt.get();
 
+        if (!isTechSpecProvided(tender)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "success", false,
+                    "error", "Technical Specification PDF must be provided/uploaded by the Tender Executive first before generating Bid Documents."
+            ));
+        }
+
         try {
             String docDir = "public/documents/" + id;
             Files.createDirectories(Paths.get(docDir));
@@ -579,6 +586,12 @@ public class TenderController {
             e.printStackTrace();
             return existingJson;
         }
+    }
+
+    private boolean isTechSpecProvided(Tender tender) {
+        if (tender == null || tender.getDownloadedDocs() == null) return false;
+        String docs = tender.getDownloadedDocs().toLowerCase();
+        return docs.contains("technical specification") || docs.contains("tech_spec") || docs.contains("uploaded pdf");
     }
 
     @PostMapping("/{id}/upload-tech-spec")
