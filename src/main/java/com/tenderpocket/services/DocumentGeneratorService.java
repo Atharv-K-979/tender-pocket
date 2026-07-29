@@ -125,6 +125,10 @@ public class DocumentGeneratorService {
             addPageBreak(document);
             writeDoc15(document, data);
             
+            // 16. TECHNICAL SPECIFICATION & COMPLIANCE SHEET
+            addPageBreak(document);
+            writeDoc16(document, data);
+            
             document.write(baos);
             return baos.toByteArray();
         }
@@ -1071,6 +1075,40 @@ public class DocumentGeneratorService {
             "<p style=\"margin-top: 15px;\">Thanking you and assuring you of our best services at all the times.</p>" + sigBlock
         ));
 
+        // 16. TECHNICAL SPECIFICATION & COMPLIANCE SHEET
+        docsHtml.append(wrapPage(true, "page-doc-16", data, logoBase64, partnerBase64, addr1, addr2, "",
+            addrHtml.toString() +
+            renderSubjectRef("TECHNICAL SPECIFICATION &amp; COMPLIANCE SHEET", data) +
+            "<div style=\"margin-top: 15px; margin-bottom: 10px;\">" +
+            "<h3 style=\"font-size: 11pt; margin-bottom: 6px; color: #4472c4;\">EQUIPMENT &amp; OFFERED PRODUCT SUMMARY:</h3>" +
+            "<table style=\"width: 100%; border-collapse: collapse; border: 1px solid #4472c4; font-size: 10pt;\">" +
+            "<tr style=\"background-color: #f2f4f8;\"><td style=\"padding: 6px; font-weight: bold; width: 35%; border: 1px solid #d0d7de;\">Product Description:</td><td style=\"padding: 6px; border: 1px solid #d0d7de;\">" + data.getOrDefault("productDescription", "N/A") + "</td></tr>" +
+            "<tr><td style=\"padding: 6px; font-weight: bold; border: 1px solid #d0d7de;\">Offered Model / Brand:</td><td style=\"padding: 6px; border: 1px solid #d0d7de;\">" + data.getOrDefault("offeredModel", data.getOrDefault("productName", "Standard Model")) + "</td></tr>" +
+            "<tr style=\"background-color: #f2f4f8;\"><td style=\"padding: 6px; font-weight: bold; border: 1px solid #d0d7de;\">Manufacturer Name:</td><td style=\"padding: 6px; border: 1px solid #d0d7de;\">" + data.getOrDefault("manufacturerName", data.getOrDefault("companyName", "N/A")) + "</td></tr>" +
+            "<tr><td style=\"padding: 6px; font-weight: bold; border: 1px solid #d0d7de;\">Warranty &amp; Service Period:</td><td style=\"padding: 6px; border: 1px solid #d0d7de;\">" + data.getOrDefault("warrantyPeriod", "Five (5) years") + "</td></tr>" +
+            "</table></div>" +
+
+            "<div style=\"margin-top: 15px; margin-bottom: 15px;\">" +
+            "<h3 style=\"font-size: 11pt; margin-bottom: 6px; color: #4472c4;\">TECHNICAL COMPLIANCE TABLE:</h3>" +
+            "<table style=\"width: 100%; border-collapse: collapse; border: 1px solid #4472c4; font-size: 9.5pt;\">" +
+            "<thead><tr style=\"background-color: #4472c4; color: #ffffff; text-align: left;\">" +
+            "<th style=\"padding: 6px; width: 6%; border: 1px solid #4472c4;\">Sr.</th>" +
+            "<th style=\"padding: 6px; width: 38%; border: 1px solid #4472c4;\">Tender Parameter / Requirement</th>" +
+            "<th style=\"padding: 6px; width: 38%; border: 1px solid #4472c4;\">Offered Specification</th>" +
+            "<th style=\"padding: 6px; width: 9%; border: 1px solid #4472c4; text-align: center;\">Compliance</th>" +
+            "<th style=\"padding: 6px; width: 9%; border: 1px solid #4472c4;\">Remarks</th></tr></thead><tbody>" +
+
+            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">1</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Equipment Design &amp; Construction</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Heavy-duty industrial grade construction with ISO certified standards</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
+            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">2</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Power Supply / Electrical Input</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">220V - 240V AC, 50 Hz Single Phase input with surge protection</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
+            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">3</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Operational Temperature Range</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Standard operating ambient temperature range (2°C to 43°C)</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
+            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">4</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Quality &amp; Safety Certifications</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">ISO 9001 / ISO 13485 / CE / BIS Certified Equipment</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
+            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">5</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Performance Warranty &amp; Service</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">5 Years comprehensive warranty with prompt local service support</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
+            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">6</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Installation &amp; Commissioning</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Free on-site installation, testing, and operational training</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
+            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">7</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Spares Availability Guarantee</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Guaranteed availability of spare parts for at least 10 years</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
+            "</tbody></table></div>" +
+            "<p style=\"margin-top: 10px; font-size: 10pt;\"><strong>Declaration:</strong> We hereby declare and confirm that the model and specifications offered above comply fully with all technical parameter requirements stated in Tender Ref No: <strong>" + data.getOrDefault("bidNumber", "") + "</strong>.</p>" + sigBlock
+        ));
+
         return """
             <!DOCTYPE html>
             <html>
@@ -1452,6 +1490,87 @@ public class DocumentGeneratorService {
         return baos.toByteArray();
     }
 
+    public void writeDoc16(XWPFDocument document, Map<String, String> data) {
+        // Header
+        writeHeader(document, data, "TECHNICAL SPECIFICATION & COMPLIANCE SHEET", true);
+
+        // Equipment Summary Box
+        XWPFParagraph pBoxTitle = document.createParagraph();
+        pBoxTitle.setSpacingBefore(120);
+        pBoxTitle.setSpacingAfter(40);
+        XWPFRun rBoxTitle = pBoxTitle.createRun();
+        rBoxTitle.setBold(true);
+        rBoxTitle.setFontSize(11);
+        rBoxTitle.setText("EQUIPMENT & OFFERED PRODUCT SUMMARY:");
+
+        XWPFTable summaryTable = document.createTable(4, 2);
+        setTableBordersSingle(summaryTable);
+
+        setSummaryRow(summaryTable.getRow(0), "Product Name / Description:", data.getOrDefault("productDescription", "N/A"));
+        setSummaryRow(summaryTable.getRow(1), "Offered Model / Brand:", data.getOrDefault("offeredModel", data.getOrDefault("productName", "Standard Model")));
+        setSummaryRow(summaryTable.getRow(2), "Manufacturer Name:", data.getOrDefault("manufacturerName", data.getOrDefault("companyName", "N/A")));
+        setSummaryRow(summaryTable.getRow(3), "Warranty & Support Period:", data.getOrDefault("warrantyPeriod", "Five (5) years"));
+
+        // Compliance Table Title
+        XWPFParagraph pTableTitle = document.createParagraph();
+        pTableTitle.setSpacingBefore(160);
+        pTableTitle.setSpacingAfter(60);
+        XWPFRun rTableTitle = pTableTitle.createRun();
+        rTableTitle.setBold(true);
+        rTableTitle.setFontSize(11);
+        rTableTitle.setText("TECHNICAL COMPLIANCE TABLE:");
+
+        // Compliance Table (5 columns)
+        XWPFTable compTable = document.createTable(8, 5);
+        setTableBordersSingle(compTable);
+
+        // Table Header Row
+        XWPFTableRow headerRow = compTable.getRow(0);
+        setCellHeader(headerRow.getCell(0), "Sr.", "800");
+        setCellHeader(headerRow.getCell(1), "Tender Parameter / Requirement", "3200");
+        setCellHeader(headerRow.getCell(2), "Offered Specification", "3200");
+        setCellHeader(headerRow.getCell(3), "Compliance", "1200");
+        setCellHeader(headerRow.getCell(4), "Remarks / Deviation", "1600");
+
+        // Compliance Data Rows
+        String[][] rows = {
+            {"1", "Equipment Design & Construction", "Heavy-duty industrial grade construction with ISO certified standards", "YES", "Compliant"},
+            {"2", "Power Supply / Electrical Input", "220V - 240V AC, 50 Hz Single Phase input with surge protection", "YES", "Compliant"},
+            {"3", "Operational Temperature Range", "Standard operating ambient temperature range (2°C to 43°C)", "YES", "Compliant"},
+            {"4", "Quality & Safety Certifications", "ISO 9001 / ISO 13485 / CE / BIS Certified Equipment", "YES", "Compliant"},
+            {"5", "Performance Warranty & Service", "5 Years comprehensive warranty with prompt local service support", "YES", "Compliant"},
+            {"6", "Installation & Commissioning", "Free on-site installation, testing, and operational training", "YES", "Compliant"},
+            {"7", "Spares Availability Guarantee", "Guaranteed availability of spare parts for at least 10 years", "YES", "Compliant"}
+        };
+
+        for (int i = 0; i < rows.length; i++) {
+            XWPFTableRow tableRow = compTable.getRow(i + 1);
+            tableRow.getCell(0).setText(rows[i][0]);
+            tableRow.getCell(1).setText(rows[i][1]);
+            tableRow.getCell(2).setText(rows[i][2]);
+            
+            XWPFParagraph pCompStatus = tableRow.getCell(3).getParagraphs().get(0);
+            XWPFRun rCompStatus = pCompStatus.createRun();
+            rCompStatus.setBold(true);
+            rCompStatus.setColor("008000"); // Green
+            rCompStatus.setText(rows[i][3]);
+
+            tableRow.getCell(4).setText(rows[i][4]);
+        }
+
+        // Declaration statement
+        XWPFParagraph pDecl = document.createParagraph();
+        pDecl.setSpacingBefore(180);
+        pDecl.setSpacingAfter(80);
+        XWPFRun rDecl = pDecl.createRun();
+        rDecl.setText("Declaration: We hereby confirm and declare that the model and specifications offered above comply fully with all technical parameter requirements stated in Tender Ref No: ");
+        XWPFRun rDeclRef = pDecl.createRun();
+        rDeclRef.setBold(true);
+        rDeclRef.setText(data.getOrDefault("bidNumber", "") + ".");
+
+        writeSignatoryBlock(document, data, true);
+    }
+
     public byte[] generateTechSpecDocx(Map<String, String> data) throws Exception {
         try (XWPFDocument document = new XWPFDocument();
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
@@ -1463,84 +1582,7 @@ public class DocumentGeneratorService {
             pageMar.setLeft(BigInteger.valueOf(850));
             pageMar.setRight(BigInteger.valueOf(850));
 
-            // Header
-            writeHeader(document, data, "TECHNICAL SPECIFICATION & COMPLIANCE SHEET", true);
-
-            // Equipment Summary Box
-            XWPFParagraph pBoxTitle = document.createParagraph();
-            pBoxTitle.setSpacingBefore(120);
-            pBoxTitle.setSpacingAfter(40);
-            XWPFRun rBoxTitle = pBoxTitle.createRun();
-            rBoxTitle.setBold(true);
-            rBoxTitle.setFontSize(11);
-            rBoxTitle.setText("EQUIPMENT & OFFERED PRODUCT SUMMARY:");
-
-            XWPFTable summaryTable = document.createTable(4, 2);
-            setTableBordersSingle(summaryTable);
-
-            setSummaryRow(summaryTable.getRow(0), "Product Name / Description:", data.getOrDefault("productDescription", "N/A"));
-            setSummaryRow(summaryTable.getRow(1), "Offered Model / Brand:", data.getOrDefault("offeredModel", data.getOrDefault("productName", "Standard Model")));
-            setSummaryRow(summaryTable.getRow(2), "Manufacturer Name:", data.getOrDefault("manufacturerName", data.getOrDefault("companyName", "N/A")));
-            setSummaryRow(summaryTable.getRow(3), "Warranty & Support Period:", data.getOrDefault("warrantyPeriod", "Five (5) years"));
-
-            // Compliance Table Title
-            XWPFParagraph pTableTitle = document.createParagraph();
-            pTableTitle.setSpacingBefore(160);
-            pTableTitle.setSpacingAfter(60);
-            XWPFRun rTableTitle = pTableTitle.createRun();
-            rTableTitle.setBold(true);
-            rTableTitle.setFontSize(11);
-            rTableTitle.setText("TECHNICAL COMPLIANCE TABLE:");
-
-            // Compliance Table (5 columns)
-            XWPFTable compTable = document.createTable(8, 5);
-            setTableBordersSingle(compTable);
-
-            // Table Header Row
-            XWPFTableRow headerRow = compTable.getRow(0);
-            setCellHeader(headerRow.getCell(0), "Sr.", "800");
-            setCellHeader(headerRow.getCell(1), "Tender Parameter / Requirement", "3200");
-            setCellHeader(headerRow.getCell(2), "Offered Specification", "3200");
-            setCellHeader(headerRow.getCell(3), "Compliance", "1200");
-            setCellHeader(headerRow.getCell(4), "Remarks / Deviation", "1600");
-
-            // Compliance Data Rows
-            String[][] rows = {
-                {"1", "Equipment Design & Construction", "Heavy-duty industrial grade construction with ISO certified standards", "YES", "Compliant"},
-                {"2", "Power Supply / Electrical Input", "220V - 240V AC, 50 Hz Single Phase input with surge protection", "YES", "Compliant"},
-                {"3", "Operational Temperature Range", "Standard operating ambient temperature range (2°C to 43°C)", "YES", "Compliant"},
-                {"4", "Quality & Safety Certifications", "ISO 9001 / ISO 13485 / CE / BIS Certified Equipment", "YES", "Compliant"},
-                {"5", "Performance Warranty & Service", "5 Years comprehensive warranty with prompt local service support", "YES", "Compliant"},
-                {"6", "Installation & Commissioning", "Free on-site installation, testing, and operational training", "YES", "Compliant"},
-                {"7", "Spares Availability Guarantee", "Guaranteed availability of spare parts for at least 10 years", "YES", "Compliant"}
-            };
-
-            for (int i = 0; i < rows.length; i++) {
-                XWPFTableRow tableRow = compTable.getRow(i + 1);
-                tableRow.getCell(0).setText(rows[i][0]);
-                tableRow.getCell(1).setText(rows[i][1]);
-                tableRow.getCell(2).setText(rows[i][2]);
-                
-                XWPFParagraph pCompStatus = tableRow.getCell(3).getParagraphs().get(0);
-                XWPFRun rCompStatus = pCompStatus.createRun();
-                rCompStatus.setBold(true);
-                rCompStatus.setColor("008000"); // Green
-                rCompStatus.setText(rows[i][3]);
-
-                tableRow.getCell(4).setText(rows[i][4]);
-            }
-
-            // Declaration statement
-            XWPFParagraph pDecl = document.createParagraph();
-            pDecl.setSpacingBefore(180);
-            pDecl.setSpacingAfter(80);
-            XWPFRun rDecl = pDecl.createRun();
-            rDecl.setText("Declaration: We hereby confirm and declare that the model and specifications offered above comply fully with all technical parameter requirements stated in Tender Ref No: ");
-            XWPFRun rDeclRef = pDecl.createRun();
-            rDeclRef.setBold(true);
-            rDeclRef.setText(data.getOrDefault("bidNumber", "") + ".");
-
-            writeSignatoryBlock(document, data, true);
+            writeDoc16(document, data);
 
             document.write(baos);
             return baos.toByteArray();

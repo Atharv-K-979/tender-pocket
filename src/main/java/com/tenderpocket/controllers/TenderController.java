@@ -490,11 +490,31 @@ public class TenderController {
                 fos.write(docxBytes);
             }
 
+            // Generate Technical Specification PDF
+            byte[] techPdfBytes = documentGeneratorService.generateTechSpecPdf(body);
+            String techPdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
+            String techPdfFilePath = docDir + "/" + techPdfFileName;
+            String techPdfDownloadUrl = "/documents/" + id + "/" + techPdfFileName;
+            try (FileOutputStream fos = new FileOutputStream(techPdfFilePath)) {
+                fos.write(techPdfBytes);
+            }
+
+            // Generate Technical Specification DOCX
+            byte[] techDocxBytes = documentGeneratorService.generateTechSpecDocx(body);
+            String techDocFileName = "Technical_Specification_Sheet_" + id + ".docx";
+            String techDocFilePath = docDir + "/" + techDocFileName;
+            String techDocDownloadUrl = "/documents/" + id + "/" + techDocFileName;
+            try (FileOutputStream fos = new FileOutputStream(techDocFilePath)) {
+                fos.write(techDocxBytes);
+            }
+
             // Update downloaded_docs field metadata without overwriting existing files (e.g. GeM Bid PDF)
             String createdDate = LocalDate.now().toString();
             List<Map<String, String>> newDocs = List.of(
                     Map.of("name", "Generated Bid Documents (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Generated Bid Documents (Word DOCX)", "filename", docFileName, "local_path", docDownloadUrl, "created_date", createdDate)
+                    Map.of("name", "Generated Bid Documents (Word DOCX)", "filename", docFileName, "local_path", docDownloadUrl, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", techPdfFileName, "local_path", techPdfDownloadUrl, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", techDocFileName, "local_path", techDocDownloadUrl, "created_date", createdDate)
             );
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             tenderRepository.save(tender);
