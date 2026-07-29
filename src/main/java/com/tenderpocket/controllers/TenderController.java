@@ -1,5 +1,6 @@
 package com.tenderpocket.controllers;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenderpocket.models.ActivityLog;
 import com.tenderpocket.models.Tender;
@@ -489,14 +490,13 @@ public class TenderController {
                 fos.write(docxBytes);
             }
 
-            // Update downloaded_docs field metadata
+            // Update downloaded_docs field metadata without overwriting existing files (e.g. GeM Bid PDF)
             String createdDate = LocalDate.now().toString();
-            String meta = String.format("[{\"name\":\"Generated Bid Documents (PDF)\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}," +
-                    "{\"name\":\"Generated Bid Documents (Word DOCX)\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}]",
-                    pdfFileName, pdfDownloadUrl, createdDate,
-                    docFileName, docDownloadUrl, createdDate);
-
-            tender.setDownloadedDocs(meta);
+            List<Map<String, String>> newDocs = List.of(
+                    Map.of("name", "Generated Bid Documents (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
+                    Map.of("name", "Generated Bid Documents (Word DOCX)", "filename", docFileName, "local_path", docDownloadUrl, "created_date", createdDate)
+            );
+            tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             tenderRepository.save(tender);
 
             // Audit Log
@@ -518,6 +518,46 @@ public class TenderController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("success", false, "error", "Failed to generate documents: " + e.getMessage()));
+        }
+    }
+
+    private String appendOrUpdateDownloadedDocs(String existingJson, List<Map<String, String>> newDocs) {
+        List<Map<String, Object>> docsList = new ArrayList<>();
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        if (existingJson != null && !existingJson.trim().isEmpty()) {
+            try {
+                docsList = objectMapper.readValue(existingJson, new TypeReference<List<Map<String, Object>>>() {});
+            } catch (Exception e) {
+                System.out.println("[TenderController] Parsing existing downloaded_docs failed, initializing new list: " + e.getMessage());
+            }
+        }
+
+        for (Map<String, String> newDoc : newDocs) {
+            String filename = newDoc.get("filename");
+            String localPath = newDoc.get("local_path");
+            boolean updated = false;
+
+            for (Map<String, Object> item : docsList) {
+                String exFile = (String) item.get("filename");
+                String exPath = (String) item.get("local_path");
+                if ((filename != null && filename.equalsIgnoreCase(exFile)) || (localPath != null && localPath.equalsIgnoreCase(exPath))) {
+                    item.putAll(newDoc);
+                    updated = true;
+                    break;
+                }
+            }
+
+            if (!updated) {
+                docsList.add(new HashMap<>(newDoc));
+            }
+        }
+
+        try {
+            return objectMapper.writeValueAsString(docsList);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return existingJson;
         }
     }
 
@@ -557,26 +597,13 @@ public class TenderController {
                 fos.write(docxBytes);
             }
 
-            // Update downloaded_docs metadata
+            // Update downloaded_docs metadata without overwriting existing files
             String createdDate = LocalDate.now().toString();
-            String existingMeta = tender.getDownloadedDocs() != null ? tender.getDownloadedDocs() : "[]";
-            
-            String newEntryPdf = String.format("{\"name\":\"Technical Specification Sheet (PDF)\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}", pdfFileName, pdfDownloadUrl, createdDate);
-            String newEntryDoc = String.format("{\"name\":\"Technical Specification Sheet (Word DOCX)\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}", docFileName, docDownloadUrl, createdDate);
-            
-            String updatedMeta;
-            if (existingMeta.startsWith("[") && existingMeta.endsWith("]")) {
-                String inner = existingMeta.substring(1, existingMeta.length() - 1).trim();
-                if (inner.isEmpty()) {
-                    updatedMeta = String.format("[%s,%s]", newEntryPdf, newEntryDoc);
-                } else {
-                    updatedMeta = String.format("[%s,%s,%s]", inner, newEntryPdf, newEntryDoc);
-                }
-            } else {
-                updatedMeta = String.format("[%s,%s]", newEntryPdf, newEntryDoc);
-            }
-
-            tender.setDownloadedDocs(updatedMeta);
+            List<Map<String, String>> newDocs = List.of(
+                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", docFileName, "local_path", docDownloadUrl, "created_date", createdDate)
+            );
+            tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             tenderRepository.save(tender);
 
             // Audit Log
