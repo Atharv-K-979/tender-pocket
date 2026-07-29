@@ -1809,7 +1809,7 @@ public class DocumentGeneratorService {
         html.append("<tr style=\"background-color: #f2f4f8;\">");
         html.append("<th colspan=\"5\" style=\"padding: 8px; text-align: center; font-size: 11pt; border: 1px solid #000000;\">");
         html.append("<div>").append(data.getOrDefault("productDescription", data.getOrDefault("productName", "Medical Equipment"))).append("</div>");
-        html.append("<div style=\"font-weight: normal; font-size: 10pt; margin-top: 2px;\">Make: MarkEn &nbsp;|&nbsp; Model No. : ").append(data.getOrDefault("offeredModel", "MILR-04")).append("</div>");
+        html.append("<div style=\"font-weight: normal; font-size: 10pt; margin-top: 2px;\">Make: MarkEn &#160;|&#160; Model No. : ").append(data.getOrDefault("offeredModel", "MILR-04")).append("</div>");
         html.append("</th></tr>");
 
         html.append("<tr style=\"background-color: #ffffff; font-weight: bold; text-align: center;\">");
