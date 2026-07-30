@@ -30,11 +30,49 @@ public class AISpecificationIntelligenceService {
         List<String> noteConditions = extractNoteConditions(cleanText);
         List<String> keyParams = extractKeyParameters(cleanText);
 
-        // 4. Synthesize Section 1.0: Core Equipment & Technical Specifications
+        // 4. Synthesize Technical Specifications
         String jobTitle = entities.getOrDefault("jobTitle", 
                 (data != null && data.get("productDescription") != null) ? data.get("productDescription") : "Item Specification & Technical Parameters");
-        
         String qtyRemark = entities.containsKey("qty") ? "Qty: " + entities.get("qty") : "-";
+
+        // Single Tech Specification Entry Consolidation
+        if (entities.containsKey("partNo") || entities.containsKey("model") || cleanText.contains("Repair of") || cleanText.contains("Tech Specification")) {
+            StringBuilder specDetail = new StringBuilder();
+            specDetail.append(jobTitle);
+            if (entities.containsKey("partNo")) {
+                specDetail.append(" | Part No: ").append(entities.get("partNo"));
+            }
+            if (entities.containsKey("model")) {
+                specDetail.append(" | Model: ").append(entities.get("model"));
+            }
+            if (entities.containsKey("power")) {
+                specDetail.append(" | Power: ").append(entities.get("power"));
+            }
+
+            clauses.add(new String[]{
+                "1.1",
+                escapeHtml(specDetail.toString()),
+                "Comply",
+                "No Deviation",
+                qtyRemark
+            });
+
+            // Add Note Brief items matching input document
+            int noteSr = 1;
+            if (!noteConditions.isEmpty()) {
+                for (String condition : noteConditions) {
+                    clauses.add(new String[]{"2." + (noteSr++), escapeHtml(condition), "Comply", "No Deviation", "-"});
+                }
+            } else {
+                clauses.add(new String[]{"2.1", "Delivered/repaired stores should be as per OEM pattern.", "Comply", "No Deviation", "-"});
+                clauses.add(new String[]{"2.2", "Damage / Unserviceable items will not be accepted.", "Comply", "No Deviation", "-"});
+                clauses.add(new String[]{"2.3", "Tampered MRP and Expiry date product will not be accepted.", "Comply", "No Deviation", "-"});
+            }
+
+            return clauses;
+        }
+
+        // Multi-entry synthesis if multiple distinct specifications found
         clauses.add(new String[]{"1.1", "Job / Item Specification: " + escapeHtml(jobTitle), "Comply", "No Deviation", qtyRemark});
 
         if (entities.containsKey("partNo")) {
@@ -55,7 +93,7 @@ public class AISpecificationIntelligenceService {
             clauses.add(new String[]{"1." + (paramSr++), escapeHtml(param), "Comply", "No Deviation", "-"});
         }
 
-        // 5. Synthesize Section 2.0: Delivery, Inspection & OEM Compliance Terms
+        // Synthesize Section 2.0: Delivery, Inspection & OEM Compliance Terms
         int noteSr = 1;
         if (!noteConditions.isEmpty()) {
             for (String condition : noteConditions) {
@@ -67,10 +105,10 @@ public class AISpecificationIntelligenceService {
             clauses.add(new String[]{"2.3", "Tampered MRP and Expiry date product will not be accepted.", "Comply", "No Deviation", "-"});
         }
 
-        // 6. Synthesize Section 3.0: Standards & Quality Assurance
+        // Synthesize Section 3.0: Standards & Quality Assurance
         clauses.add(new String[]{"3.1", "Standards & Quality Certification: Equipment offering conforms to ISO / BIS / CE quality standards.", "Comply", "No Deviation", "-"});
 
-        // 7. If clauses are sparse, enrich with Category-Aware AI Intelligence
+        // If clauses are sparse, enrich with Category-Aware AI Intelligence
         if (clauses.size() < 4) {
             enrichWithCategoryIntelligence(clauses, jobTitle, data);
         }
