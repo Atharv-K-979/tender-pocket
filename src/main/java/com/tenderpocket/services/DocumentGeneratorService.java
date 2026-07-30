@@ -23,7 +23,7 @@ import java.time.LocalDate;
 public class DocumentGeneratorService {
 
     public byte[] generatePdf(Map<String, String> data) throws Exception {
-        String htmlContent = generateHtmlTemplates(data);
+        String htmlContent = cleanXmlForOpenHtmlPdf(generateHtmlTemplates(data));
         try {
             Files.write(Paths.get("public/debug_generated.html"), htmlContent.getBytes());
         } catch (Exception ex) {}
@@ -1407,11 +1407,16 @@ public class DocumentGeneratorService {
 
     private String escapeHtml(String input) {
         if (input == null) return "";
-        return input.replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                    .replace("\"", "&quot;")
-                    .replace("'", "&apos;");
+        String s = input.replace("&amp;", "&")
+                        .replace("&lt;", "<")
+                        .replace("&gt;", ">")
+                        .replace("&quot;", "\"")
+                        .replace("&apos;", "'");
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
     }
 
     private String highlightProductDescription(String productDesc) {
@@ -1663,8 +1668,13 @@ public class DocumentGeneratorService {
         return generateTechSpecPdf(data, null);
     }
 
+    private String cleanXmlForOpenHtmlPdf(String html) {
+        if (html == null) return "";
+        return html.replaceAll("&(?!(?:amp|lt|gt|quot|apos|#\\d+|#x[0-9a-fA-F]+);)", "&amp;");
+    }
+
     public byte[] generateTechSpecPdf(Map<String, String> data, List<String[]> customClauses) throws Exception {
-        String htmlContent = generateTechSpecHtml(data, customClauses);
+        String htmlContent = cleanXmlForOpenHtmlPdf(generateTechSpecHtml(data, customClauses));
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
         
         com.openhtmltopdf.pdfboxout.PdfRendererBuilder builder = new com.openhtmltopdf.pdfboxout.PdfRendererBuilder();
@@ -1682,9 +1692,14 @@ public class DocumentGeneratorService {
             builder.useFont(() -> DocumentGeneratorService.class.getResourceAsStream("/fonts/Cambria Bold Italic.ttf"), "Cambria", 700, com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder.FontStyle.ITALIC, true);
         } catch (Exception ex) {}
 
-        builder.withHtmlContent(htmlContent, "/");
-        builder.toStream(baos);
-        builder.run();
+        try {
+            builder.withHtmlContent(htmlContent, "/");
+            builder.toStream(baos);
+            builder.run();
+        } catch (Exception e) {
+            System.err.println("[DocumentGeneratorService] HTML rendering failed! HTML content excerpt:\n" + htmlContent.substring(0, Math.min(htmlContent.length(), 2000)));
+            throw e;
+        }
         
         return baos.toByteArray();
     }
