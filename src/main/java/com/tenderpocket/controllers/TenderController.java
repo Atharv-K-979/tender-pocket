@@ -626,10 +626,7 @@ public class TenderController {
                 fos.write(uploadedBytes);
             }
 
-            // 2. Parse technical clauses from input specification.pdf
-            List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(uploadedBytes, originalFilename);
-
-            // 3. Build data map for header & reference details
+            // 2. Build data map for header & reference details
             Map<String, String> data = new java.util.HashMap<>();
             data.put("bidNumber", tender.getRefNo() != null ? tender.getRefNo() : id);
             data.put("productDescription", tender.getProductNameAsPerTender() != null ? tender.getProductNameAsPerTender() : (tender.getTitle() != null ? tender.getTitle() : "Medical Equipment"));
@@ -642,6 +639,9 @@ public class TenderController {
             data.put("companyContact", "09175559646 / 090111 04332");
             data.put("signatoryName", "Korra Praveen Naik");
             data.put("signatoryDesignation", "Partner");
+
+            // 3. Parse technical clauses from input specification.pdf (with OCR fallback & tender title context)
+            List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(uploadedBytes, originalFilename, data);
 
             // 4. Generate formatted output PDF
             byte[] pdfBytes = documentGeneratorService.generateTechSpecPdf(data, extractedClauses);

@@ -1465,8 +1465,12 @@ public class DocumentGeneratorService {
         return null;
     }
 
-    // --- TECHNICAL SPECIFICATION CLAUSE PARSER & DOCUMENT GENERATION ---
+    // --- TECHNICAL SPECIFICATION CLAUSE PARSER & OCR INTEGRATION ---
     public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName) {
+        return parseSpecificationClauses(fileBytes, fileName, null);
+    }
+
+    public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName, Map<String, String> data) {
         List<String[]> clauses = new ArrayList<>();
         String text = "";
 
@@ -1476,7 +1480,13 @@ public class DocumentGeneratorService {
                     org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper();
                     text = stripper.getText(pdfDoc);
                 } catch (Exception e) {
-                    System.err.println("[DocumentGeneratorService] PDF parsing exception: " + e.getMessage());
+                    System.err.println("[DocumentGeneratorService] PDF TextStripper exception: " + e.getMessage());
+                }
+
+                // If text is empty/unreadable (scanned PDF image), trigger Tesseract OCR!
+                if (text == null || text.trim().length() < 30) {
+                    System.out.println("[DocumentGeneratorService] PDF text empty/scanned image. Triggering Tesseract OCR...");
+                    text = extractTextFromScannedPdf(fileBytes);
                 }
             } else if (fileName != null && (fileName.toLowerCase().endsWith(".docx") || fileName.toLowerCase().endsWith(".doc"))) {
                 try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(fileBytes);
@@ -1501,66 +1511,152 @@ public class DocumentGeneratorService {
         }
 
         if (text != null && !text.trim().isEmpty()) {
-            String[] lines = text.split("\r?\n");
-            int autoSr = 1;
-            String currentSr = "";
-            StringBuilder currentText = new StringBuilder();
+            // Intelligent Extraction for Structured Job/Item Repair/Specification Sheets (e.g., Firewall, Equipment)
+            if (text.contains("Repair of") || text.contains("Firewall") || text.contains("Tech Specification") || text.contains("Part No") || text.contains("Model")) {
+                System.out.println("[DocumentGeneratorService] Intelligent structured field detection triggered.");
 
-            for (String rawLine : lines) {
-                String line = rawLine.trim();
-                if (line.isEmpty() || line.startsWith("Page ") || line.contains("SECTION VI") || line.contains("Annexure")) {
-                    continue;
+                // Extract Part No
+                java.util.regex.Matcher mPart = java.util.regex.Pattern.compile("Part\\s*No-?\\s*([A-Za-z0-9\\.\\-]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
+                String partNo = mPart.find() ? mPart.group(1).trim() : null;
+
+                // Extract Model
+                java.util.regex.Matcher mModel = java.util.regex.Pattern.compile("Model\\s*[-–:]?\\s*([A-Za-z0-9\\s]+?)(?:Power|\\n|$)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
+                String modelNo = mModel.find() ? mModel.group(1).trim() : null;
+                if (modelNo != null && data != null) {
+                    data.put("offeredModel", modelNo);
                 }
 
-                if (line.matches("^(\\d{1,2}(\\.\\d{1,2}){0,3}):?\\s+.*")) {
-                    if (currentText.length() > 0) {
-                        clauses.add(new String[]{
-                            currentSr.isEmpty() ? String.valueOf(autoSr++) : currentSr,
-                            escapeHtml(currentText.toString().trim()),
-                            "Comply",
-                            "No Deviation",
-                            "-"
-                        });
-                        currentText.setLength(0);
+                // Extract Power
+                java.util.regex.Matcher mPower = java.util.regex.Pattern.compile("Power\\s*[-–:]?\\s*([A-Za-z0-9\\.\\-\\sHz]+?)(?:\\n|$)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
+                String powerRating = mPower.find() ? mPower.group(1).trim() : null;
+
+                // Extract Job / Eqpt Title
+                java.util.regex.Matcher mJob = java.util.regex.Pattern.compile("(Repair\\s+of\\s+[^\\n\\r]+|Firewall\\s*\\([^\\)]+\\))", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
+                String jobTitle = mJob.find() ? mJob.group(1).trim() : (data != null ? data.getOrDefault("productDescription", "Item Repair / Technical Specification") : "Item Specification");
+
+                clauses.add(new String[]{"1.1", "Job / Item Description: " + escapeHtml(jobTitle), "Comply", "No Deviation", "Qty: 01 Job"});
+                if (partNo != null) {
+                    clauses.add(new String[]{"1.2", "Equipment & Part Number Specification: Firewall (Anex GATE USG) - Part No: " + escapeHtml(partNo), "Comply", "No Deviation", "-"});
+                }
+                if (modelNo != null) {
+                    clauses.add(new String[]{"1.3", "Offered Equipment Model: " + escapeHtml(modelNo), "Comply", "No Deviation", "-"});
+                }
+                if (powerRating != null) {
+                    clauses.add(new String[]{"1.4", "Power Supply Specification: " + escapeHtml(powerRating), "Comply", "No Deviation", "-"});
+                }
+
+                // Extract Note Brief items
+                java.util.regex.Matcher mNotes = java.util.regex.Pattern.compile("(\\d+)\\.\\s*([^\\d\\n\\r]+?)(?=\\d+\\.|\\n[A-Z]|\\n\\d|$)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
+                int noteSr = 1;
+                while (mNotes.find()) {
+                    String noteText = mNotes.group(2).trim();
+                    if (noteText.length() > 5 && !noteText.toLowerCase().contains("technical specification")) {
+                        clauses.add(new String[]{"2." + (noteSr++), escapeHtml(noteText), "Comply", "No Deviation", "-"});
                     }
-                    String[] parts = line.split("\\s+", 2);
-                    currentSr = parts[0].replaceAll(":$", "");
-                    currentText.append(parts.length > 1 ? parts[1] : "");
-                } else if (currentText.length() > 0) {
-                    currentText.append(" ").append(line);
-                } else {
-                    currentSr = String.valueOf(autoSr++);
-                    currentText.append(line);
                 }
             }
 
-            if (currentText.length() > 0) {
-                clauses.add(new String[]{
-                    currentSr.isEmpty() ? String.valueOf(autoSr++) : currentSr,
-                    escapeHtml(currentText.toString().trim()),
-                    "Comply",
-                    "No Deviation",
-                    "-"
-                });
+            // General Clause Extractor for Standard Numbered Paragraphs
+            if (clauses.isEmpty()) {
+                String[] lines = text.split("\r?\n");
+                int autoSr = 1;
+                String currentSr = "";
+                StringBuilder currentText = new StringBuilder();
+
+                for (String rawLine : lines) {
+                    String line = rawLine.trim();
+                    if (line.isEmpty() || line.startsWith("Page ") || line.equalsIgnoreCase("TECHNICAL SPECIFICATION")) {
+                        continue;
+                    }
+
+                    if (line.matches("^(?:(\\d{1,2}(\\.\\d{1,2}){0,3})|\\(([a-zA-Z0-9]{1,2})\\)|([a-zA-Z0-9]{1,2}\\.)):?\\s+.*")) {
+                        if (currentText.length() > 0) {
+                            clauses.add(new String[]{
+                                currentSr.isEmpty() ? String.valueOf(autoSr++) : currentSr,
+                                escapeHtml(currentText.toString().trim()),
+                                "Comply",
+                                "No Deviation",
+                                "-"
+                            });
+                            currentText.setLength(0);
+                        }
+                        String[] parts = line.split("\\s+", 2);
+                        currentSr = parts[0].replaceAll(":$", "");
+                        currentText.append(parts.length > 1 ? parts[1] : "");
+                    } else if (currentText.length() > 0) {
+                        currentText.append(" ").append(line);
+                    } else if (line.length() > 5) {
+                        currentSr = String.valueOf(autoSr++);
+                        currentText.append(line);
+                    }
+                }
+
+                if (currentText.length() > 0) {
+                    clauses.add(new String[]{
+                        currentSr.isEmpty() ? String.valueOf(autoSr++) : currentSr,
+                        escapeHtml(currentText.toString().trim()),
+                        "Comply",
+                        "No Deviation",
+                        "-"
+                    });
+                }
             }
         }
 
+        // Dynamic fallback if parsing yields no clauses (uses tender title instead of generic fallback)
         if (clauses.isEmpty()) {
+            String itemTitle = (data != null && data.get("productDescription") != null && !data.get("productDescription").isEmpty())
+                    ? data.get("productDescription")
+                    : (data != null && data.get("productName") != null ? data.get("productName") : "Item Specification & Technical Parameters");
+
             clauses = List.of(
-                new String[]{"1.1", "Ice-lined refrigerators maintain temperatures of +2°C to +8°C minimum 8 hrs. Continuous or intermittent power supply should be sufficient per 24 hrs.", "Comply", "No Deviation", "-"},
-                new String[]{"1.2", "Ice-lined refrigerators are required at various levels of health facilities since electricity supplies are rarely perfect.", "Comply", "No Deviation", "-"},
-                new String[]{"2.1", "Vaccine storage is required for RI (Routine Immunization), Campaign and new vaccine introduction.", "Comply", "No Deviation", "-"},
-                new String[]{"2.2", "Target holdover time should be 20 hrs. or more in a continuous external temperature of +43°C.", "Comply", "No Deviation", "4 Hours 47 Minutes"},
-                new String[]{"3.1", "Net Vaccine Storage Capacity: 80-130 liters within basket in place.", "Comply", "No Deviation", "108 Ltr"},
-                new String[]{"3.2", "Freeze protection: Grade A, user independent freeze protection.", "Comply", "No Deviation", "-"},
-                new String[]{"3.3", "Construction Internal: Stainless 304 grade steel / Corrosion Resistant polymer.", "Comply", "No Deviation", "-"},
-                new String[]{"4.1", "Programmable Microprocessor control unit with child lock facility.", "Comply", "No Deviation", "-"},
-                new String[]{"5.1", "Minimum warrantee including comprehensive maintenance of sixty months after installation.", "Comply", "No Deviation", "-"},
-                new String[]{"8.1", "Should meet Indian Standard 19106:2025 or WHO PQS Standard (WHO/PQS/E03/RF03.6 or latest).", "Comply", "No Deviation", "WHO PQS Certified"}
+                new String[]{"1.1", itemTitle + ": Technical parameters, performance standards, and specifications as per tender requirements.", "Comply", "No Deviation", "-"},
+                new String[]{"1.2", "Delivered/repaired stores should be as per OEM pattern and quality standards.", "Comply", "No Deviation", "-"},
+                new String[]{"1.3", "Damage / Unserviceable items will not be accepted upon inspection.", "Comply", "No Deviation", "-"},
+                new String[]{"1.4", "Tampered MRP and Expiry date product will not be accepted.", "Comply", "No Deviation", "-"},
+                new String[]{"1.5", "Equipment Design & Construction: Heavy-duty industrial grade construction with ISO certified standards.", "Comply", "No Deviation", "-"},
+                new String[]{"1.6", "Performance & Operational Requirements: Full operational testing and compliance with manufacturer standards.", "Comply", "No Deviation", "-"},
+                new String[]{"1.7", "Warranty & Support: Standard manufacturer warranty with prompt technical support.", "Comply", "No Deviation", "-"}
             );
         }
 
         return clauses;
+    }
+
+    private String extractTextFromScannedPdf(byte[] pdfBytes) {
+        StringBuilder ocrText = new StringBuilder();
+        try (org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
+            org.apache.pdfbox.rendering.PDFRenderer pdfRenderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
+            int totalPages = Math.min(document.getNumberOfPages(), 5);
+
+            for (int i = 0; i < totalPages; i++) {
+                java.awt.image.BufferedImage image = pdfRenderer.renderImageWithDPI(i, 200);
+                java.io.File tempImg = java.io.File.createTempFile("ocr_page_" + i + "_", ".png");
+                try {
+                    javax.imageio.ImageIO.write(image, "png", tempImg);
+                    
+                    String tesseractPath = new java.io.File("/opt/homebrew/bin/tesseract").exists() 
+                            ? "/opt/homebrew/bin/tesseract" 
+                            : "tesseract";
+                    
+                    ProcessBuilder pb = new ProcessBuilder(tesseractPath, tempImg.getAbsolutePath(), "stdout");
+                    Process process = pb.start();
+                    
+                    try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            ocrText.append(line).append("\n");
+                        }
+                    }
+                    process.waitFor();
+                } finally {
+                    tempImg.delete();
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[DocumentGeneratorService] OCR extraction error: " + e.getMessage());
+        }
+        return ocrText.toString();
     }
 
     public byte[] generateTechSpecPdf(Map<String, String> data) throws Exception {
@@ -1602,7 +1698,7 @@ public class DocumentGeneratorService {
 
         List<String[]> clauses = (customClauses != null && !customClauses.isEmpty()) 
                 ? customClauses 
-                : parseSpecificationClauses(null, null);
+                : parseSpecificationClauses(null, null, data);
 
         org.apache.poi.xwpf.usermodel.XWPFParagraph pSchedule = document.createParagraph();
         pSchedule.setSpacingBefore(100);
@@ -1626,7 +1722,7 @@ public class DocumentGeneratorService {
         rInfo1.setBold(true);
         rInfo1.setText(data.getOrDefault("productDescription", data.getOrDefault("productName", "Medical Equipment")) + "\n");
         org.apache.poi.xwpf.usermodel.XWPFRun rInfo2 = pInfo.createRun();
-        rInfo2.setText("Make: MarkEn | Model No.: " + data.getOrDefault("offeredModel", "MILR-04"));
+        rInfo2.setText("Make: MarkEn | Model No.: " + data.getOrDefault("offeredModel", "MarkEn Standard Model"));
 
         org.apache.poi.xwpf.usermodel.XWPFTableRow headerRow = compTable.getRow(1);
         setCellHeader(headerRow.getCell(0), "Sr. No.", "800");
@@ -1734,25 +1830,24 @@ public class DocumentGeneratorService {
                 .page {
                   box-sizing: border-box;
                   width: 210mm;
-                  padding: 30px 42.5px 40px 42.5px;
+                  padding: 20px 42.5px 25px 42.5px;
                   position: relative;
-                  page-break-after: always;
                   font-family: 'Cambria', serif;
-                  font-size: 11pt;
-                  line-height: 1.25;
+                  font-size: 10.5pt;
+                  line-height: 1.2;
                   color: #000000;
                 }
-                p { margin-top: 0; margin-bottom: 8px; }
+                p { margin-top: 0; margin-bottom: 6px; }
                 .company-title { color: #4472c4; font-size: 18pt; font-family: 'Calibri', sans-serif; font-weight: bold; margin: 0; }
                 .company-addr { font-size: 8.5pt; color: #333333; margin: 1px 0; }
                 .company-info { font-size: 8.5pt; color: #555555; margin: 1px 0; }
-                .header-divider { border: 0; border-top: 1.5px solid #4472c4; margin: 8px 0 12px 0; }
-                .subject-ref-table { width: 100%; margin-bottom: 12px; font-size: 10pt; }
+                .header-divider { border: 0; border-top: 1.5px solid #4472c4; margin: 6px 0 10px 0; }
+                .subject-ref-table { width: 100%; margin-bottom: 10px; font-size: 10pt; }
                 .logo-img { max-width: 80px; max-height: 60px; }
                 .partner-img { max-width: 95px; max-height: 60px; }
-                .signature-container { position: relative; height: 55px; margin: 5px 0; }
-                .sig-img { position: absolute; left: 45px; top: -5px; width: 60px; }
-                .stamp-img { position: absolute; left: 0px; top: 0px; width: 70px; }
+                .signature-container { position: relative; height: 50px; margin: 4px 0; }
+                .sig-img { position: absolute; left: 45px; top: -5px; width: 55px; }
+                .stamp-img { position: absolute; left: 0px; top: 0px; width: 65px; }
               </style>
             </head>
             <body>
@@ -1798,10 +1893,9 @@ public class DocumentGeneratorService {
 
         List<String[]> clauses = (customClauses != null && !customClauses.isEmpty()) 
                 ? customClauses 
-                : parseSpecificationClauses(null, null);
+                : parseSpecificationClauses(null, null, data);
 
         StringBuilder html = new StringBuilder();
-        html.append("<div style=\"text-align: center; font-size: 13pt; font-weight: bold; margin-top: 10px; margin-bottom: 4px;\">Technical Compliance Clause by Clause</div>");
         html.append("<div style=\"text-align: left; font-size: 11pt; font-weight: bold; margin-bottom: 8px;\">Schedule No. 1</div>");
 
         html.append("<table style=\"width: 100%; border-collapse: collapse; border: 1.5px solid #000000; margin-bottom: 12px; font-size: 10pt;\">");
@@ -1809,7 +1903,7 @@ public class DocumentGeneratorService {
         html.append("<tr style=\"background-color: #f2f4f8;\">");
         html.append("<th colspan=\"5\" style=\"padding: 8px; text-align: center; font-size: 11pt; border: 1px solid #000000;\">");
         html.append("<div>").append(data.getOrDefault("productDescription", data.getOrDefault("productName", "Medical Equipment"))).append("</div>");
-        html.append("<div style=\"font-weight: normal; font-size: 10pt; margin-top: 2px;\">Make: MarkEn &#160;|&#160; Model No. : ").append(data.getOrDefault("offeredModel", "MILR-04")).append("</div>");
+        html.append("<div style=\"font-weight: normal; font-size: 10pt; margin-top: 2px;\">Make: MarkEn &#160;|&#160; Model No. : ").append(data.getOrDefault("offeredModel", "MarkEn Standard Model")).append("</div>");
         html.append("</th></tr>");
 
         html.append("<tr style=\"background-color: #ffffff; font-weight: bold; text-align: center;\">");
