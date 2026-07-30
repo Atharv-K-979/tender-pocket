@@ -1470,13 +1470,15 @@ public class DocumentGeneratorService {
         return null;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private AISpecificationIntelligenceService aiSpecificationIntelligenceService;
+
     // --- TECHNICAL SPECIFICATION CLAUSE PARSER & OCR INTEGRATION ---
     public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName) {
         return parseSpecificationClauses(fileBytes, fileName, null);
     }
 
     public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName, Map<String, String> data) {
-        List<String[]> clauses = new ArrayList<>();
         String text = "";
 
         if (fileBytes != null && fileBytes.length > 0) {
@@ -1515,117 +1517,13 @@ public class DocumentGeneratorService {
             }
         }
 
-        if (text != null && !text.trim().isEmpty()) {
-            // Intelligent Extraction for Structured Job/Item Repair/Specification Sheets (e.g., Firewall, Equipment)
-            if (text.contains("Repair of") || text.contains("Firewall") || text.contains("Tech Specification") || text.contains("Part No") || text.contains("Model")) {
-                System.out.println("[DocumentGeneratorService] Intelligent structured field detection triggered.");
-
-                // Extract Part No
-                java.util.regex.Matcher mPart = java.util.regex.Pattern.compile("Part\\s*No-?\\s*([A-Za-z0-9\\.\\-]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
-                String partNo = mPart.find() ? mPart.group(1).trim() : null;
-
-                // Extract Model
-                java.util.regex.Matcher mModel = java.util.regex.Pattern.compile("Model\\s*[-–:]?\\s*([A-Za-z0-9\\s]+?)(?:Power|\\n|$)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
-                String modelNo = mModel.find() ? mModel.group(1).trim() : null;
-                if (modelNo != null && data != null) {
-                    data.put("offeredModel", modelNo);
-                }
-
-                // Extract Power
-                java.util.regex.Matcher mPower = java.util.regex.Pattern.compile("Power\\s*[-–:]?\\s*([A-Za-z0-9\\.\\-\\sHz]+?)(?:\\n|$)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
-                String powerRating = mPower.find() ? mPower.group(1).trim() : null;
-
-                // Extract Job / Eqpt Title
-                java.util.regex.Matcher mJob = java.util.regex.Pattern.compile("(Repair\\s+of\\s+[^\\n\\r]+|Firewall\\s*\\([^\\)]+\\))", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
-                String jobTitle = mJob.find() ? mJob.group(1).trim() : (data != null ? data.getOrDefault("productDescription", "Item Repair / Technical Specification") : "Item Specification");
-
-                clauses.add(new String[]{"1.1", "Job / Item Description: " + escapeHtml(jobTitle), "Comply", "No Deviation", "Qty: 01 Job"});
-                if (partNo != null) {
-                    clauses.add(new String[]{"1.2", "Equipment & Part Number Specification: Firewall (Anex GATE USG) - Part No: " + escapeHtml(partNo), "Comply", "No Deviation", "-"});
-                }
-                if (modelNo != null) {
-                    clauses.add(new String[]{"1.3", "Offered Equipment Model: " + escapeHtml(modelNo), "Comply", "No Deviation", "-"});
-                }
-                if (powerRating != null) {
-                    clauses.add(new String[]{"1.4", "Power Supply Specification: " + escapeHtml(powerRating), "Comply", "No Deviation", "-"});
-                }
-
-                // Extract Note Brief items
-                java.util.regex.Matcher mNotes = java.util.regex.Pattern.compile("(\\d+)\\.\\s*([^\\d\\n\\r]+?)(?=\\d+\\.|\\n[A-Z]|\\n\\d|$)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text);
-                int noteSr = 1;
-                while (mNotes.find()) {
-                    String noteText = mNotes.group(2).trim();
-                    if (noteText.length() > 5 && !noteText.toLowerCase().contains("technical specification")) {
-                        clauses.add(new String[]{"2." + (noteSr++), escapeHtml(noteText), "Comply", "No Deviation", "-"});
-                    }
-                }
-            }
-
-            // General Clause Extractor for Standard Numbered Paragraphs
-            if (clauses.isEmpty()) {
-                String[] lines = text.split("\r?\n");
-                int autoSr = 1;
-                String currentSr = "";
-                StringBuilder currentText = new StringBuilder();
-
-                for (String rawLine : lines) {
-                    String line = rawLine.trim();
-                    if (line.isEmpty() || line.startsWith("Page ") || line.equalsIgnoreCase("TECHNICAL SPECIFICATION")) {
-                        continue;
-                    }
-
-                    if (line.matches("^(?:(\\d{1,2}(\\.\\d{1,2}){0,3})|\\(([a-zA-Z0-9]{1,2})\\)|([a-zA-Z0-9]{1,2}\\.)):?\\s+.*")) {
-                        if (currentText.length() > 0) {
-                            clauses.add(new String[]{
-                                currentSr.isEmpty() ? String.valueOf(autoSr++) : currentSr,
-                                escapeHtml(currentText.toString().trim()),
-                                "Comply",
-                                "No Deviation",
-                                "-"
-                            });
-                            currentText.setLength(0);
-                        }
-                        String[] parts = line.split("\\s+", 2);
-                        currentSr = parts[0].replaceAll(":$", "");
-                        currentText.append(parts.length > 1 ? parts[1] : "");
-                    } else if (currentText.length() > 0) {
-                        currentText.append(" ").append(line);
-                    } else if (line.length() > 5) {
-                        currentSr = String.valueOf(autoSr++);
-                        currentText.append(line);
-                    }
-                }
-
-                if (currentText.length() > 0) {
-                    clauses.add(new String[]{
-                        currentSr.isEmpty() ? String.valueOf(autoSr++) : currentSr,
-                        escapeHtml(currentText.toString().trim()),
-                        "Comply",
-                        "No Deviation",
-                        "-"
-                    });
-                }
-            }
+        // Delegate to Post-OCR AI Technical Specification Intelligence Service
+        if (aiSpecificationIntelligenceService == null) {
+            aiSpecificationIntelligenceService = new AISpecificationIntelligenceService();
         }
 
-        // Dynamic fallback if parsing yields no clauses (uses tender title instead of generic fallback)
-        if (clauses.isEmpty()) {
-            String itemTitle = (data != null && data.get("productDescription") != null && !data.get("productDescription").isEmpty())
-                    ? data.get("productDescription")
-                    : (data != null && data.get("productName") != null ? data.get("productName") : "Item Specification & Technical Parameters");
-
-            clauses = List.of(
-                new String[]{"1.1", itemTitle + ": Technical parameters, performance standards, and specifications as per tender requirements.", "Comply", "No Deviation", "-"},
-                new String[]{"1.2", "Delivered/repaired stores should be as per OEM pattern and quality standards.", "Comply", "No Deviation", "-"},
-                new String[]{"1.3", "Damage / Unserviceable items will not be accepted upon inspection.", "Comply", "No Deviation", "-"},
-                new String[]{"1.4", "Tampered MRP and Expiry date product will not be accepted.", "Comply", "No Deviation", "-"},
-                new String[]{"1.5", "Equipment Design & Construction: Heavy-duty industrial grade construction with ISO certified standards.", "Comply", "No Deviation", "-"},
-                new String[]{"1.6", "Performance & Operational Requirements: Full operational testing and compliance with manufacturer standards.", "Comply", "No Deviation", "-"},
-                new String[]{"1.7", "Warranty & Support: Standard manufacturer warranty with prompt technical support.", "Comply", "No Deviation", "-"}
-            );
-        }
-
-        return clauses;
+        System.out.println("[DocumentGeneratorService] Executing Post-OCR AI Technical Specification Intelligence Engine...");
+        return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, data);
     }
 
     private String extractTextFromScannedPdf(byte[] pdfBytes) {
