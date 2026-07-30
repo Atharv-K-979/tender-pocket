@@ -31,12 +31,15 @@ public class AISpecificationIntelligenceService {
         return processLocalHeuristicExtraction(rawOcrText, data);
     }
 
+    @org.springframework.beans.factory.annotation.Value("${gemini.api.key:}")
+    private String geminiApiKey;
+
     /**
      * Real LLM Generative AI REST Client.
      * Prompts an LLM (Gemini / OpenAI / Ollama) to parse raw OCR text and return structured JSON clauses.
      */
     private List<String[]> callGenerativeLlmAi(String rawOcrText, Map<String, String> data) {
-        String apiKey = System.getenv("GEMINI_API_KEY");
+        String apiKey = (geminiApiKey != null && !geminiApiKey.trim().isEmpty()) ? geminiApiKey : System.getenv("GEMINI_API_KEY");
         if (apiKey == null || apiKey.trim().isEmpty()) {
             apiKey = System.getenv("OPENAI_API_KEY");
         }
