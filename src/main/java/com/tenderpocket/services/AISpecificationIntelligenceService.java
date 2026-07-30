@@ -35,7 +35,7 @@ public class AISpecificationIntelligenceService {
                 (data != null && data.get("productDescription") != null) ? data.get("productDescription") : "Item Specification & Technical Parameters");
         String qtyRemark = entities.containsKey("qty") ? "Qty: " + entities.get("qty") : "-";
 
-        // Single Tech Specification Entry Consolidation
+        // Single Tech Specification Entry Consolidation (Strictly Technical Specifications ONLY, excluding Note Brief)
         if (entities.containsKey("partNo") || entities.containsKey("model") || cleanText.contains("Repair of") || cleanText.contains("Tech Specification")) {
             StringBuilder specDetail = new StringBuilder();
             specDetail.append(jobTitle);
@@ -56,18 +56,6 @@ public class AISpecificationIntelligenceService {
                 "No Deviation",
                 qtyRemark
             });
-
-            // Add Note Brief items matching input document
-            int noteSr = 1;
-            if (!noteConditions.isEmpty()) {
-                for (String condition : noteConditions) {
-                    clauses.add(new String[]{"2." + (noteSr++), escapeHtml(condition), "Comply", "No Deviation", "-"});
-                }
-            } else {
-                clauses.add(new String[]{"2.1", "Delivered/repaired stores should be as per OEM pattern.", "Comply", "No Deviation", "-"});
-                clauses.add(new String[]{"2.2", "Damage / Unserviceable items will not be accepted.", "Comply", "No Deviation", "-"});
-                clauses.add(new String[]{"2.3", "Tampered MRP and Expiry date product will not be accepted.", "Comply", "No Deviation", "-"});
-            }
 
             return clauses;
         }
