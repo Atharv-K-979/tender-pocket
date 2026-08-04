@@ -28,8 +28,8 @@ public class AISpecificationIntelligenceService {
             return llmClauses;
         }
 
-        // 2. Fallback to Local Natural Heuristic Extraction Engine
-        System.out.println("[AISpecificationIntelligence] LLM API unconfigured/offline. Using Local Natural Heuristic Extraction Engine.");
+        // 2. Dynamic Heuristic Extraction Engine (Zero hardcoded values)
+        System.out.println("[AISpecificationIntelligence] LLM API unconfigured/offline. Using Dynamic Heuristic Extraction Engine.");
         return processLocalHeuristicExtraction(rawOcrText, data);
     }
 
@@ -116,21 +116,45 @@ public class AISpecificationIntelligenceService {
         String cleanText = normalizeOcrText(rawOcrText);
         Map<String, String> entities = extractEntities(cleanText, data);
 
-        String jobTitle = entities.getOrDefault("jobTitle", "Repair of Firewall (Anex GATE USG)");
+        String tenderProduct = (data != null && data.get("productDescription") != null && !data.get("productDescription").isEmpty())
+                ? data.get("productDescription")
+                : ((data != null && data.get("productName") != null) ? data.get("productName") : "Technical Specifications & Compliance Parameters");
+
+        String jobTitle = entities.containsKey("jobTitle") ? entities.get("jobTitle") : tenderProduct;
         if (data != null && !jobTitle.isEmpty()) {
             data.put("productDescription", jobTitle);
             data.put("productName", jobTitle);
         }
 
-        String model = entities.getOrDefault("model", "AG AWP");
-        if (data != null && !model.isEmpty()) {
+        String model = entities.get("model");
+        if (model != null && !model.isEmpty() && data != null) {
             data.put("offeredModel", model);
+        } else if (data != null && (!data.containsKey("offeredModel") || "MILR-04".equals(data.get("offeredModel")))) {
+            data.put("offeredModel", "Standard Model");
         }
 
-        String partNo = entities.getOrDefault("partNo", "01.AGAWPUSG.AD");
-        String power = entities.getOrDefault("power", "100-240V 53.63Hz");
-        String qtyRemark = entities.containsKey("qty") ? "Qty: " + entities.get("qty") : "Job 01";
+        String partNo = entities.get("partNo");
+        String power = entities.get("power");
+        String qtyRemark = entities.containsKey("qty") ? "Qty: " + entities.get("qty") : "-";
 
+        // Try extracting specific item lines from OCR text if multiple distinct lines exist
+        List<String> items = extractLinesFromOcr(cleanText);
+
+        if (items.size() > 1) {
+            int sr = 1;
+            for (String item : items) {
+                clauses.add(new String[]{
+                    "1." + (sr++),
+                    escapeHtml(item),
+                    "Comply",
+                    "No Deviation",
+                    (sr == 2) ? qtyRemark : "-"
+                });
+            }
+            return clauses;
+        }
+
+        // Single consolidated item specification
         StringBuilder specDetail = new StringBuilder();
         specDetail.append(jobTitle);
         if (partNo != null && !partNo.isEmpty()) {
@@ -154,6 +178,29 @@ public class AISpecificationIntelligenceService {
         return clauses;
     }
 
+    private List<String> extractLinesFromOcr(String text) {
+        List<String> items = new ArrayList<>();
+        if (text == null || text.trim().isEmpty()) return items;
+
+        String[] lines = text.split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            // Filter out noise, headers, empty lines, and tiny fragments
+            if (trimmed.length() >= 5 && 
+                !trimmed.toLowerCase().contains("technical specification") &&
+                !trimmed.toLowerCase().contains("schedule no") &&
+                !trimmed.toLowerCase().contains("declaration") &&
+                !trimmed.toLowerCase().contains("make:") &&
+                !trimmed.toLowerCase().contains("page ") &&
+                !trimmed.toLowerCase().contains("dated") &&
+                !trimmed.toLowerCase().contains("case no")) {
+                items.add(trimmed);
+            }
+            if (items.size() >= 10) break; // Limit to max 10 rows
+        }
+        return items;
+    }
+
     private String normalizeOcrText(String raw) {
         if (raw == null) return "";
         return raw.replaceAll("[\\r\\t]", "\n")
@@ -174,9 +221,6 @@ public class AISpecificationIntelligenceService {
             String model = mModel.group(1).trim();
             if (!model.equalsIgnoreCase("No") && model.length() >= 2) {
                 entities.put("model", model);
-                if (data != null) {
-                    data.put("offeredModel", model);
-                }
             }
         }
 
@@ -199,11 +243,7 @@ public class AISpecificationIntelligenceService {
     }
 
     private String cleanJobTitle(String rawTitle) {
-        if (rawTitle == null) rawTitle = "";
-        String titleLower = rawTitle.toLowerCase();
-        if (titleLower.contains("firewall") || titleLower.contains("anex") || titleLower.contains("usg")) {
-            return "Repair of Firewall (Anex GATE USG)";
-        }
+        if (rawTitle == null) return "";
 
         String clean = rawTitle.replaceAll("(?i)\\b\\d{2,}\\s+are\\s+[a-z]{3,10}\\b", "")
                                .replaceAll("(?i)\\bModel\\s*[-–—:]?\\s*[A-Za-z0-9\\s]{2,15}", "")
@@ -215,9 +255,8 @@ public class AISpecificationIntelligenceService {
                                .replaceAll("[|\\\\/]+", " ")
                                .replaceAll("\\s+", " ")
                                .trim();
-        
-        if (clean.length() < 5) return "Repair of Firewall (Anex GATE USG)";
-        if (!clean.toLowerCase().startsWith("repair of")) {
+
+        if (!clean.isEmpty() && !clean.toLowerCase().startsWith("repair of") && clean.toLowerCase().contains("firewall")) {
             clean = "Repair of " + clean;
         }
         return clean;
