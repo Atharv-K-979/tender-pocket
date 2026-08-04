@@ -1517,13 +1517,36 @@ public class DocumentGeneratorService {
             }
         }
 
+        byte[] imageBytesToPass = fileBytes;
+        if (fileName != null && fileName.toLowerCase().endsWith(".pdf")) {
+            byte[] pngBytes = renderFirstPageToPng(fileBytes);
+            if (pngBytes != null && pngBytes.length > 0) {
+                imageBytesToPass = pngBytes;
+            }
+        }
+
         // Delegate to Post-OCR AI Technical Specification Intelligence Service
         if (aiSpecificationIntelligenceService == null) {
             aiSpecificationIntelligenceService = new AISpecificationIntelligenceService();
         }
 
-        System.out.println("[DocumentGeneratorService] Executing Post-OCR AI Technical Specification Intelligence Engine...");
-        return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, fileBytes, data);
+        System.out.println("[DocumentGeneratorService] Executing Gemini 1.5 Flash Vision & AI Technical Specification Intelligence Engine...");
+        return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, imageBytesToPass, data);
+    }
+
+    private byte[] renderFirstPageToPng(byte[] pdfBytes) {
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
+            if (doc.getNumberOfPages() > 0) {
+                org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(doc);
+                java.awt.image.BufferedImage img = renderer.renderImageWithDPI(0, 200);
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                javax.imageio.ImageIO.write(img, "png", baos);
+                return baos.toByteArray();
+            }
+        } catch (Exception e) {
+            System.err.println("[DocumentGeneratorService] Failed to render first page to PNG: " + e.getMessage());
+        }
+        return null;
     }
 
     private String extractTextFromScannedPdf(byte[] pdfBytes) {
