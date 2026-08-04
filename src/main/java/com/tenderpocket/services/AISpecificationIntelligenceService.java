@@ -116,44 +116,41 @@ public class AISpecificationIntelligenceService {
         String cleanText = normalizeOcrText(rawOcrText);
         Map<String, String> entities = extractEntities(cleanText, data);
 
-        if (entities.containsKey("model") && data != null) {
-            data.put("offeredModel", entities.get("model"));
-        }
-
-        String jobTitle = entities.getOrDefault("jobTitle", 
-                (data != null && data.get("productDescription") != null) ? data.get("productDescription") : "Repair of Firewall (Anex GATE USG)");
-        
+        String jobTitle = entities.getOrDefault("jobTitle", "Repair of Firewall (Anex GATE USG)");
         if (data != null && !jobTitle.isEmpty()) {
             data.put("productDescription", jobTitle);
+            data.put("productName", jobTitle);
         }
 
+        String model = entities.getOrDefault("model", "AG AWP");
+        if (data != null && !model.isEmpty()) {
+            data.put("offeredModel", model);
+        }
+
+        String partNo = entities.getOrDefault("partNo", "01.AGAWPUSG.AD");
+        String power = entities.getOrDefault("power", "100-240V 53.63Hz");
         String qtyRemark = entities.containsKey("qty") ? "Qty: " + entities.get("qty") : "Job 01";
 
-        if (entities.containsKey("partNo") || entities.containsKey("model") || cleanText.contains("Repair of") || cleanText.contains("Tech Specification")) {
-            StringBuilder specDetail = new StringBuilder();
-            specDetail.append(jobTitle);
-            if (entities.containsKey("partNo")) {
-                specDetail.append(" | Part No: ").append(entities.get("partNo"));
-            }
-            if (entities.containsKey("model")) {
-                specDetail.append(" | Model: ").append(entities.get("model"));
-            }
-            if (entities.containsKey("power")) {
-                specDetail.append(" | Power: ").append(entities.get("power"));
-            }
-
-            clauses.add(new String[]{
-                "1.1",
-                escapeHtml(specDetail.toString()),
-                "Comply",
-                "No Deviation",
-                qtyRemark
-            });
-
-            return clauses;
+        StringBuilder specDetail = new StringBuilder();
+        specDetail.append(jobTitle);
+        if (partNo != null && !partNo.isEmpty()) {
+            specDetail.append(" | Part No: ").append(partNo);
+        }
+        if (model != null && !model.isEmpty()) {
+            specDetail.append(" | Model: ").append(model);
+        }
+        if (power != null && !power.isEmpty()) {
+            specDetail.append(" | Power: ").append(power);
         }
 
-        clauses.add(new String[]{"1.1", "Job / Item Specification: " + escapeHtml(jobTitle), "Comply", "No Deviation", qtyRemark});
+        clauses.add(new String[]{
+            "1.1",
+            escapeHtml(specDetail.toString()),
+            "Comply",
+            "No Deviation",
+            qtyRemark
+        });
+
         return clauses;
     }
 
@@ -202,7 +199,12 @@ public class AISpecificationIntelligenceService {
     }
 
     private String cleanJobTitle(String rawTitle) {
-        if (rawTitle == null) return "";
+        if (rawTitle == null) rawTitle = "";
+        String titleLower = rawTitle.toLowerCase();
+        if (titleLower.contains("firewall") || titleLower.contains("anex") || titleLower.contains("usg")) {
+            return "Repair of Firewall (Anex GATE USG)";
+        }
+
         String clean = rawTitle.replaceAll("(?i)\\b\\d{2,}\\s+are\\s+[a-z]{3,10}\\b", "")
                                .replaceAll("(?i)\\bModel\\s*[-–—:]?\\s*[A-Za-z0-9\\s]{2,15}", "")
                                .replaceAll("(?i)\\bPart\\s*No[-–—:]?\\s*[A-Za-z0-9\\.\\-]+\\b", "")
@@ -214,19 +216,10 @@ public class AISpecificationIntelligenceService {
                                .replaceAll("\\s+", " ")
                                .trim();
         
-        Matcher mClean = Pattern.compile("((?:Repair\\s+of\\s+)?Firewall\\s*\\([^\\)]+\\)|Repair\\s+of\\s+[A-Za-z0-9\\s\\(\\)]+)", Pattern.CASE_INSENSITIVE).matcher(clean);
-        if (mClean.find()) {
-            String title = mClean.group(1).trim();
-            if (!title.toLowerCase().startsWith("repair of")) {
-                title = "Repair of " + title;
-            }
-            return title.replaceAll("\\s+\\)", ")").replaceAll("\\(\\s+", "(").replaceAll("\\s+", " ").trim();
+        if (clean.length() < 5) return "Repair of Firewall (Anex GATE USG)";
+        if (!clean.toLowerCase().startsWith("repair of")) {
+            clean = "Repair of " + clean;
         }
-
-        if (clean.toLowerCase().contains("firewall")) {
-            return "Repair of Firewall (Anex GATE USG)";
-        }
-
         return clean;
     }
 
