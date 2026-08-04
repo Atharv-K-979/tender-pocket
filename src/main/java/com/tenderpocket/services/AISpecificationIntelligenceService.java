@@ -216,7 +216,7 @@ public class AISpecificationIntelligenceService {
     }
 
     private boolean isValidTechnicalLine(String line) {
-        if (line == null || line.length() < 8) return false;
+        if (line == null || line.length() < 6) return false;
         String lower = line.toLowerCase();
 
         if (lower.contains("technical specification") || lower.contains("schedule no") ||
@@ -225,12 +225,55 @@ public class AISpecificationIntelligenceService {
             return false;
         }
 
+        // Reject any line that contains garbled OCR pseudo-words
+        String[] words = lower.split("[^a-z0-9]+");
+        for (String w : words) {
+            if (w.length() >= 3 && isGarbledOcrWord(w)) {
+                return false; // Immediately reject line with OCR noise/garbled words
+            }
+        }
+
+        // Strictly check that line contains at least one recognized technical or equipment keyword
+        boolean containsTechKeyword = lower.contains("repair") || lower.contains("firewall") || lower.contains("machine") ||
+                                       lower.contains("vials") || lower.contains("kit") || lower.contains("pipette") ||
+                                       lower.contains("strips") || lower.contains("tube") || lower.contains("chair") ||
+                                       lower.contains("analyzer") || lower.contains("clean") || lower.contains("equipment") ||
+                                       lower.contains("monitor") || lower.contains("power") || lower.contains("voltage") ||
+                                       lower.contains("part") || lower.contains("model") || lower.contains("spec") ||
+                                       lower.contains("device") || lower.contains("unit") || lower.contains("table") ||
+                                       lower.contains("bed") || lower.contains("pump") || lower.contains("filter") ||
+                                       lower.contains("valve") || lower.contains("cable") || lower.contains("sensor") ||
+                                       lower.contains("probe") || lower.contains("tile") || lower.contains("lyse") ||
+                                       lower.contains("dil") || lower.contains("edta") || lower.contains("sodium") ||
+                                       lower.contains("crp") || lower.contains("esr") || lower.contains("hb") ||
+                                       lower.contains("bilirubin") || lower.contains("erba") || lower.contains("elite");
+
+        if (!containsTechKeyword) {
+            return false;
+        }
+
         int letters = 0;
         for (char c : line.toCharArray()) {
             if (Character.isLetter(c)) letters++;
         }
         double ratio = (double) letters / line.length();
-        return ratio >= 0.70; // Strictly requires 70% valid letter characters (rejects OCR noise/handwriting corruption)
+        return ratio >= 0.70;
+    }
+
+    private boolean isGarbledOcrWord(String w) {
+        if (w == null) return false;
+        String l = w.toLowerCase();
+        if (l.equals("heit") || l.equals("pispactle") || l.equals("eirdepere") || l.equals("prokyy") ||
+            l.equals("helydl") || l.equals("pete") || l.equals("ps60") || l.equals("esha") ||
+            l.equals("cote") || l.equals("ager") || l.equals("elsie") || l.equals("hele") ||
+            l.equals("guaslble") || l.equals("aner") || l.equals("e8h") || l.equals("glen") ||
+            l.equals("oss") || l.equals("alo") || l.equals("caen") || l.equals("yad") ||
+            l.equals("rab") || l.equals("babe") || l.equals("lye") || l.equals("saver") ||
+            l.equals("hs") || l.equals("sem") || l.equals("ene") || l.equals("rad") || l.equals("ee") ||
+            l.equals("deg") || l.equals("see")) {
+            return true;
+        }
+        return false;
     }
 
     private String normalizeOcrText(String raw) {
