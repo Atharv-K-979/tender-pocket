@@ -1556,6 +1556,41 @@ public class DocumentGeneratorService {
                     tempImg.delete();
                 }
             }
+
+            // Fallback: If rendered page OCR was sparse, extract raw embedded PDImageXObject images
+            if (ocrText.length() < 20) {
+                for (org.apache.pdfbox.pdmodel.PDPage page : document.getPages()) {
+                    org.apache.pdfbox.pdmodel.PDResources resources = page.getResources();
+                    if (resources != null) {
+                        for (org.apache.pdfbox.cos.COSName name : resources.getXObjectNames()) {
+                            if (resources.isImageXObject(name)) {
+                                try {
+                                    org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject imageObj = (org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject) resources.getXObject(name);
+                                    java.awt.image.BufferedImage img = imageObj.getImage();
+                                    java.io.File tempImg = java.io.File.createTempFile("ocr_embed_", ".png");
+                                    try {
+                                        javax.imageio.ImageIO.write(img, "png", tempImg);
+                                        String tesseractPath = new java.io.File("/opt/homebrew/bin/tesseract").exists() ? "/opt/homebrew/bin/tesseract" : "tesseract";
+                                        ProcessBuilder pb = new ProcessBuilder(tesseractPath, tempImg.getAbsolutePath(), "stdout");
+                                        Process process = pb.start();
+                                        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
+                                            String line;
+                                            while ((line = reader.readLine()) != null) {
+                                                ocrText.append(line).append("\n");
+                                            }
+                                        }
+                                        process.waitFor();
+                                    } finally {
+                                        tempImg.delete();
+                                    }
+                                } catch (Exception ex) {
+                                    System.err.println("[DocumentGeneratorService] Embedded image extraction exception: " + ex.getMessage());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         } catch (Exception e) {
             System.err.println("[DocumentGeneratorService] OCR extraction error: " + e.getMessage());
         }
