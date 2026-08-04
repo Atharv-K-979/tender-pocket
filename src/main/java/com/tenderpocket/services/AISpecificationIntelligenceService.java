@@ -32,7 +32,7 @@ public class AISpecificationIntelligenceService {
             return llmClauses;
         }
 
-        // 2. Dynamic Heuristic Extraction Engine (Schedule Item Splitting & Zero Hardcoded Values)
+        // 2. Dynamic Heuristic Extraction Engine
         System.out.println("[AISpecificationIntelligence] LLM API unconfigured/offline. Using Dynamic Heuristic Extraction Engine.");
         return processLocalHeuristicExtraction(rawOcrText, data);
     }
@@ -49,7 +49,7 @@ public class AISpecificationIntelligenceService {
         }
 
         try {
-            String systemPrompt = "You are an expert Tender Technical Specification AI. Given document text or image/PDF, extract strictly the technical specifications (item name, equipment, model, part number, power/electrical rating, and quantity). Do NOT include general note brief conditions or OCR noise. Return a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks.";
+            String systemPrompt = "You are an expert Tender Technical Specification AI. Given document text or image/PDF, extract strictly the technical specifications (item name, equipment, model, part number, power/electrical rating, and quantity). Do NOT include general note brief conditions or OCR noise. If the document is unreadable or contains no clear technical specifications, return an empty JSON array []. Return a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks.";
             
             String jsonPayload = "";
             String endpointUrl = "";
@@ -149,37 +149,16 @@ public class AISpecificationIntelligenceService {
     private List<String[]> processLocalHeuristicExtraction(String rawOcrText, Map<String, String> data) {
         List<String[]> clauses = new ArrayList<>();
         String cleanText = normalizeOcrText(rawOcrText);
-        Map<String, String> entities = extractEntities(cleanText, data);
 
-        String tenderProduct = (data != null && data.get("productDescription") != null && !data.get("productDescription").isEmpty())
-                ? data.get("productDescription")
-                : ((data != null && data.get("productName") != null) ? data.get("productName") : "Technical Specifications & Compliance Parameters");
+        // 1. Extract valid technical item lines from OCR text
+        List<String> items = extractLinesFromOcr(cleanText);
 
-        String jobTitle = entities.containsKey("jobTitle") ? entities.get("jobTitle") : tenderProduct;
-        if (data != null && !jobTitle.isEmpty()) {
-            data.put("productDescription", jobTitle);
-            data.put("productName", jobTitle);
-        }
-
-        String model = entities.get("model");
-        if (model != null && !model.isEmpty() && data != null) {
-            data.put("offeredModel", model);
-        } else if (data != null && (!data.containsKey("offeredModel") || "MILR-04".equals(data.get("offeredModel")))) {
-            data.put("offeredModel", "Standard Model");
-        }
-
-        String partNo = entities.get("partNo");
-        String power = entities.get("power");
-        String qtyRemark = entities.containsKey("qty") ? "Qty: " + entities.get("qty") : "-";
-
-        // Priority 1: If tender product description contains comma-separated schedule items, extract them cleanly!
-        List<String> scheduleItems = extractScheduleItemsFromTender(tenderProduct);
-        if (scheduleItems.size() > 1) {
+        if (!items.isEmpty()) {
             int sr = 1;
-            for (String sItem : scheduleItems) {
+            for (String item : items) {
                 clauses.add(new String[]{
                     "1." + (sr++),
-                    escapeHtml(sItem),
+                    escapeHtml(item),
                     "Comply",
                     "No Deviation",
                     "-"
@@ -188,58 +167,37 @@ public class AISpecificationIntelligenceService {
             return clauses;
         }
 
-        // Priority 2: Extract specific valid item lines from OCR text if available
-        List<String> items = extractLinesFromOcr(cleanText);
-        if (items.size() > 1) {
-            int sr = 1;
-            for (String item : items) {
-                clauses.add(new String[]{
-                    "1." + (sr++),
-                    escapeHtml(item),
-                    "Comply",
-                    "No Deviation",
-                    (sr == 2) ? qtyRemark : "-"
-                });
+        // 2. Extract specific entity matches (Part No, Model, Power, Job Title) from OCR text
+        Map<String, String> entities = extractEntities(cleanText, data);
+        if (!entities.isEmpty() && (entities.containsKey("partNo") || entities.containsKey("model") || entities.containsKey("power") || entities.containsKey("jobTitle"))) {
+            String jobTitle = entities.containsKey("jobTitle") ? entities.get("jobTitle") : "Technical Specification";
+            String partNo = entities.get("partNo");
+            String model = entities.get("model");
+            String power = entities.get("power");
+
+            if (model != null && !model.isEmpty() && data != null) {
+                data.put("offeredModel", model);
             }
+
+            StringBuilder specDetail = new StringBuilder();
+            specDetail.append(jobTitle);
+            if (partNo != null && !partNo.isEmpty()) specDetail.append(" | Part No: ").append(partNo);
+            if (model != null && !model.isEmpty()) specDetail.append(" | Model: ").append(model);
+            if (power != null && !power.isEmpty()) specDetail.append(" | Power: ").append(power);
+
+            clauses.add(new String[]{
+                "1.1",
+                escapeHtml(specDetail.toString()),
+                "Comply",
+                "No Deviation",
+                "-"
+            });
             return clauses;
         }
 
-        // Priority 3: Single consolidated item specification
-        StringBuilder specDetail = new StringBuilder();
-        specDetail.append(jobTitle);
-        if (partNo != null && !partNo.isEmpty()) {
-            specDetail.append(" | Part No: ").append(partNo);
-        }
-        if (model != null && !model.isEmpty()) {
-            specDetail.append(" | Model: ").append(model);
-        }
-        if (power != null && !power.isEmpty()) {
-            specDetail.append(" | Power: ").append(power);
-        }
-
-        clauses.add(new String[]{
-            "1.1",
-            escapeHtml(specDetail.toString()),
-            "Comply",
-            "No Deviation",
-            qtyRemark
-        });
-
-        return clauses;
-    }
-
-    private List<String> extractScheduleItemsFromTender(String productDesc) {
-        List<String> items = new ArrayList<>();
-        if (productDesc == null || productDesc.trim().isEmpty()) return items;
-
-        String[] parts = productDesc.split("[,;]");
-        for (String part : parts) {
-            String trimmed = part.trim();
-            if (trimmed.length() >= 2 && !trimmed.toLowerCase().startsWith("schedule") && !trimmed.toLowerCase().startsWith("make:")) {
-                items.add(trimmed);
-            }
-        }
-        return items;
+        // 3. Document is unreadable or contains no valid technical clauses
+        System.out.println("[AISpecificationIntelligence] Document text is unreadable or contains no valid technical clauses.");
+        return Collections.emptyList();
     }
 
     private List<String> extractLinesFromOcr(String text) {
@@ -272,7 +230,7 @@ public class AISpecificationIntelligenceService {
             if (Character.isLetter(c)) letters++;
         }
         double ratio = (double) letters / line.length();
-        return ratio >= 0.65;
+        return ratio >= 0.70; // Strictly requires 70% valid letter characters (rejects OCR noise/handwriting corruption)
     }
 
     private String normalizeOcrText(String raw) {

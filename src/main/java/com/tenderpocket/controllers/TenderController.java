@@ -645,6 +645,13 @@ public class TenderController {
             // 3. Parse technical clauses from input specification.pdf (with OCR fallback & tender title context)
             List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(uploadedBytes, originalFilename, data);
 
+            if (extractedClauses == null || extractedClauses.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "Document is not readable, please provide a different input."
+                ));
+            }
+
             // 4. Generate formatted output PDF
             byte[] pdfBytes = documentGeneratorService.generateTechSpecPdf(data, extractedClauses);
             String pdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
