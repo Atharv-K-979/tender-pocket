@@ -631,7 +631,9 @@ public class TenderController {
             data.put("bidNumber", tender.getRefNo() != null ? tender.getRefNo() : id);
             data.put("productDescription", tender.getProductNameAsPerTender() != null ? tender.getProductNameAsPerTender() : (tender.getTitle() != null ? tender.getTitle() : "Medical Equipment"));
             data.put("productName", tender.getTitle() != null ? tender.getTitle() : "Medical Equipment");
-            data.put("offeredModel", "MILR-04");
+            if (!data.containsKey("offeredModel")) {
+                data.put("offeredModel", "AG AWP");
+            }
             data.put("companyName", "Mark Enterprises");
             data.put("companyAddress", "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India");
             data.put("companyEmail", "info@markenworld.com");
