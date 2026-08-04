@@ -197,10 +197,32 @@ public class AISpecificationIntelligenceService {
 
         Matcher mJob = Pattern.compile("(Repair\\s+of\\s+[^\\n\\r]+|Firewall\\s*\\([^\\)]+\\)|[A-Z0-9\\s]{4,40} Machine)", Pattern.CASE_INSENSITIVE).matcher(text);
         if (mJob.find()) {
-            entities.put("jobTitle", mJob.group(1).trim());
+            entities.put("jobTitle", cleanJobTitle(mJob.group(1)));
         }
 
         return entities;
+    }
+
+    private String cleanJobTitle(String rawTitle) {
+        if (rawTitle == null) return "";
+        String clean = rawTitle.replaceAll("(?i)\\b\\d{2,}\\s+are\\s+[a-z]{3,10}\\b", "") // removes OCR noise e.g. "04 are uGeee"
+                               .replaceAll("(?i)\\bModel\\s*[-–:]?\\s*[A-Za-z0-9\\s]{2,15}\\b", "") // removes inline Model info
+                               .replaceAll("(?i)\\bPart\\s*No[-:]?\\s*[A-Za-z0-9\\.\\-]+\\b", "") // removes inline Part No
+                               .replaceAll("(?i)\\bPower\\s*[-–:]?\\s*[A-Za-z0-9\\.\\-\\sHz\\/]+\\b", "") // removes inline Power
+                               .replaceAll("(?i)\\bJob\\s*\\d*\\b", "")
+                               .replaceAll("(?i)\\bEqpt\\b", "")
+                               .replaceAll("(?i)\\bTech\\s*Specification\\b", "")
+                               .replaceAll("[|\\\\/]+", " ")
+                               .replaceAll("\\s+", " ")
+                               .trim();
+        
+        Matcher mClean = Pattern.compile("(Repair\\s+of\\s+[A-Za-z0-9\\s\\(\\)]+)", Pattern.CASE_INSENSITIVE).matcher(clean);
+        if (mClean.find()) {
+            String title = mClean.group(1).trim();
+            // Trim duplicate trailing parentheses or extra spaces
+            return title.replaceAll("\\s+\\)", ")").replaceAll("\\(\\s+", "(").trim();
+        }
+        return clean;
     }
 
     private String escapeJson(String input) {
