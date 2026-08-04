@@ -14,26 +14,30 @@ public class AISpecificationIntelligenceService {
     @org.springframework.beans.factory.annotation.Value("${gemini.api.key:}")
     private String geminiApiKey;
 
+    public List<String[]> processOcrAndSynthesizeClauses(String rawOcrText, Map<String, String> data) {
+        return processOcrAndSynthesizeClauses(rawOcrText, null, data);
+    }
+
     /**
-     * AI Intelligence Engine for processing raw OCR/Text from Tender Documents 
+     * AI Intelligence Engine for processing raw OCR/Text or Image Bytes from Tender Documents 
      * and synthesizing structured 5-column technical compliance clauses.
      */
-    public List<String[]> processOcrAndSynthesizeClauses(String rawOcrText, Map<String, String> data) {
+    public List<String[]> processOcrAndSynthesizeClauses(String rawOcrText, byte[] imageBytes, Map<String, String> data) {
         if (rawOcrText == null) rawOcrText = "";
 
-        // 1. Attempt Generative LLM AI Call if API Key or Ollama Host is configured
-        List<String[]> llmClauses = callGenerativeLlmAi(rawOcrText, data);
+        // 1. Attempt Generative Vision/LLM AI Call if API Key or Ollama Host is configured
+        List<String[]> llmClauses = callGenerativeLlmAi(rawOcrText, imageBytes, data);
         if (llmClauses != null && !llmClauses.isEmpty()) {
-            System.out.println("[AISpecificationIntelligence] Successfully generated technical clauses using Generative AI LLM Model.");
+            System.out.println("[AISpecificationIntelligence] Successfully generated technical clauses using Generative AI Vision LLM Model.");
             return llmClauses;
         }
 
-        // 2. Dynamic Heuristic Extraction Engine (Zero hardcoded values)
+        // 2. Dynamic Heuristic Extraction Engine (Zero hardcoded values & OCR Noise Filter)
         System.out.println("[AISpecificationIntelligence] LLM API unconfigured/offline. Using Dynamic Heuristic Extraction Engine.");
         return processLocalHeuristicExtraction(rawOcrText, data);
     }
 
-    private List<String[]> callGenerativeLlmAi(String rawOcrText, Map<String, String> data) {
+    private List<String[]> callGenerativeLlmAi(String rawOcrText, byte[] imageBytes, Map<String, String> data) {
         String apiKey = (geminiApiKey != null && !geminiApiKey.trim().isEmpty()) ? geminiApiKey : System.getenv("GEMINI_API_KEY");
         if (apiKey == null || apiKey.trim().isEmpty()) {
             apiKey = System.getenv("OPENAI_API_KEY");
@@ -45,14 +49,20 @@ public class AISpecificationIntelligenceService {
         }
 
         try {
-            String systemPrompt = "You are a Tender Technical Specification AI. Given raw OCR text extracted from a scanned document, extract strictly the technical specifications (item name, equipment, model, part number, power/electrical rating, and quantity). Do NOT include general note brief conditions. Return a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks.";
+            String systemPrompt = "You are an expert Tender Technical Specification AI. Given document text or image, extract strictly the technical specifications (item name, equipment, model, part number, power/electrical rating, and quantity). Do NOT include general note brief conditions or OCR noise. Return a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks.";
             
             String jsonPayload = "";
             String endpointUrl = "";
 
             if (apiKey != null && !apiKey.isEmpty()) {
                 endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
-                jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\"}]}]}";
+                
+                if (imageBytes != null && imageBytes.length > 0) {
+                    String base64Image = Base64.getEncoder().encodeToString(imageBytes);
+                    jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt) + "\"},{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"" + base64Image + "\"}}]}]}";
+                } else {
+                    jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\"}]}]}";
+                }
             } else if (ollamaHost != null && !ollamaHost.isEmpty()) {
                 endpointUrl = ollamaHost + "/api/generate";
                 jsonPayload = "{\"model\":\"llama3\",\"prompt\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\",\"stream\":false}";
@@ -63,8 +73,8 @@ public class AISpecificationIntelligenceService {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setDoOutput(true);
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(10000);
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(15000);
 
             try (OutputStream os = conn.getOutputStream()) {
                 byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
@@ -137,7 +147,7 @@ public class AISpecificationIntelligenceService {
         String power = entities.get("power");
         String qtyRemark = entities.containsKey("qty") ? "Qty: " + entities.get("qty") : "-";
 
-        // Try extracting specific item lines from OCR text if multiple distinct lines exist
+        // Try extracting specific valid item lines from OCR text
         List<String> items = extractLinesFromOcr(cleanText);
 
         if (items.size() > 1) {
@@ -185,20 +195,32 @@ public class AISpecificationIntelligenceService {
         String[] lines = text.split("\n");
         for (String line : lines) {
             String trimmed = line.trim();
-            // Filter out noise, headers, empty lines, and tiny fragments
-            if (trimmed.length() >= 5 && 
-                !trimmed.toLowerCase().contains("technical specification") &&
-                !trimmed.toLowerCase().contains("schedule no") &&
-                !trimmed.toLowerCase().contains("declaration") &&
-                !trimmed.toLowerCase().contains("make:") &&
-                !trimmed.toLowerCase().contains("page ") &&
-                !trimmed.toLowerCase().contains("dated") &&
-                !trimmed.toLowerCase().contains("case no")) {
+            if (isValidTechnicalLine(trimmed)) {
                 items.add(trimmed);
             }
-            if (items.size() >= 10) break; // Limit to max 10 rows
+            if (items.size() >= 10) break;
         }
         return items;
+    }
+
+    private boolean isValidTechnicalLine(String line) {
+        if (line == null || line.length() < 8) return false;
+        String lower = line.toLowerCase();
+
+        // Filter out headers, footers, meta text
+        if (lower.contains("technical specification") || lower.contains("schedule no") ||
+            lower.contains("declaration") || lower.contains("make:") || lower.contains("page ") ||
+            lower.contains("dated") || lower.contains("case no") || lower.contains("estimating resolution")) {
+            return false;
+        }
+
+        // Must have at least 65% real letters (filters out handwritten OCR noise fragments)
+        int letters = 0;
+        for (char c : line.toCharArray()) {
+            if (Character.isLetter(c)) letters++;
+        }
+        double ratio = (double) letters / line.length();
+        return ratio >= 0.65;
     }
 
     private String normalizeOcrText(String raw) {

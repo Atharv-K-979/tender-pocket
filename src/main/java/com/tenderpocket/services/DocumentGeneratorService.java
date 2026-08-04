@@ -1523,7 +1523,7 @@ public class DocumentGeneratorService {
         }
 
         System.out.println("[DocumentGeneratorService] Executing Post-OCR AI Technical Specification Intelligence Engine...");
-        return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, data);
+        return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, fileBytes, data);
     }
 
     private String extractTextFromScannedPdf(byte[] pdfBytes) {
