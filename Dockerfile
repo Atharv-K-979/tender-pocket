@@ -12,6 +12,9 @@ RUN mvn package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
+# Tesseract powers OCR for scanned specification PDFs; without it that extraction path fails.
+RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-eng
+
 # Ensure directories for SQLite database and uploaded documents
 RUN mkdir -p /app/data /app/public/documents
 

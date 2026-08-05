@@ -11,6 +11,9 @@ import java.util.regex.*;
 @Service
 public class AISpecificationIntelligenceService {
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
     @org.springframework.beans.factory.annotation.Value("${gemini.api.key:}")
     private String geminiApiKey;
 
@@ -126,24 +129,106 @@ public class AISpecificationIntelligenceService {
     private List<String[]> parseLlmJsonResponse(String jsonResponse, Map<String, String> data) {
         List<String[]> clauses = new ArrayList<>();
         try {
-            Matcher mModel = Pattern.compile("\"model\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE).matcher(jsonResponse);
-            if (mModel.find() && data != null) {
-                data.put("offeredModel", mModel.group(1).trim());
+            // The provider wraps the model's answer in an envelope. Gemini nests it under
+            // candidates[].content.parts[].text and Ollama under "response"; in both cases the
+            // clause JSON arrives as an escaped string, so it has to be unwrapped before parsing.
+            String modelText = extractModelText(jsonResponse);
+            if (modelText == null || modelText.trim().isEmpty()) {
+                return clauses;
             }
 
-            Matcher mClause = Pattern.compile("\"srNo\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"specification\"\\s*:\\s*\"([^\"]+)\"(?:\\s*,\\s*\"compliance\"\\s*:\\s*\"([^\"]+)\")?(?:\\s*,\\s*\"deviation\"\\s*:\\s*\"([^\"]+)\")?(?:\\s*,\\s*\"remarks\"\\s*:\\s*\"([^\"]+)\")?", Pattern.CASE_INSENSITIVE).matcher(jsonResponse);
-            while (mClause.find()) {
-                String srNo = mClause.group(1).trim();
-                String spec = escapeHtml(mClause.group(2).trim());
-                String comp = mClause.group(3) != null ? mClause.group(3).trim() : "Comply";
-                String dev = mClause.group(4) != null ? mClause.group(4).trim() : "No Deviation";
-                String rem = mClause.group(5) != null ? mClause.group(5).trim() : "-";
-                clauses.add(new String[]{srNo, spec, comp, dev, rem});
+            com.fasterxml.jackson.databind.JsonNode array = readClauseArray(modelText);
+            if (array == null || !array.isArray()) {
+                return clauses;
+            }
+
+            for (com.fasterxml.jackson.databind.JsonNode node : array) {
+                String spec = text(node, "specification");
+                if (spec.isEmpty()) {
+                    continue;
+                }
+
+                String srNo = text(node, "srNo");
+                String comp = text(node, "compliance");
+                String dev = text(node, "deviation");
+                String rem = text(node, "remarks");
+
+                clauses.add(new String[]{
+                    srNo.isEmpty() ? String.valueOf(clauses.size() + 1) : srNo,
+                    escapeHtml(spec),
+                    comp.isEmpty() ? "Comply" : comp,
+                    dev.isEmpty() ? "No Deviation" : dev,
+                    rem.isEmpty() ? "-" : rem
+                });
+
+                // Carry the model designation the AI read off the document into the output header.
+                String model = text(node, "model");
+                if (!model.isEmpty() && data != null) {
+                    data.put("offeredModel", model);
+                }
             }
         } catch (Exception e) {
             System.err.println("[AISpecificationIntelligence] Failed to parse LLM JSON response: " + e.getMessage());
         }
         return clauses;
+    }
+
+    /**
+     * Pulls the model's raw answer out of the provider envelope. Returns the original body when
+     * it is already the bare answer, so a plain JSON array keeps working.
+     */
+    private String extractModelText(String jsonResponse) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = JSON.readTree(jsonResponse);
+
+            com.fasterxml.jackson.databind.JsonNode geminiText =
+                    root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
+            if (geminiText.isTextual()) {
+                return geminiText.asText();
+            }
+
+            com.fasterxml.jackson.databind.JsonNode ollamaText = root.path("response");
+            if (ollamaText.isTextual()) {
+                return ollamaText.asText();
+            }
+
+            if (root.isArray()) {
+                return jsonResponse;
+            }
+        } catch (Exception e) {
+            System.err.println("[AISpecificationIntelligence] Envelope parse failed: " + e.getMessage());
+        }
+        return jsonResponse;
+    }
+
+    /**
+     * Reads the clause array out of the model's answer, tolerating the ```json fences and the
+     * surrounding prose that LLMs commonly add around structured output.
+     */
+    private com.fasterxml.jackson.databind.JsonNode readClauseArray(String modelText) {
+        String cleaned = modelText.replaceAll("(?s)```(?:json)?", "").trim();
+
+        try {
+            return JSON.readTree(cleaned);
+        } catch (Exception ignored) {
+            // Not bare JSON — fall through and pull the array out of the surrounding prose.
+        }
+
+        int start = cleaned.indexOf('[');
+        int end = cleaned.lastIndexOf(']');
+        if (start >= 0 && end > start) {
+            try {
+                return JSON.readTree(cleaned.substring(start, end + 1));
+            } catch (Exception e) {
+                System.err.println("[AISpecificationIntelligence] Clause array parse failed: " + e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private String text(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        com.fasterxml.jackson.databind.JsonNode value = node.path(field);
+        return value.isMissingNode() || value.isNull() ? "" : value.asText().trim();
     }
 
     private List<String[]> processLocalHeuristicExtraction(String rawOcrText, Map<String, String> data) {

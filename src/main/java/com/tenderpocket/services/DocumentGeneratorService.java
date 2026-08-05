@@ -1474,6 +1474,9 @@ public class DocumentGeneratorService {
     private AISpecificationIntelligenceService aiSpecificationIntelligenceService;
 
     // --- TECHNICAL SPECIFICATION CLAUSE PARSER & OCR INTEGRATION ---
+    /** Inline request payloads are base64-encoded, so keep the raw file well under the 20 MB ceiling. */
+    private static final int MAX_INLINE_PDF_BYTES = 12 * 1024 * 1024;
+
     public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName) {
         return parseSpecificationClauses(fileBytes, fileName, null);
     }
@@ -1517,11 +1520,15 @@ public class DocumentGeneratorService {
             }
         }
 
+        // Gemini reads PDFs natively, so send the whole document and let it see every page.
+        // Only oversized files fall back to a rendered page, which keeps the request inline-safe.
         byte[] imageBytesToPass = fileBytes;
-        if (fileName != null && fileName.toLowerCase().endsWith(".pdf")) {
+        if (fileName != null && fileName.toLowerCase().endsWith(".pdf") && fileBytes != null
+                && fileBytes.length > MAX_INLINE_PDF_BYTES) {
             byte[] pngBytes = renderFirstPageToPng(fileBytes);
             if (pngBytes != null && pngBytes.length > 0) {
                 imageBytesToPass = pngBytes;
+                System.out.println("[DocumentGeneratorService] PDF exceeds inline limit; sending rendered first page instead.");
             }
         }
 
@@ -1532,6 +1539,23 @@ public class DocumentGeneratorService {
 
         System.out.println("[DocumentGeneratorService] Executing Gemini 1.5 Flash Vision & AI Technical Specification Intelligence Engine...");
         return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, imageBytesToPass, data);
+    }
+
+    /**
+     * Locates the tesseract binary across the environments this runs in: TESSERACT_PATH when set,
+     * then the usual Homebrew and Linux install locations, falling back to the PATH lookup.
+     */
+    private String resolveTesseractPath() {
+        String configured = System.getenv("TESSERACT_PATH");
+        if (configured != null && !configured.isBlank() && new java.io.File(configured).exists()) {
+            return configured;
+        }
+        for (String candidate : new String[]{"/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract", "/usr/bin/tesseract"}) {
+            if (new java.io.File(candidate).exists()) {
+                return candidate;
+            }
+        }
+        return "tesseract";
     }
 
     private byte[] renderFirstPageToPng(byte[] pdfBytes) {
@@ -1561,11 +1585,7 @@ public class DocumentGeneratorService {
                 try {
                     javax.imageio.ImageIO.write(image, "png", tempImg);
                     
-                    String tesseractPath = new java.io.File("/opt/homebrew/bin/tesseract").exists() 
-                            ? "/opt/homebrew/bin/tesseract" 
-                            : "tesseract";
-                    
-                    ProcessBuilder pb = new ProcessBuilder(tesseractPath, tempImg.getAbsolutePath(), "stdout");
+                    ProcessBuilder pb = new ProcessBuilder(resolveTesseractPath(), tempImg.getAbsolutePath(), "stdout");
                     Process process = pb.start();
                     
                     try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
