@@ -1477,6 +1477,12 @@ public class DocumentGeneratorService {
     /** Inline request payloads are base64-encoded, so keep the raw file well under the 20 MB ceiling. */
     private static final int MAX_INLINE_PDF_BYTES = 12 * 1024 * 1024;
 
+    /** Below this, a page is treated as scanned and routed through OCR rather than trusted as text. */
+    private static final int MIN_PAGE_TEXT_CHARS = 80;
+
+    /** Caps OCR work so a large scanned bid document cannot stall the upload request indefinitely. */
+    private static final int MAX_OCR_PAGES = 60;
+
     public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName) {
         return parseSpecificationClauses(fileBytes, fileName, null);
     }
@@ -1486,18 +1492,7 @@ public class DocumentGeneratorService {
 
         if (fileBytes != null && fileBytes.length > 0) {
             if (fileName != null && fileName.toLowerCase().endsWith(".pdf")) {
-                try (org.apache.pdfbox.pdmodel.PDDocument pdfDoc = org.apache.pdfbox.pdmodel.PDDocument.load(fileBytes)) {
-                    org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper();
-                    text = stripper.getText(pdfDoc);
-                } catch (Exception e) {
-                    System.err.println("[DocumentGeneratorService] PDF TextStripper exception: " + e.getMessage());
-                }
-
-                // If text is empty/unreadable (scanned PDF image), trigger Tesseract OCR!
-                if (text == null || text.trim().length() < 30) {
-                    System.out.println("[DocumentGeneratorService] PDF text empty/scanned image. Triggering Tesseract OCR...");
-                    text = extractTextFromScannedPdf(fileBytes);
-                }
+                text = extractPdfText(fileBytes);
             } else if (fileName != null && (fileName.toLowerCase().endsWith(".docx") || fileName.toLowerCase().endsWith(".doc"))) {
                 try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(fileBytes);
                      org.apache.poi.xwpf.usermodel.XWPFDocument docx = new org.apache.poi.xwpf.usermodel.XWPFDocument(bais)) {
@@ -1573,71 +1568,129 @@ public class DocumentGeneratorService {
         return null;
     }
 
-    private String extractTextFromScannedPdf(byte[] pdfBytes) {
-        StringBuilder ocrText = new StringBuilder();
+    /**
+     * Extracts the document text one page at a time. Tender PDFs are routinely hybrids: a born-digital
+     * bid-form section bundled with dozens of scanned specification pages. Deciding text-vs-OCR for the
+     * whole file lets the readable section mask the scanned one, so the pages that carry the actual
+     * specifications never get read.
+     */
+    private String extractPdfText(byte[] pdfBytes) {
+        StringBuilder combined = new StringBuilder();
+        int ocrPageCount = 0;
+        int ocrBudget = MAX_OCR_PAGES;
+        Boolean ocrAvailable = null;
+
         try (org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
-            org.apache.pdfbox.rendering.PDFRenderer pdfRenderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
-            int totalPages = Math.min(document.getNumberOfPages(), 5);
+            org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
+            int pageCount = document.getNumberOfPages();
 
-            for (int i = 0; i < totalPages; i++) {
-                java.awt.image.BufferedImage image = pdfRenderer.renderImageWithDPI(i, 200);
-                java.io.File tempImg = java.io.File.createTempFile("ocr_page_" + i + "_", ".png");
+            for (int page = 1; page <= pageCount; page++) {
+                String pageText = "";
                 try {
-                    javax.imageio.ImageIO.write(image, "png", tempImg);
-                    
-                    ProcessBuilder pb = new ProcessBuilder(resolveTesseractPath(), tempImg.getAbsolutePath(), "stdout");
-                    Process process = pb.start();
-                    
-                    try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            ocrText.append(line).append("\n");
+                    org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper();
+                    stripper.setStartPage(page);
+                    stripper.setEndPage(page);
+                    pageText = stripper.getText(document);
+                } catch (Exception e) {
+                    System.err.println("[DocumentGeneratorService] Text extraction failed on page " + page + ": " + e.getMessage());
+                }
+
+                boolean scannedPage = cleanExtractedText(pageText).length() < MIN_PAGE_TEXT_CHARS;
+                if (scannedPage && ocrBudget > 0) {
+                    if (ocrAvailable == null) {
+                        ocrAvailable = isTesseractAvailable();
+                        if (!ocrAvailable) {
+                            System.err.println("[DocumentGeneratorService] tesseract not found; scanned pages will be skipped. "
+                                    + "Install tesseract-ocr or set TESSERACT_PATH.");
                         }
                     }
-                    process.waitFor();
-                } finally {
-                    tempImg.delete();
+                    if (ocrAvailable) {
+                        String ocrText = ocrPage(renderer, page - 1);
+                        if (!ocrText.isBlank()) {
+                            pageText = ocrText;
+                            ocrPageCount++;
+                        }
+                        ocrBudget--;
+                    }
                 }
+
+                combined.append(pageText).append("\n");
             }
 
-            // Fallback: If rendered page OCR was sparse, extract raw embedded PDImageXObject images
-            if (ocrText.length() < 20) {
-                for (org.apache.pdfbox.pdmodel.PDPage page : document.getPages()) {
-                    org.apache.pdfbox.pdmodel.PDResources resources = page.getResources();
-                    if (resources != null) {
-                        for (org.apache.pdfbox.cos.COSName name : resources.getXObjectNames()) {
-                            if (resources.isImageXObject(name)) {
-                                try {
-                                    org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject imageObj = (org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject) resources.getXObject(name);
-                                    java.awt.image.BufferedImage img = imageObj.getImage();
-                                    java.io.File tempImg = java.io.File.createTempFile("ocr_embed_", ".png");
-                                    try {
-                                        javax.imageio.ImageIO.write(img, "png", tempImg);
-                                        String tesseractPath = new java.io.File("/opt/homebrew/bin/tesseract").exists() ? "/opt/homebrew/bin/tesseract" : "tesseract";
-                                        ProcessBuilder pb = new ProcessBuilder(tesseractPath, tempImg.getAbsolutePath(), "stdout");
-                                        Process process = pb.start();
-                                        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
-                                            String line;
-                                            while ((line = reader.readLine()) != null) {
-                                                ocrText.append(line).append("\n");
-                                            }
-                                        }
-                                        process.waitFor();
-                                    } finally {
-                                        tempImg.delete();
-                                    }
-                                } catch (Exception ex) {
-                                    System.err.println("[DocumentGeneratorService] Embedded image extraction exception: " + ex.getMessage());
-                                }
-                            }
-                        }
-                    }
+            System.out.println("[DocumentGeneratorService] Extracted " + pageCount + " page(s); "
+                    + ocrPageCount + " needed OCR.");
+        } catch (Exception e) {
+            System.err.println("[DocumentGeneratorService] PDF extraction error: " + e.getMessage());
+        }
+
+        return cleanExtractedText(combined.toString());
+    }
+
+    /**
+     * Removes the furniture that repeats on every page. Left in, running headers get appended to whichever
+     * clause is being accumulated and end up printed inside the generated compliance text.
+     */
+    private String cleanExtractedText(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder cleaned = new StringBuilder();
+        for (String line : raw.split("\r?\n")) {
+            String trimmed = line.replace('\u00a0', ' ').trim();
+            if (trimmed.isEmpty() || trimmed.equals("`")) {
+                continue;
+            }
+            if (trimmed.matches("(?i)^page\\s+\\d+\\s+of\\s+\\d+\\s*$")) {
+                continue;
+            }
+            if (trimmed.matches("(?i)^(technical\\s+specifications?|compliance\\s*\\(\\s*yes\\s*/\\s*no\\s*\\)|deviations?,?\\s*if\\s*any|remarks|sr\\.?\\s*no\\.?)\\s*$")) {
+                continue;
+            }
+            cleaned.append(trimmed).append("\n");
+        }
+        return cleaned.toString().trim();
+    }
+
+    /** Probed once per document so a missing binary reports a single clear line instead of one error per page. */
+    private boolean isTesseractAvailable() {
+        try {
+            Process probe = new ProcessBuilder(resolveTesseractPath(), "--version")
+                    .redirectErrorStream(true)
+                    .start();
+            probe.getInputStream().readAllBytes();
+            return probe.waitFor() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String ocrPage(org.apache.pdfbox.rendering.PDFRenderer renderer, int pageIndex) {
+        java.io.File tempImg = null;
+        try {
+            java.awt.image.BufferedImage image = renderer.renderImageWithDPI(pageIndex, 200);
+            tempImg = java.io.File.createTempFile("ocr_page_" + pageIndex + "_", ".png");
+            javax.imageio.ImageIO.write(image, "png", tempImg);
+
+            Process process = new ProcessBuilder(resolveTesseractPath(), tempImg.getAbsolutePath(), "stdout").start();
+            StringBuilder pageText = new StringBuilder();
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    pageText.append(line).append("\n");
                 }
             }
+            process.waitFor();
+            return pageText.toString();
         } catch (Exception e) {
-            System.err.println("[DocumentGeneratorService] OCR extraction error: " + e.getMessage());
+            System.err.println("[DocumentGeneratorService] OCR failed on page " + (pageIndex + 1) + ": " + e.getMessage());
+            return "";
+        } finally {
+            if (tempImg != null) {
+                tempImg.delete();
+            }
         }
-        return ocrText.toString();
     }
 
     public byte[] generateTechSpecPdf(Map<String, String> data) throws Exception {

@@ -52,7 +52,15 @@ public class AISpecificationIntelligenceService {
         }
 
         try {
-            String systemPrompt = "You are an expert Tender Technical Specification AI. Given document text or image/PDF, extract strictly the technical specifications (item name, equipment, model, part number, power/electrical rating, and quantity). Do NOT include general note brief conditions or OCR noise. If the document is unreadable or contains no clear technical specifications, return an empty JSON array []. Return a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks.";
+            String systemPrompt = "You are an expert Tender Technical Specification analyst. From the supplied tender document, extract the technical specification clauses for the goods being procured.\n"
+                    + "Rules:\n"
+                    + "- Reuse the document's own clause numbering (for example 3.4, 5.1) as srNo. Number sequentially only when the source has none.\n"
+                    + "- Keep every clause as its own separate item. Never merge two clauses into one entry.\n"
+                    + "- Read only the technical specification section. Ignore bid forms, declarations, letterheads, instructions to bidders, signature blocks, and blank compliance tables that carry no specification text.\n"
+                    + "- Ignore repeated page headers and footers, table column headings, and OCR noise.\n"
+                    + "- Set compliance to 'Comply' and deviation to 'No Deviation' unless the document states otherwise. Put an offered or measured value in remarks when the document gives one, otherwise '-'.\n"
+                    + "- If the document holds no technical specifications, return [].\n"
+                    + "Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks.";
             
             String jsonPayload = "";
             String endpointUrl = "";
