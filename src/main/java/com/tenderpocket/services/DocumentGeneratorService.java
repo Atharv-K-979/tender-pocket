@@ -1477,6 +1477,22 @@ public class DocumentGeneratorService {
     /** Inline request payloads are base64-encoded, so keep the raw file well under the 20 MB ceiling. */
     private static final int MAX_INLINE_PDF_BYTES = 12 * 1024 * 1024;
 
+    /**
+     * Groups clauses by the equipment they describe, keeping the order the extractor returned. A tender
+     * that specifies several pieces of equipment then gets one schedule per item instead of every
+     * specification running together under a single heading.
+     */
+    private java.util.LinkedHashMap<String, List<String[]>> groupByComponent(List<String[]> clauses, String fallbackName) {
+        java.util.LinkedHashMap<String, List<String[]>> grouped = new java.util.LinkedHashMap<>();
+        for (String[] clause : clauses) {
+            String component = (clause.length > 5 && clause[5] != null && !clause[5].trim().isEmpty())
+                    ? clause[5].trim()
+                    : fallbackName;
+            grouped.computeIfAbsent(component, key -> new ArrayList<>()).add(clause);
+        }
+        return grouped;
+    }
+
     /** Below this, a page is treated as scanned and routed through OCR rather than trusted as text. */
     private static final int MIN_PAGE_TEXT_CHARS = 80;
 
@@ -1744,45 +1760,57 @@ public class DocumentGeneratorService {
                 ? customClauses 
                 : parseSpecificationClauses(null, null, data);
 
-        org.apache.poi.xwpf.usermodel.XWPFParagraph pSchedule = document.createParagraph();
-        pSchedule.setSpacingBefore(100);
-        pSchedule.setSpacingAfter(40);
-        org.apache.poi.xwpf.usermodel.XWPFRun rSchedule = pSchedule.createRun();
-        rSchedule.setBold(true);
-        rSchedule.setFontSize(11);
-        rSchedule.setText("Schedule No. 1");
+        java.util.LinkedHashMap<String, List<String[]>> grouped = groupByComponent(clauses,
+                data.getOrDefault("productDescription", data.getOrDefault("productName", "Medical Equipment")));
 
-        org.apache.poi.xwpf.usermodel.XWPFTable compTable = document.createTable(clauses.size() + 2, 5);
-        setTableBordersSingle(compTable);
+        int scheduleNo = 1;
+        for (Map.Entry<String, List<String[]>> group : grouped.entrySet()) {
+            org.apache.poi.xwpf.usermodel.XWPFParagraph pSchedule = document.createParagraph();
+            pSchedule.setSpacingBefore(100);
+            pSchedule.setSpacingAfter(40);
+            org.apache.poi.xwpf.usermodel.XWPFRun rSchedule = pSchedule.createRun();
+            // Each piece of equipment starts its own page so one schedule never runs into the next.
+            if (scheduleNo > 1) {
+                rSchedule.addBreak(org.apache.poi.xwpf.usermodel.BreakType.PAGE);
+            }
+            rSchedule.setBold(true);
+            rSchedule.setFontSize(11);
+            rSchedule.setText("Schedule No. " + scheduleNo);
 
-        org.apache.poi.xwpf.usermodel.XWPFTableRow infoRow = compTable.getRow(0);
-        infoRow.getCell(0).getCTTc().addNewTcPr().addNewHMerge().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STMerge.RESTART);
-        for (int c = 1; c < 5; c++) {
-            infoRow.getCell(c).getCTTc().addNewTcPr().addNewHMerge().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STMerge.CONTINUE);
-        }
-        org.apache.poi.xwpf.usermodel.XWPFParagraph pInfo = infoRow.getCell(0).getParagraphs().get(0);
-        pInfo.setAlignment(org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER);
-        org.apache.poi.xwpf.usermodel.XWPFRun rInfo1 = pInfo.createRun();
-        rInfo1.setBold(true);
-        rInfo1.setText(data.getOrDefault("productDescription", data.getOrDefault("productName", "Medical Equipment")) + "\n");
-        org.apache.poi.xwpf.usermodel.XWPFRun rInfo2 = pInfo.createRun();
-        rInfo2.setText("Make: MarkEn | Model No.: " + data.getOrDefault("offeredModel", "MarkEn Standard Model"));
+            List<String[]> rows = group.getValue();
+            org.apache.poi.xwpf.usermodel.XWPFTable compTable = document.createTable(rows.size() + 2, 5);
+            setTableBordersSingle(compTable);
 
-        org.apache.poi.xwpf.usermodel.XWPFTableRow headerRow = compTable.getRow(1);
-        setCellHeader(headerRow.getCell(0), "Sr. No.", "800");
-        setCellHeader(headerRow.getCell(1), "Specification", "4800");
-        setCellHeader(headerRow.getCell(2), "Compliance (Yes/No)", "1400");
-        setCellHeader(headerRow.getCell(3), "Deviations, if any", "1400");
-        setCellHeader(headerRow.getCell(4), "Remarks", "1200");
+            org.apache.poi.xwpf.usermodel.XWPFTableRow infoRow = compTable.getRow(0);
+            infoRow.getCell(0).getCTTc().addNewTcPr().addNewHMerge().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STMerge.RESTART);
+            for (int c = 1; c < 5; c++) {
+                infoRow.getCell(c).getCTTc().addNewTcPr().addNewHMerge().setVal(org.openxmlformats.schemas.wordprocessingml.x2006.main.STMerge.CONTINUE);
+            }
+            org.apache.poi.xwpf.usermodel.XWPFParagraph pInfo = infoRow.getCell(0).getParagraphs().get(0);
+            pInfo.setAlignment(org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER);
+            org.apache.poi.xwpf.usermodel.XWPFRun rInfo1 = pInfo.createRun();
+            rInfo1.setBold(true);
+            rInfo1.setText(group.getKey() + "\n");
+            org.apache.poi.xwpf.usermodel.XWPFRun rInfo2 = pInfo.createRun();
+            rInfo2.setText("Make: MarkEn | Model No.: " + data.getOrDefault("offeredModel", "MarkEn Standard Model"));
 
-        for (int i = 0; i < clauses.size(); i++) {
-            String[] rowData = clauses.get(i);
-            org.apache.poi.xwpf.usermodel.XWPFTableRow tableRow = compTable.getRow(i + 2);
-            tableRow.getCell(0).setText(rowData[0]);
-            tableRow.getCell(1).setText(rowData[1]);
-            tableRow.getCell(2).setText(rowData.length > 2 ? rowData[2] : "Comply");
-            tableRow.getCell(3).setText(rowData.length > 3 ? rowData[3] : "No Deviation");
-            tableRow.getCell(4).setText(rowData.length > 4 ? rowData[4] : "-");
+            org.apache.poi.xwpf.usermodel.XWPFTableRow headerRow = compTable.getRow(1);
+            setCellHeader(headerRow.getCell(0), "Sr. No.", "800");
+            setCellHeader(headerRow.getCell(1), "Specification", "4800");
+            setCellHeader(headerRow.getCell(2), "Compliance (Yes/No)", "1400");
+            setCellHeader(headerRow.getCell(3), "Deviations, if any", "1400");
+            setCellHeader(headerRow.getCell(4), "Remarks", "1200");
+
+            for (int i = 0; i < rows.size(); i++) {
+                String[] rowData = rows.get(i);
+                org.apache.poi.xwpf.usermodel.XWPFTableRow tableRow = compTable.getRow(i + 2);
+                tableRow.getCell(0).setText(rowData[0]);
+                tableRow.getCell(1).setText(rowData[1]);
+                tableRow.getCell(2).setText(rowData.length > 2 ? rowData[2] : "Comply");
+                tableRow.getCell(3).setText(rowData.length > 3 ? rowData[3] : "No Deviation");
+                tableRow.getCell(4).setText(rowData.length > 4 ? rowData[4] : "-");
+            }
+            scheduleNo++;
         }
 
         org.apache.poi.xwpf.usermodel.XWPFParagraph pDecl = document.createParagraph();
@@ -1939,37 +1967,52 @@ public class DocumentGeneratorService {
                 ? customClauses 
                 : parseSpecificationClauses(null, null, data);
 
+        java.util.LinkedHashMap<String, List<String[]>> grouped = groupByComponent(clauses,
+                data.getOrDefault("productDescription", data.getOrDefault("productName", "Medical Equipment")));
+
         StringBuilder html = new StringBuilder();
-        html.append("<div style=\"text-align: left; font-size: 11pt; font-weight: bold; margin-bottom: 8px;\">Schedule No. 1</div>");
+        int scheduleNo = 1;
 
-        html.append("<table style=\"width: 100%; border-collapse: collapse; border: 1.5px solid #000000; margin-bottom: 12px; font-size: 10pt;\">");
-        html.append("<thead>");
-        html.append("<tr style=\"background-color: #f2f4f8;\">");
-        html.append("<th colspan=\"5\" style=\"padding: 8px; text-align: center; font-size: 11pt; border: 1px solid #000000;\">");
-        html.append("<div>").append(data.getOrDefault("productDescription", data.getOrDefault("productName", "Medical Equipment"))).append("</div>");
-        html.append("<div style=\"font-weight: normal; font-size: 10pt; margin-top: 2px;\">Make: MarkEn &#160;|&#160; Model No. : ").append(data.getOrDefault("offeredModel", "MarkEn Standard Model")).append("</div>");
-        html.append("</th></tr>");
+        for (Map.Entry<String, List<String[]>> group : grouped.entrySet()) {
+            // Each piece of equipment starts its own page so one schedule never runs into the next.
+            if (scheduleNo > 1) {
+                html.append("<div style=\"page-break-before: always;\"></div>");
+            }
 
-        html.append("<tr style=\"background-color: #ffffff; font-weight: bold; text-align: center;\">");
-        html.append("<th style=\"width: 8%; border: 1px solid #000000; padding: 6px;\">Sr. No.</th>");
-        html.append("<th style=\"width: 48%; border: 1px solid #000000; padding: 6px; text-align: left;\">Specification</th>");
-        html.append("<th style=\"width: 15%; border: 1px solid #000000; padding: 6px;\">Compliance (Yes/No)</th>");
-        html.append("<th style=\"width: 16%; border: 1px solid #000000; padding: 6px;\">Deviations, if any</th>");
-        html.append("<th style=\"width: 13%; border: 1px solid #000000; padding: 6px;\">Remarks</th></tr></thead><tbody>");
+            html.append("<div style=\"text-align: left; font-size: 11pt; font-weight: bold; margin-bottom: 8px;\">Schedule No. ")
+                .append(scheduleNo).append("</div>");
 
-        for (int i = 0; i < clauses.size(); i++) {
-            String[] rowData = clauses.get(i);
-            String bg = (i % 2 == 1) ? " style=\"background-color: #f9fafb;\"" : "";
-            html.append("<tr").append(bg).append(">");
-            html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData[0]).append("</td>");
-            html.append("<td style=\"padding: 5px; border: 1px solid #000000;\">").append(rowData[1]).append("</td>");
-            html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 2 ? rowData[2] : "Comply").append("</td>");
-            html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 3 ? rowData[3] : "No Deviation").append("</td>");
-            html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 4 ? rowData[4] : "-").append("</td>");
-            html.append("</tr>");
+            html.append("<table style=\"width: 100%; border-collapse: collapse; border: 1.5px solid #000000; margin-bottom: 12px; font-size: 10pt;\">");
+            html.append("<thead>");
+            html.append("<tr style=\"background-color: #f2f4f8;\">");
+            html.append("<th colspan=\"5\" style=\"padding: 8px; text-align: center; font-size: 11pt; border: 1px solid #000000;\">");
+            html.append("<div>").append(group.getKey()).append("</div>");
+            html.append("<div style=\"font-weight: normal; font-size: 10pt; margin-top: 2px;\">Make: MarkEn &#160;|&#160; Model No. : ").append(data.getOrDefault("offeredModel", "MarkEn Standard Model")).append("</div>");
+            html.append("</th></tr>");
+
+            html.append("<tr style=\"background-color: #ffffff; font-weight: bold; text-align: center;\">");
+            html.append("<th style=\"width: 8%; border: 1px solid #000000; padding: 6px;\">Sr. No.</th>");
+            html.append("<th style=\"width: 48%; border: 1px solid #000000; padding: 6px; text-align: left;\">Specification</th>");
+            html.append("<th style=\"width: 15%; border: 1px solid #000000; padding: 6px;\">Compliance (Yes/No)</th>");
+            html.append("<th style=\"width: 16%; border: 1px solid #000000; padding: 6px;\">Deviations, if any</th>");
+            html.append("<th style=\"width: 13%; border: 1px solid #000000; padding: 6px;\">Remarks</th></tr></thead><tbody>");
+
+            List<String[]> rows = group.getValue();
+            for (int i = 0; i < rows.size(); i++) {
+                String[] rowData = rows.get(i);
+                String bg = (i % 2 == 1) ? " style=\"background-color: #f9fafb;\"" : "";
+                html.append("<tr").append(bg).append(">");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData[0]).append("</td>");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000;\">").append(rowData[1]).append("</td>");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 2 ? rowData[2] : "Comply").append("</td>");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 3 ? rowData[3] : "No Deviation").append("</td>");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 4 ? rowData[4] : "-").append("</td>");
+                html.append("</tr>");
+            }
+
+            html.append("</tbody></table>");
+            scheduleNo++;
         }
-
-        html.append("</tbody></table>");
         html.append("<p style=\"margin-top: 10px; font-size: 10pt;\"><strong>Declaration:</strong> We hereby declare and confirm that the model and specifications offered above comply fully with all technical parameter requirements stated in Tender Ref No: <strong>").append(data.getOrDefault("bidNumber", "")).append("</strong>.</p>");
         html.append(renderSignatoryBlock(data, stampBase64, sigBase64, true));
 

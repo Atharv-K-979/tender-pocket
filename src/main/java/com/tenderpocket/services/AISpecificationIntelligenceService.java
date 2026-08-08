@@ -55,12 +55,13 @@ public class AISpecificationIntelligenceService {
             String systemPrompt = "You are an expert Tender Technical Specification analyst. From the supplied tender document, extract the technical specification clauses for the goods being procured.\n"
                     + "Rules:\n"
                     + "- Reuse the document's own clause numbering (for example 3.4, 5.1) as srNo. Number sequentially only when the source has none.\n"
-                    + "- Keep every clause as its own separate item. Never merge two clauses into one entry.\n"
-                    + "- Read only the technical specification section. Ignore bid forms, declarations, letterheads, instructions to bidders, signature blocks, and blank compliance tables that carry no specification text.\n"
+                    + "- Keep every clause as its own separate item. Never merge two clauses into one entry, and never put a section heading in srNo.\n"
+                    + "- A tender often specifies several pieces of equipment. Set component to the equipment that clause belongs to, taken from its annexure or section heading, for example 'Ice-lined Refrigerator (ILR)', 'Cold Room' or 'Voltage Stabilizer'. Use the same wording for every clause of the same equipment.\n"
+                    + "- Return technical specification clauses only: measurable parameters, construction, performance, electrical ratings, standards and testing. Exclude commercial and contractual matter such as bid forms, declarations, letterheads, instructions to bidders, signature blocks, payment and delivery terms, and blank compliance tables.\n"
                     + "- Ignore repeated page headers and footers, table column headings, and OCR noise.\n"
                     + "- Set compliance to 'Comply' and deviation to 'No Deviation' unless the document states otherwise. Put an offered or measured value in remarks when the document gives one, otherwise '-'.\n"
                     + "- If the document holds no technical specifications, return [].\n"
-                    + "Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks.";
+                    + "Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks, component.";
             
             String jsonPayload = "";
             String endpointUrl = "";
@@ -161,12 +162,15 @@ public class AISpecificationIntelligenceService {
                 String dev = text(node, "deviation");
                 String rem = text(node, "remarks");
 
+                // A sixth column carries the equipment this clause describes, so the generator can put
+                // each piece of equipment on its own page instead of running them together in one table.
                 clauses.add(new String[]{
                     srNo.isEmpty() ? String.valueOf(clauses.size() + 1) : srNo,
                     escapeHtml(spec),
                     comp.isEmpty() ? "Comply" : comp,
                     dev.isEmpty() ? "No Deviation" : dev,
-                    rem.isEmpty() ? "-" : rem
+                    rem.isEmpty() ? "-" : rem,
+                    escapeHtml(text(node, "component"))
                 });
 
                 // Carry the model designation the AI read off the document into the output header.
