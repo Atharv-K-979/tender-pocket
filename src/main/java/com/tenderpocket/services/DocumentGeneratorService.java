@@ -1549,48 +1549,7 @@ public class DocumentGeneratorService {
         }
 
         System.out.println("[DocumentGeneratorService] Executing Gemini 1.5 Flash Vision & AI Technical Specification Intelligence Engine...");
-        List<String[]> clauses = aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, imageBytesToPass, data);
-        reportMissingClauses(text, clauses, data);
-        return clauses;
-    }
-
-    /** Matches a numbered clause opening a line, such as "3.8. Type: ..." or "11.2 Use voltage ...". */
-    private static final java.util.regex.Pattern CLAUSE_NUMBER =
-            java.util.regex.Pattern.compile("(?m)^\\s*(\\d{1,2}(?:\\.\\d{1,3})+)\\.?\\s+\\S");
-
-    /**
-     * Compares the clause numbers the extractor returned against those visible in the document text.
-     * The model occasionally drops a clause or returns one without its number, and a compliance sheet
-     * that silently omits a clause the buyer asked about is worse than one that says which are missing.
-     */
-    private void reportMissingClauses(String sourceText, List<String[]> clauses, Map<String, String> data) {
-        if (sourceText == null || sourceText.isEmpty() || clauses == null || clauses.isEmpty()) {
-            return;
-        }
-
-        Set<String> extracted = new java.util.HashSet<>();
-        for (String[] clause : clauses) {
-            if (clause.length > 0 && clause[0] != null) {
-                extracted.add(clause[0].trim().replaceAll("\\.$", ""));
-            }
-        }
-
-        java.util.LinkedHashSet<String> missing = new java.util.LinkedHashSet<>();
-        java.util.regex.Matcher matcher = CLAUSE_NUMBER.matcher(sourceText);
-        while (matcher.find()) {
-            if (!extracted.contains(matcher.group(1))) {
-                missing.add(matcher.group(1));
-            }
-        }
-
-        if (!missing.isEmpty()) {
-            String list = String.join(", ", missing);
-            System.out.println("[DocumentGeneratorService] " + missing.size()
-                    + " clause number(s) in the document did not come back from extraction: " + list);
-            if (data != null) {
-                data.put("missingClauses", list);
-            }
-        }
+        return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, imageBytesToPass, data);
     }
 
     /**

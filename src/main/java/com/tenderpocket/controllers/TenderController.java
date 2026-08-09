@@ -707,13 +707,6 @@ public class TenderController {
             response.put("status", resolveStatus(tender, LocalDate.now().toString()));
             response.put("clauseCount", extractedClauses.size());
 
-            // Surfaced so the sheet is checked against the tender rather than trusted to be complete.
-            String missingClauses = data.get("missingClauses");
-            if (missingClauses != null && !missingClauses.isEmpty()) {
-                response.put("missingClauses", missingClauses);
-                response.put("warning", "Some clause numbers in the document were not captured. Review before submitting: " + missingClauses);
-            }
-
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {

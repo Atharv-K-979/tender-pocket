@@ -29,7 +29,7 @@ public class AISpecificationIntelligenceService {
         if (rawOcrText == null) rawOcrText = "";
 
         // 1. Attempt Generative Vision/LLM AI Call if API Key or Ollama Host is configured
-        List<String[]> llmClauses = callGenerativeLlmAi(rawOcrText, fileBytes, data);
+        List<String[]> llmClauses = extractAcrossChunks(rawOcrText, fileBytes, data);
         if (llmClauses != null && !llmClauses.isEmpty()) {
             System.out.println("[AISpecificationIntelligence] Successfully generated technical clauses using Generative AI Vision LLM Model.");
             return llmClauses;
@@ -38,6 +38,82 @@ public class AISpecificationIntelligenceService {
         // 2. Dynamic Heuristic Extraction Engine
         System.out.println("[AISpecificationIntelligence] LLM API unconfigured/offline. Using Dynamic Heuristic Extraction Engine.");
         return processLocalHeuristicExtraction(rawOcrText, data);
+    }
+
+    /** Keeps one request's answer short enough that the model does not run out of room part-way through. */
+    private static final int MAX_CHARS_PER_CHUNK = 12000;
+
+    /** Opens a new equipment section, so a chunk boundary here keeps each item's clauses together. */
+    private static final Pattern SECTION_HEADING = Pattern.compile(
+            "(?i)^\\s*(annexure\\b|appendix\\b|schedule\\s+\\w+\\b|technical\\s+specifications?\\s+(for|of)\\b|specifications?\\s+for\\b).*");
+
+    /**
+     * Splits a long document across several requests. Asking for every clause in one answer made the model
+     * run short towards the end: on a 78-page upload the last and largest schedule came back with clauses
+     * missing while the earlier eleven were complete. Each chunk is small enough to answer in full.
+     */
+    private List<String[]> extractAcrossChunks(String rawOcrText, byte[] fileBytes, Map<String, String> data) {
+        if (rawOcrText.length() <= MAX_CHARS_PER_CHUNK) {
+            return callGenerativeLlmAi(rawOcrText, fileBytes, data);
+        }
+
+        List<String> chunks = splitIntoChunks(rawOcrText);
+        System.out.println("[AISpecificationIntelligence] Document split into " + chunks.size() + " chunk(s) for extraction.");
+
+        LinkedHashMap<String, String[]> merged = new LinkedHashMap<>();
+        for (int i = 0; i < chunks.size(); i++) {
+            // Text only. Extraction has already run OCR over the scanned pages, so the chunk text carries
+            // what the page images would have, and the whole file is not re-sent with every chunk.
+            List<String[]> part = callGenerativeLlmAi(chunks.get(i), null, data);
+            if (part == null || part.isEmpty()) {
+                System.out.println("[AISpecificationIntelligence] Chunk " + (i + 1) + "/" + chunks.size() + " returned no clauses.");
+                continue;
+            }
+            for (String[] clause : part) {
+                merged.putIfAbsent(clauseKey(clause), clause);
+            }
+            System.out.println("[AISpecificationIntelligence] Chunk " + (i + 1) + "/" + chunks.size()
+                    + " returned " + part.size() + " clause(s); " + merged.size() + " unique so far.");
+        }
+
+        return new ArrayList<>(merged.values());
+    }
+
+    /**
+     * Breaks at an equipment heading where one is available, so a chunk covers whole items and the model
+     * can still see which equipment the clauses belong to. Oversized sections fall back to a line boundary.
+     */
+    private List<String> splitIntoChunks(String text) {
+        List<String> chunks = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+
+        for (String line : text.split("\n")) {
+            boolean startsSection = SECTION_HEADING.matcher(line).matches();
+            boolean wouldOverflow = current.length() + line.length() + 1 > MAX_CHARS_PER_CHUNK;
+
+            // A heading only earns a break once the chunk holds enough to be worth sending on its own,
+            // otherwise consecutive headings produce a chunk each.
+            if (current.length() > 0 && (wouldOverflow || (startsSection && current.length() > MAX_CHARS_PER_CHUNK / 4))) {
+                chunks.add(current.toString());
+                current.setLength(0);
+            }
+            current.append(line).append("\n");
+        }
+
+        if (current.length() > 0) {
+            chunks.add(current.toString());
+        }
+        return chunks;
+    }
+
+    /** Two clauses are the same clause when they carry the same number under the same equipment. */
+    private String clauseKey(String[] clause) {
+        String component = clause.length > 5 && clause[5] != null ? clause[5].trim().toLowerCase() : "";
+        String srNo = clause.length > 0 && clause[0] != null ? clause[0].trim() : "";
+        String spec = clause.length > 1 && clause[1] != null ? clause[1].trim() : "";
+        // Keyed on the specification when a clause came back unnumbered, so two distinct unnumbered
+        // clauses are not collapsed into one.
+        return component + "|" + (srNo.isEmpty() ? spec : srNo);
     }
 
     private List<String[]> callGenerativeLlmAi(String rawOcrText, byte[] fileBytes, Map<String, String> data) {
