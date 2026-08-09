@@ -599,7 +599,8 @@ public class TenderController {
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id,
-            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(value = "offered_model", required = false) String offeredModel) {
 
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
@@ -631,11 +632,13 @@ public class TenderController {
             data.put("bidNumber", tender.getRefNo() != null ? tender.getRefNo() : id);
             data.put("productDescription", tender.getProductNameAsPerTender() != null ? tender.getProductNameAsPerTender() : (tender.getTitle() != null ? tender.getTitle() : "Medical Equipment"));
             data.put("productName", tender.getTitle() != null ? tender.getTitle() : "Medical Equipment");
-            // Left blank on purpose: the extractor fills this in from the uploaded document. A literal
-            // default here gets printed as the offered model on every unrelated tender.
-            if (!data.containsKey("offeredModel")) {
-                data.put("offeredModel", "-");
-            }
+            // The bidder supplies the model being offered. Falls back to whatever the extractor reads off
+            // the document, and finally to a dash rather than a literal that would print on every tender.
+            data.put("offeredModel", (offeredModel != null && !offeredModel.trim().isEmpty())
+                    ? offeredModel.trim()
+                    : "-");
+            data.put("date", java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
             data.put("companyName", "Mark Enterprises");
             data.put("companyAddress", "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India");
             data.put("companyEmail", "info@markenworld.com");
@@ -652,6 +655,12 @@ public class TenderController {
                         "success", false,
                         "error", "Document is not readable, please provide a different input."
                 ));
+            }
+
+            // Extraction may have read a model designation off the tender document, but that describes what
+            // the buyer asked for. What the bidder is offering wins.
+            if (offeredModel != null && !offeredModel.trim().isEmpty()) {
+                data.put("offeredModel", offeredModel.trim());
             }
 
             // 4. Generate formatted output PDF
@@ -690,13 +699,22 @@ public class TenderController {
             );
             activityLogRepository.save(log);
 
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "pdfDownloadUrl", pdfDownloadUrl,
-                    "docxDownloadUrl", docxDownloadUrl,
-                    "message", "Technical Specification parsed and output documents generated successfully!",
-                    "status", resolveStatus(tender, LocalDate.now().toString())
-            ));
+            Map<String, Object> response = new java.util.HashMap<>();
+            response.put("success", true);
+            response.put("pdfDownloadUrl", pdfDownloadUrl);
+            response.put("docxDownloadUrl", docxDownloadUrl);
+            response.put("message", "Technical Specification parsed and output documents generated successfully!");
+            response.put("status", resolveStatus(tender, LocalDate.now().toString()));
+            response.put("clauseCount", extractedClauses.size());
+
+            // Surfaced so the sheet is checked against the tender rather than trusted to be complete.
+            String missingClauses = data.get("missingClauses");
+            if (missingClauses != null && !missingClauses.isEmpty()) {
+                response.put("missingClauses", missingClauses);
+                response.put("warning", "Some clause numbers in the document were not captured. Review before submitting: " + missingClauses);
+            }
+
+            return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             e.printStackTrace();
