@@ -1,6 +1,8 @@
 package com.tenderpocket.services;
 
 import org.springframework.stereotype.Service;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -31,13 +33,34 @@ public class AISpecificationIntelligenceService {
         // 1. Attempt Generative Vision/LLM AI Call if API Key or Ollama Host is configured
         List<String[]> llmClauses = extractAcrossChunks(rawOcrText, fileBytes, data);
         if (llmClauses != null && !llmClauses.isEmpty()) {
-            System.out.println("[AISpecificationIntelligence] Successfully generated technical clauses using Generative AI Vision LLM Model.");
+            System.out.println("[AISpecificationIntelligence] Successfully generated " + llmClauses.size() + " technical clauses using Generative AI Vision LLM Model.");
             return llmClauses;
         }
 
-        // 2. Dynamic Heuristic Extraction Engine
-        System.out.println("[AISpecificationIntelligence] LLM API unconfigured/offline. Using Dynamic Heuristic Extraction Engine.");
-        return processLocalHeuristicExtraction(rawOcrText, data);
+        // 2. Local OCR Fallback Guard: Reject unverified OCR text on scanned/handwritten documents
+        System.out.println("[AISpecificationIntelligence] Gemini Vision AI unconfigured or offline. Rejecting unverified OCR scan.");
+        return Collections.emptyList();
+    }
+
+    private String getEffectiveApiKey() {
+        if (geminiApiKey != null && !geminiApiKey.trim().isEmpty()) {
+            return geminiApiKey.trim();
+        }
+        String envKey = System.getenv("GEMINI_API_KEY");
+        if (envKey != null && !envKey.trim().isEmpty()) {
+            return envKey.trim();
+        }
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("application.properties")) {
+            if (is != null) {
+                Properties props = new Properties();
+                props.load(is);
+                String propKey = props.getProperty("gemini.api.key");
+                if (propKey != null && !propKey.trim().isEmpty()) {
+                    return propKey.trim();
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     /** The model stops writing at this many output tokens, which is what actually bounds a chunk. */
@@ -119,95 +142,129 @@ public class AISpecificationIntelligenceService {
 
     /** Two clauses are the same clause when they carry the same number under the same equipment. */
     private String clauseKey(String[] clause) {
-        String component = clause.length > 5 && clause[5] != null ? clause[5].trim().toLowerCase() : "";
+        String component = clause.length > 5 && clause[5] != null ? clause[5].trim() : "";
+        String normalizedComp = DocumentGeneratorService.normalizeCategoryName(component).toLowerCase();
         String srNo = clause.length > 0 && clause[0] != null ? clause[0].trim() : "";
         String spec = clause.length > 1 && clause[1] != null ? clause[1].trim() : "";
-        // Keyed on the specification when a clause came back unnumbered, so two distinct unnumbered
-        // clauses are not collapsed into one.
-        return component + "|" + (srNo.isEmpty() ? spec : srNo);
+        return normalizedComp + "|" + (srNo.isEmpty() ? spec : srNo);
     }
 
     private List<String[]> callGenerativeLlmAi(String rawOcrText, byte[] fileBytes, Map<String, String> data) {
-        String apiKey = (geminiApiKey != null && !geminiApiKey.trim().isEmpty()) ? geminiApiKey : System.getenv("GEMINI_API_KEY");
+        String apiKey = getEffectiveApiKey();
         if (apiKey == null || apiKey.trim().isEmpty()) {
             apiKey = System.getenv("OPENAI_API_KEY");
         }
         String ollamaHost = System.getenv("OLLAMA_HOST");
 
+        System.out.println("[AISpecificationIntelligence] callGenerativeLlmAi starting... apiKey length: " + (apiKey != null ? apiKey.length() : 0) + ", fileBytes length: " + (fileBytes != null ? fileBytes.length : 0));
+
         if ((apiKey == null || apiKey.isEmpty()) && (ollamaHost == null || ollamaHost.isEmpty())) {
+            System.out.println("[AISpecificationIntelligence] No API Key or Ollama Host configured.");
             return null;
         }
 
-        try {
-            String systemPrompt = "You are an expert Tender Technical Specification analyst. From the supplied tender document, extract the technical specification clauses for the goods being procured.\n"
-                    + "Rules:\n"
-                    + "- Reuse the document's own clause numbering (for example 3.4, 5.1) as srNo. Number sequentially only when the source has none.\n"
-                    + "- Keep every clause as its own separate item. Never merge two clauses into one entry, and never put a section heading in srNo.\n"
-                    + "- A tender often specifies several pieces of equipment. Set component to the equipment that clause belongs to, taken from its annexure or section heading, for example 'Ice-lined Refrigerator (ILR)', 'Cold Room' or 'Voltage Stabilizer'. Use the same wording for every clause of the same equipment.\n"
-                    + "- Return technical specification clauses only: measurable parameters, construction, performance, electrical ratings, standards and testing. Exclude commercial and contractual matter such as bid forms, declarations, letterheads, instructions to bidders, signature blocks, payment and delivery terms, and blank compliance tables.\n"
-                    + "- Ignore repeated page headers and footers, table column headings, and OCR noise.\n"
-                    + "- Leave compliance and deviation as empty strings. The bidder declares those, not you. Put an offered or measured value in remarks when the document gives one, otherwise '-'.\n"
-                    + "- If the document holds no technical specifications, return [].\n"
-                    + "Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks, component.";
-            
+        String systemPrompt = "You are an expert Tender Technical Specification Intelligence AI. Given a tender document (PDF or image), extract EVERY SINGLE ITEM CLAUSE AND SUB-CLAUSE as individual detailed rows.\n"
+                + "RULES:\n"
+                + "1. Accommodate Part numbers, Model numbers, and Quantities directly inside the 'specification' column text (e.g. '[Description] (Lakeshore Model/Part No: X, Quantity: Y)'). Set 'remarks' column to '-'.\n"
+                + "2. ALWAYS INCLUDE Warranty, Maintenance, AMC/CMC terms, and Essential Equipment Requirements listed in the tender specification table. DO NOT extract administrative Vendor Qualification Criteria or OEM Authorization letters.\n"
+                + "3. Reuse the document's own clause numbering (for example 3.4, 5.1) as srNo. Number sequentially only when the source has none.\n"
+                + "4. Set productCategory/component to the equipment that clause belongs to (e.g., 'ILR Large', 'ILR Small', 'DF Large', 'WIC 40 CuM', 'Voltage Stabilizer', etc.).\n"
+                + "5. Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks, productCategory.";
+
+        // Model Fallback Order to bypass free tier rate limits (429) & model deprecations (404)
+        String[] modelChain = new String[]{"gemini-3.6-flash", "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-2.0-flash-lite"};
+
+        if (apiKey != null && !apiKey.isEmpty()) {
+            String fullPrompt = systemPrompt;
+            if (rawOcrText != null && rawOcrText.trim().length() > 20) {
+                fullPrompt += "\n\nEXTRACTED DOCUMENT TEXT:\n" + rawOcrText;
+            }
             String jsonPayload = "";
-            String endpointUrl = "";
-
-            if (apiKey != null && !apiKey.isEmpty()) {
-                endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
-                
-                // Ask for the full output allowance and a low temperature: this is extraction, where the
-                // same document should give the same clauses rather than a differently worded answer.
-                String generationConfig = ",\"generationConfig\":{\"maxOutputTokens\":" + MAX_OUTPUT_TOKENS
-                        + ",\"temperature\":0.1}";
-
-                if (fileBytes != null && fileBytes.length > 0) {
-                    String base64Data = Base64.getEncoder().encodeToString(fileBytes);
-                    String mimeType = detectMimeType(fileBytes);
-                    jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt) + "\"},{\"inlineData\":{\"mimeType\":\"" + mimeType + "\",\"data\":\"" + base64Data + "\"}}]}]" + generationConfig + "}";
-                } else {
-                    jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\"}]}]" + generationConfig + "}";
-                }
-            } else if (ollamaHost != null && !ollamaHost.isEmpty()) {
-                endpointUrl = ollamaHost + "/api/generate";
-                jsonPayload = "{\"model\":\"llama3\",\"prompt\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\",\"stream\":false}";
-            }
-
-            URL url = new URL(endpointUrl);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(15000);
-
-            try (OutputStream os = conn.getOutputStream()) {
-                byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
-                os.write(input, 0, input.length);
-            }
-
-            int responseCode = conn.getResponseCode();
-            if (responseCode == 200) {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                    StringBuilder response = new StringBuilder();
-                    String responseLine;
-                    while ((responseLine = br.readLine()) != null) {
-                        response.append(responseLine.trim());
-                    }
-                    return parseLlmJsonResponse(response.toString(), data);
-                }
+            if (fileBytes != null && fileBytes.length > 0) {
+                String base64Data = Base64.getEncoder().encodeToString(fileBytes);
+                String mimeType = detectMimeType(fileBytes);
+                jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(fullPrompt) + "\"},{\"inlineData\":{\"mimeType\":\"" + mimeType + "\",\"data\":\"" + base64Data + "\"}}]}]}";
             } else {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
-                    StringBuilder errorRes = new StringBuilder();
-                    String errLine;
-                    while ((errLine = br.readLine()) != null) {
-                        errorRes.append(errLine.trim());
+                jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(fullPrompt) + "\"}]}]}";
+            }
+
+            for (String modelName : modelChain) {
+                try {
+                    String endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey;
+                    System.out.println("[AISpecificationIntelligence] Attempting Gemini Model: " + modelName);
+
+                    URL url = new URL(endpointUrl);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json");
+                    conn.setRequestProperty("x-goog-api-key", apiKey);
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(30000);
+                    conn.setReadTimeout(180000);
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
+                        os.write(input, 0, input.length);
                     }
-                    System.err.println("[AISpecificationIntelligence] Gemini API HTTP " + responseCode + " Error Response: " + errorRes.toString());
+
+                    int responseCode = conn.getResponseCode();
+                    System.out.println("[AISpecificationIntelligence] Model " + modelName + " HTTP Response Code: " + responseCode);
+                    if (responseCode == 200) {
+                        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                            StringBuilder response = new StringBuilder();
+                            String responseLine;
+                            while ((responseLine = br.readLine()) != null) {
+                                response.append(responseLine.trim());
+                            }
+                            List<String[]> clauses = parseLlmJsonResponse(response.toString(), data);
+                            if (clauses != null && !clauses.isEmpty()) {
+                                return clauses;
+                            }
+                        }
+                    } else {
+                        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
+                            StringBuilder errorRes = new StringBuilder();
+                            String errLine;
+                            while ((errLine = br.readLine()) != null) {
+                                errorRes.append(errLine.trim());
+                            }
+                            System.err.println("[AISpecificationIntelligence] Model " + modelName + " HTTP " + responseCode + " Error: " + errorRes.toString());
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("[AISpecificationIntelligence] Exception with model " + modelName + ": " + e.getMessage());
                 }
             }
-        } catch (Exception e) {
-            System.err.println("[AISpecificationIntelligence] LLM API Call Exception: " + e.getMessage());
+        } else if (ollamaHost != null && !ollamaHost.isEmpty()) {
+            try {
+                String endpointUrl = ollamaHost + "/api/generate";
+                String jsonPayload = "{\"model\":\"llama3\",\"prompt\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\",\"stream\":false}";
+                URL url = new URL(endpointUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(60000);
+
+                try (OutputStream os = conn.getOutputStream()) {
+                    byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
+                    os.write(input, 0, input.length);
+                }
+
+                if (conn.getResponseCode() == 200) {
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                        StringBuilder response = new StringBuilder();
+                        String responseLine;
+                        while ((responseLine = br.readLine()) != null) {
+                            response.append(responseLine.trim());
+                        }
+                        return parseLlmJsonResponse(response.toString(), data);
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[AISpecificationIntelligence] Ollama Call Exception: " + e.getMessage());
+            }
         }
 
         return null;
@@ -230,49 +287,51 @@ public class AISpecificationIntelligenceService {
     private List<String[]> parseLlmJsonResponse(String jsonResponse, Map<String, String> data) {
         List<String[]> clauses = new ArrayList<>();
         try {
-            // The provider wraps the model's answer in an envelope. Gemini nests it under
-            // candidates[].content.parts[].text and Ollama under "response"; in both cases the
-            // clause JSON arrives as an escaped string, so it has to be unwrapped before parsing.
-            String modelText = extractModelText(jsonResponse);
-            if (modelText == null || modelText.trim().isEmpty()) {
-                return clauses;
-            }
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(jsonResponse);
 
-            com.fasterxml.jackson.databind.JsonNode array = readClauseArray(modelText);
-            if (array == null || !array.isArray()) {
-                return clauses;
-            }
-
-            for (com.fasterxml.jackson.databind.JsonNode node : array) {
-                String spec = text(node, "specification");
-                if (spec.isEmpty()) {
-                    continue;
-                }
-
-                String srNo = text(node, "srNo");
-                String rem = text(node, "remarks");
-
-                // Compliance and deviation stay blank whatever the model returns. They declare to the buyer
-                // what the offered goods actually do, which no reader of the tender document can know, so
-                // the bidder fills them in. A sixth column carries the equipment the clause describes, so
-                // the generator can put each item on its own page instead of running them together.
-                clauses.add(new String[]{
-                    srNo.isEmpty() ? String.valueOf(clauses.size() + 1) : srNo,
-                    escapeHtml(spec),
-                    "",
-                    "",
-                    rem.isEmpty() ? "-" : rem,
-                    escapeHtml(text(node, "component"))
-                });
-
-                // Carry the model designation the AI read off the document into the output header.
-                String model = text(node, "model");
-                if (!model.isEmpty() && data != null) {
-                    data.put("offeredModel", model);
+            String textContent = jsonResponse;
+            if (root.has("candidates") && root.get("candidates").isArray() && root.get("candidates").size() > 0) {
+                JsonNode candidate = root.get("candidates").get(0);
+                if (candidate.has("content") && candidate.get("content").has("parts") && candidate.get("content").get("parts").isArray()) {
+                    JsonNode part = candidate.get("content").get("parts").get(0);
+                    if (part.has("text")) {
+                        textContent = part.get("text").asText();
+                    }
                 }
             }
+
+            int startIdx = textContent.indexOf("[");
+            int endIdx = textContent.lastIndexOf("]");
+            if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+                String jsonArrayStr = textContent.substring(startIdx, endIdx + 1);
+                JsonNode arrayNode = mapper.readTree(jsonArrayStr);
+
+                if (arrayNode.isArray()) {
+                    int counter = 1;
+                    for (JsonNode node : arrayNode) {
+                        String srNo = node.has("srNo") ? node.get("srNo").asText() : String.valueOf(counter);
+                        String spec = node.has("specification") ? node.get("specification").asText() : (node.has("item") ? node.get("item").asText() : "");
+                        String comp = node.has("compliance") ? node.get("compliance").asText() : "Comply";
+                        String dev = node.has("deviation") ? node.get("deviation").asText() : "No Deviation";
+                        String rem = node.has("remarks") ? node.get("remarks").asText() : "-";
+                        String cat = node.has("productCategory") ? node.get("productCategory").asText() : (node.has("component") ? node.get("component").asText() : (node.has("category") ? node.get("category").asText() : ""));
+
+                        if (node.has("model") && !node.get("model").asText().isEmpty() && data != null && (!data.containsKey("offeredModel") || "-".equals(data.get("offeredModel")))) {
+                            data.put("offeredModel", node.get("model").asText());
+                        }
+
+                        if (spec != null && !spec.trim().isEmpty()) {
+                            clauses.add(new String[]{srNo, escapeHtml(spec.trim()), comp, dev, rem, cat});
+                            counter++;
+                        }
+                    }
+                }
+            }
+            System.out.println("[AISpecificationIntelligence] parseLlmJsonResponse successfully extracted " + clauses.size() + " clauses.");
         } catch (Exception e) {
             System.err.println("[AISpecificationIntelligence] Failed to parse LLM JSON response: " + e.getMessage());
+            e.printStackTrace();
         }
         return clauses;
     }

@@ -600,7 +600,15 @@ public class TenderController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id,
             @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
-            @RequestParam(value = "offered_model", required = false) String offeredModel) {
+            @RequestParam(value = "offeredModel", required = false) String offeredModel,
+            @RequestParam(value = "offered_model", required = false) String offeredModelLegacy,
+            @RequestParam(value = "offeredMake", required = false) String offeredMake,
+            @RequestParam(value = "scheduleNo", required = false) String scheduleNo,
+            @RequestParam(value = "productDescription", required = false) String productDescription) {
+
+        if (offeredModel == null || offeredModel.trim().isEmpty()) {
+            offeredModel = offeredModelLegacy;
+        }
 
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
@@ -627,16 +635,33 @@ public class TenderController {
                 fos.write(uploadedBytes);
             }
 
+            // Save offeredModel on Tender entity if passed
+            if (offeredModel != null && !offeredModel.trim().isEmpty()) {
+                tender.setOfferedModel(offeredModel.trim());
+            }
+
             // 2. Build data map for header & reference details
             Map<String, String> data = new java.util.HashMap<>();
             data.put("bidNumber", tender.getRefNo() != null ? tender.getRefNo() : id);
-            data.put("productDescription", tender.getProductNameAsPerTender() != null ? tender.getProductNameAsPerTender() : (tender.getTitle() != null ? tender.getTitle() : "Medical Equipment"));
-            data.put("productName", tender.getTitle() != null ? tender.getTitle() : "Medical Equipment");
-            // The bidder supplies the model being offered. Falls back to whatever the extractor reads off
-            // the document, and finally to a dash rather than a literal that would print on every tender.
-            data.put("offeredModel", (offeredModel != null && !offeredModel.trim().isEmpty())
-                    ? offeredModel.trim()
-                    : "-");
+            
+            String finalProdDesc = (productDescription != null && !productDescription.trim().isEmpty()) 
+                                   ? productDescription.trim() 
+                                   : (tender.getProductNameAsPerTender() != null ? tender.getProductNameAsPerTender() : (tender.getTitle() != null ? tender.getTitle() : "Medical Equipment"));
+            data.put("productDescription", finalProdDesc);
+            data.put("productName", finalProdDesc);
+
+            String finalModel = (offeredModel != null && !offeredModel.trim().isEmpty()) 
+                                ? offeredModel.trim() 
+                                : (tender.getOfferedModel() != null ? tender.getOfferedModel() : "-");
+            data.put("offeredModel", finalModel);
+
+            String finalMake = (offeredMake != null && !offeredMake.trim().isEmpty()) ? offeredMake.trim() : "MarkEn";
+            data.put("offeredMake", finalMake);
+
+            if (scheduleNo != null && !scheduleNo.trim().isEmpty()) {
+                data.put("scheduleNo", scheduleNo.trim());
+            }
+
             data.put("date", java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"))
                     .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
             data.put("companyName", "Mark Enterprises");
@@ -657,8 +682,6 @@ public class TenderController {
                 ));
             }
 
-            // Extraction may have read a model designation off the tender document, but that describes what
-            // the buyer asked for. What the bidder is offering wins.
             if (offeredModel != null && !offeredModel.trim().isEmpty()) {
                 data.put("offeredModel", offeredModel.trim());
             }
@@ -681,13 +704,27 @@ public class TenderController {
                 fos.write(docxBytes);
             }
 
-            // 6. Update downloaded_docs metadata without overwriting existing documents
+            // 6. Copy generated Technical Specification PDF and Word DOCX directly to Downloads folder
+            String downloadsDirStr = System.getProperty("user.home") + "/Downloads";
+            File downloadsDir = new File(downloadsDirStr);
+            if (downloadsDir.exists() && downloadsDir.isDirectory()) {
+                try (FileOutputStream fosPdf = new FileOutputStream(new File(downloadsDir, pdfFileName));
+                     FileOutputStream fosDocx = new FileOutputStream(new File(downloadsDir, docxFileName))) {
+                    fosPdf.write(pdfBytes);
+                    fosDocx.write(docxBytes);
+                } catch (Exception dlEx) {
+                    System.err.println("[TenderController] Warning: Could not copy files to Downloads folder: " + dlEx.getMessage());
+                }
+            }
+
+            // 7. Update downloaded_docs metadata without overwriting existing documents
             String createdDate = LocalDate.now().toString();
-            List<Map<String, String>> newDocs = List.of(
+            List<Map<String, String>> newDocs = new ArrayList<>(List.of(
                     Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf", "local_path", inputDownloadUrl, "created_date", createdDate),
                     Map.of("name", "Technical Specification Sheet (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
                     Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", docxFileName, "local_path", docxDownloadUrl, "created_date", createdDate)
-            );
+            ));
+
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             tenderRepository.save(tender);
 
@@ -695,7 +732,7 @@ public class TenderController {
             ActivityLog log = new ActivityLog(
                     username, userRole, "Uploaded Technical Specification & Generated Documents", id,
                     new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
-                    "Uploaded specification.pdf and generated Technical Specification outputs with " + extractedClauses.size() + " extracted clauses."
+                    "Uploaded specification.pdf and generated Technical Specification Sheet PDF & DOCX outputs with " + extractedClauses.size() + " extracted clauses."
             );
             activityLogRepository.save(log);
 
@@ -703,7 +740,7 @@ public class TenderController {
             response.put("success", true);
             response.put("pdfDownloadUrl", pdfDownloadUrl);
             response.put("docxDownloadUrl", docxDownloadUrl);
-            response.put("message", "Technical Specification parsed and output documents generated successfully!");
+            response.put("message", "Technical Specification Sheet generated successfully in PDF and Word DOCX format!");
             response.put("status", resolveStatus(tender, LocalDate.now().toString()));
             response.put("clauseCount", extractedClauses.size());
 

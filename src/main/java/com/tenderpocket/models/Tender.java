@@ -99,6 +99,9 @@ public class Tender {
     @Column(name = "source_id")
     private String sourceId;
 
+    @Column(name = "offered_model")
+    private String offeredModel;
+
     @Column(name = "vertical_name")
     private String verticalName;
 
@@ -366,4 +369,7 @@ public class Tender {
 
     public String getSpecVerificationStatus() { return specVerificationStatus; }
     public void setSpecVerificationStatus(String specVerificationStatus) { this.specVerificationStatus = specVerificationStatus; }
+
+    public String getOfferedModel() { return offeredModel; }
+    public void setOfferedModel(String offeredModel) { this.offeredModel = offeredModel; }
 }
