@@ -92,13 +92,18 @@ public class AISpecificationIntelligenceService {
         }
 
         List<String> chunks = splitIntoChunks(rawOcrText);
-        System.out.println("[AISpecificationIntelligence] Document split into " + chunks.size() + " chunk(s) for extraction.");
+
+        // Name the equipment once, before any chunk is read, so every chunk labels its clauses the same way.
+        List<String> components = discoverComponents(rawOcrText);
+        System.out.println("[AISpecificationIntelligence] Document split into " + chunks.size()
+                + " chunk(s); " + components.size() + " item(s) of equipment identified"
+                + (components.isEmpty() ? " (chunks will name their own)." : ": " + String.join(", ", components)));
 
         LinkedHashMap<String, String[]> merged = new LinkedHashMap<>();
         for (int i = 0; i < chunks.size(); i++) {
             // Text only. Extraction has already run OCR over the scanned pages, so the chunk text carries
             // what the page images would have, and the whole file is not re-sent with every chunk.
-            List<String[]> part = callGenerativeLlmAi(chunks.get(i), null, data);
+            List<String[]> part = callGenerativeLlmAi(chunks.get(i), null, data, components);
             if (part == null || part.isEmpty()) {
                 System.out.println("[AISpecificationIntelligence] Chunk " + (i + 1) + "/" + chunks.size() + " returned no clauses.");
                 continue;
@@ -149,7 +154,105 @@ public class AISpecificationIntelligenceService {
         return normalizedComp + "|" + (srNo.isEmpty() ? spec : srNo);
     }
 
+    /** Model fallback order, shared so naming the equipment survives a rate limit the same way extraction does. */
+    private static final String[] MODEL_CHAIN =
+            {"gemini-3.6-flash", "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-2.0-flash-lite"};
+
+    /**
+     * Asks once for the equipment the document specifies, so every chunk can be told to label its clauses
+     * with the same names. Each chunk is read on its own, so left to itself it names the same item
+     * differently -- "Deep Freezer - DF (Large)" in one and "DF Large" in the next -- and grouping then
+     * files one piece of equipment under two schedules. Returns empty when unavailable, which leaves the
+     * chunks naming the equipment themselves and the fuzzy matcher to reconcile what it can.
+     */
+    private List<String> discoverComponents(String text) {
+        String apiKey = getEffectiveApiKey();
+        if (apiKey == null || apiKey.trim().isEmpty() || text == null || text.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        String prompt = "List the distinct pieces of equipment for which this tender document gives technical specifications.\n"
+                + "Use the name the document titles each item with, and keep size or rating variants separate, for example \"ILR Large\" and \"ILR Small\".\n"
+                + "Name each item exactly once. Ignore bid forms, declarations and general conditions.\n"
+                + "Return ONLY a JSON array of strings. Return [] if the document specifies no equipment.\n\n"
+                + "DOCUMENT TEXT:\n" + text;
+
+        String payload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(prompt) + "\"}]}]}";
+
+        for (String modelName : MODEL_CHAIN) {
+            String response = postOnce(modelName, apiKey, payload);
+            if (response == null) {
+                continue;
+            }
+            try {
+                JsonNode array = readClauseArray(extractModelText(response));
+                if (array != null && array.isArray() && array.size() > 0) {
+                    List<String> components = new ArrayList<>();
+                    for (JsonNode node : array) {
+                        String name = node.isTextual() ? node.asText().trim() : text(node, "name");
+                        if (!name.isEmpty()) {
+                            components.add(name);
+                        }
+                    }
+                    if (!components.isEmpty()) {
+                        return components;
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[AISpecificationIntelligence] Could not read the equipment list: " + e.getMessage());
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    /** One POST to a named model. Returns the response body on success, or null so the caller tries the next. */
+    private String postOnce(String modelName, String apiKey, String jsonPayload) {
+        try {
+            URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("x-goog-api-key", apiKey);
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(180000);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == 200) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                    return response.toString();
+                }
+            }
+
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
+                StringBuilder errorRes = new StringBuilder();
+                String errLine;
+                while ((errLine = br.readLine()) != null) {
+                    errorRes.append(errLine.trim());
+                }
+                System.err.println("[AISpecificationIntelligence] Model " + modelName + " HTTP " + responseCode + " Error: " + errorRes);
+            }
+        } catch (Exception e) {
+            System.err.println("[AISpecificationIntelligence] Exception with model " + modelName + ": " + e.getMessage());
+        }
+        return null;
+    }
+
     private List<String[]> callGenerativeLlmAi(String rawOcrText, byte[] fileBytes, Map<String, String> data) {
+        return callGenerativeLlmAi(rawOcrText, fileBytes, data, Collections.emptyList());
+    }
+
+    private List<String[]> callGenerativeLlmAi(String rawOcrText, byte[] fileBytes, Map<String, String> data, List<String> components) {
         String apiKey = getEffectiveApiKey();
         if (apiKey == null || apiKey.trim().isEmpty()) {
             apiKey = System.getenv("OPENAI_API_KEY");
@@ -168,7 +271,11 @@ public class AISpecificationIntelligenceService {
                 + "1. Accommodate Part numbers, Model numbers, and Quantities directly inside the 'specification' column text (e.g. '[Description] (Lakeshore Model/Part No: X, Quantity: Y)'). Set 'remarks' column to '-'.\n"
                 + "2. ALWAYS INCLUDE Warranty, Maintenance, AMC/CMC terms, and Essential Equipment Requirements listed in the tender specification table. DO NOT extract administrative Vendor Qualification Criteria or OEM Authorization letters.\n"
                 + "3. Reuse the document's own clause numbering (for example 3.4, 5.1) as srNo. Number sequentially only when the source has none.\n"
-                + "4. Set productCategory/component to the equipment that clause belongs to (e.g., 'ILR Large', 'ILR Small', 'DF Large', 'WIC 40 CuM', 'Voltage Stabilizer', etc.).\n"
+                + (components == null || components.isEmpty()
+                        ? "4. Set productCategory/component to the equipment that clause belongs to (e.g., 'ILR Large', 'ILR Small', 'DF Large', 'WIC 40 CuM', 'Voltage Stabilizer', etc.).\n"
+                        : "4. Set productCategory/component to exactly one of these names, copied character for character: "
+                                + String.join(" | ", components)
+                                + ". Pick the one the clause describes. Do not invent, abbreviate or reword a name.\n")
                 + "5. Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks, productCategory.";
 
         // Model Fallback Order to bypass free tier rate limits (429) & model deprecations (404)
