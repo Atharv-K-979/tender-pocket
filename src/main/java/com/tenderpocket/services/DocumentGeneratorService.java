@@ -1496,7 +1496,61 @@ public class DocumentGeneratorService {
             }
             grouped.computeIfAbsent(targetKey, key -> new ArrayList<>()).add(clause);
         }
+
+        // Duplicates are removed here rather than as the chunks come back, because only now is it settled
+        // which equipment a clause belongs to. Removing them earlier compared the names the chunks happened
+        // to use, so "Diesel Generating Set" and "DG Set" were held apart as two items, then matched into
+        // one schedule at this point and printed their shared clause numbers twice.
+        grouped.replaceAll((component, rows) -> dedupeAndSort(rows));
         return grouped;
+    }
+
+    /** Drops repeats within one schedule and puts the rows into the document's own clause order. */
+    private List<String[]> dedupeAndSort(List<String[]> rows) {
+        java.util.LinkedHashMap<String, String[]> unique = new java.util.LinkedHashMap<>();
+        for (String[] row : rows) {
+            String number = row.length > 0 && row[0] != null ? row[0].trim() : "";
+            String spec = row.length > 1 && row[1] != null ? row[1].trim() : "";
+            // An unnumbered row is keyed on its text, so two distinct ones are not taken for each other.
+            unique.putIfAbsent(number.isEmpty() ? spec : number, row);
+        }
+
+        List<String[]> sorted = new ArrayList<>(unique.values());
+        sorted.sort((left, right) -> compareClauseNumbers(
+                left.length > 0 ? left[0] : "", right.length > 0 ? right[0] : ""));
+        return sorted;
+    }
+
+    /**
+     * Orders clause numbers the way the tender does. Compared as text, "3.10" sorts before "3.2" and the
+     * page reads out of sequence, so each dotted segment is compared as a number. Unnumbered rows sort
+     * last, where they can be looked over, rather than heading the schedule.
+     */
+    private int compareClauseNumbers(String left, String right) {
+        boolean leftEmpty = left == null || left.trim().isEmpty();
+        boolean rightEmpty = right == null || right.trim().isEmpty();
+        if (leftEmpty || rightEmpty) {
+            return leftEmpty == rightEmpty ? 0 : (leftEmpty ? 1 : -1);
+        }
+
+        String[] leftParts = left.trim().split("\\.");
+        String[] rightParts = right.trim().split("\\.");
+        for (int i = 0; i < Math.max(leftParts.length, rightParts.length); i++) {
+            int l = i < leftParts.length ? parseSegment(leftParts[i]) : -1;
+            int r = i < rightParts.length ? parseSegment(rightParts[i]) : -1;
+            if (l != r) {
+                return Integer.compare(l, r);
+            }
+        }
+        return 0;
+    }
+
+    private int parseSegment(String segment) {
+        try {
+            return Integer.parseInt(segment.trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     private String findFuzzyMatchingCategory(java.util.Set<String> existingKeys, String newKey) {

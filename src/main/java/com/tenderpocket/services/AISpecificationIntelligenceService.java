@@ -118,21 +118,38 @@ public class AISpecificationIntelligenceService {
         return new ArrayList<>(merged.values());
     }
 
+    /** A line opening a numbered clause, such as "3.4. Door: ..." — the only safe place to end a chunk. */
+    private static final Pattern CLAUSE_START = Pattern.compile("^\\s*\\d{1,2}(\\.\\d{1,3})*\\.?\\s+\\S.*");
+
+    /** Ceiling before a chunk is cut regardless, for a section that runs on without a clause boundary. */
+    private static final double HARD_LIMIT_FACTOR = 1.5;
+
     /**
-     * Breaks at an equipment heading where one is available, so a chunk covers whole items and the model
-     * can still see which equipment the clauses belong to. Oversized sections fall back to a line boundary.
+     * Breaks only where a new clause or equipment heading begins. A clause runs over several lines, so
+     * ending a chunk at any line lands mid-sentence: on the last upload four of seven boundaries cut a
+     * clause in two, leaving 33 rows opening mid-sentence and 55 ending unfinished. Neither half was a
+     * whole clause, and the stray number a half-sentence began with became its clause number.
      */
     private List<String> splitIntoChunks(String text) {
         List<String> chunks = new ArrayList<>();
         StringBuilder current = new StringBuilder();
+        int hardLimit = (int) (maxCharsPerChunk * HARD_LIMIT_FACTOR);
 
         for (String line : text.split("\n")) {
             boolean startsSection = SECTION_HEADING.matcher(line).matches();
-            boolean wouldOverflow = current.length() + line.length() + 1 > maxCharsPerChunk;
+            boolean startsClause = CLAUSE_START.matcher(line).matches();
+            boolean over = current.length() + line.length() + 1 > maxCharsPerChunk;
 
-            // A heading only earns a break once the chunk holds enough to be worth sending on its own,
-            // otherwise consecutive headings produce a chunk each.
-            if (current.length() > 0 && (wouldOverflow || (startsSection && current.length() > maxCharsPerChunk / 4))) {
+            // Once past the target size, wait for a clause or heading to come round before breaking. The
+            // hard limit is the release valve for a run of text that never offers one.
+            boolean canBreak = startsSection || startsClause;
+            boolean mustBreak = current.length() + line.length() + 1 > hardLimit;
+
+            // A heading earns an early break once the chunk is worth sending on its own, otherwise a run
+            // of consecutive headings produces a chunk each.
+            boolean headingBreak = startsSection && current.length() > maxCharsPerChunk / 4;
+
+            if (current.length() > 0 && ((over && canBreak) || mustBreak || headingBreak)) {
                 chunks.add(current.toString());
                 current.setLength(0);
             }
@@ -143,6 +160,42 @@ public class AISpecificationIntelligenceService {
             chunks.add(current.toString());
         }
         return chunks;
+    }
+
+    /**
+     * Keeps a clause number only when it reads like one. Where a clause arrives without its own number the
+     * model reaches for the first figure in the sentence, and the last upload filed rows under a capacity
+     * ("0.3" from 0.3 Liters), a date ("01.7.2003"), a standard ("17547"), a year ("2025") and a voltage
+     * ("415"). An empty number is honest; a capacity presented as a clause number is not.
+     */
+    static String cleanClauseNumber(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String value = raw.trim().replaceAll("\\.$", "");
+        if (!value.matches("\\d{1,2}(\\.\\d{1,3})*")) {
+            return "";
+        }
+
+        String[] segments = value.split("\\.");
+        // Clause numbering starts at one and climbs slowly. A year, a standard number or a measurement
+        // shows up as a segment far past where any tender's numbering reaches.
+        for (int i = 0; i < segments.length; i++) {
+            int segment;
+            try {
+                segment = Integer.parseInt(segments[i]);
+            } catch (NumberFormatException e) {
+                return "";
+            }
+            if (segment > (i == 0 ? 30 : 50)) {
+                return "";
+            }
+        }
+        // A leading zero marks a date or a capacity: "0.3" is 0.3 litres, "01.7.2003" is a date.
+        if (segments[0].startsWith("0")) {
+            return "";
+        }
+        return value;
     }
 
     /** Two clauses are the same clause when they carry the same number under the same equipment. */
@@ -429,7 +482,7 @@ public class AISpecificationIntelligenceService {
                         }
 
                         if (spec != null && !spec.trim().isEmpty()) {
-                            clauses.add(new String[]{srNo, escapeHtml(spec.trim()), comp, dev, rem, cat});
+                            clauses.add(new String[]{cleanClauseNumber(srNo), escapeHtml(spec.trim()), comp, dev, rem, cat});
                             counter++;
                         }
                     }
