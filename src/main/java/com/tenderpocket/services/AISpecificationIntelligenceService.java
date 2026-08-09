@@ -40,8 +40,19 @@ public class AISpecificationIntelligenceService {
         return processLocalHeuristicExtraction(rawOcrText, data);
     }
 
-    /** Keeps one request's answer short enough that the model does not run out of room part-way through. */
-    private static final int MAX_CHARS_PER_CHUNK = 12000;
+    /** The model stops writing at this many output tokens, which is what actually bounds a chunk. */
+    private static final int MAX_OUTPUT_TOKENS = 8192;
+
+    /**
+     * How much document text goes into one request. The binding limit is what the model has to write
+     * back, not what it reads: a clause costs around 117 characters of JSON, so the 78-page tender that
+     * lost its last schedule was asking for roughly 14,800 output tokens against a ceiling of 8,192.
+     * This default keeps a chunk's answer near half the ceiling, which works out at about five requests
+     * for that document rather than twenty-three. Raise it to spend fewer requests per document, lower
+     * it if answers start truncating. Set techspec.chunk-chars to override.
+     */
+    @org.springframework.beans.factory.annotation.Value("${techspec.chunk-chars:40000}")
+    private int maxCharsPerChunk = 40000;
 
     /** Opens a new equipment section, so a chunk boundary here keeps each item's clauses together. */
     private static final Pattern SECTION_HEADING = Pattern.compile(
@@ -53,7 +64,7 @@ public class AISpecificationIntelligenceService {
      * missing while the earlier eleven were complete. Each chunk is small enough to answer in full.
      */
     private List<String[]> extractAcrossChunks(String rawOcrText, byte[] fileBytes, Map<String, String> data) {
-        if (rawOcrText.length() <= MAX_CHARS_PER_CHUNK) {
+        if (rawOcrText.length() <= maxCharsPerChunk) {
             return callGenerativeLlmAi(rawOcrText, fileBytes, data);
         }
 
@@ -89,11 +100,11 @@ public class AISpecificationIntelligenceService {
 
         for (String line : text.split("\n")) {
             boolean startsSection = SECTION_HEADING.matcher(line).matches();
-            boolean wouldOverflow = current.length() + line.length() + 1 > MAX_CHARS_PER_CHUNK;
+            boolean wouldOverflow = current.length() + line.length() + 1 > maxCharsPerChunk;
 
             // A heading only earns a break once the chunk holds enough to be worth sending on its own,
             // otherwise consecutive headings produce a chunk each.
-            if (current.length() > 0 && (wouldOverflow || (startsSection && current.length() > MAX_CHARS_PER_CHUNK / 4))) {
+            if (current.length() > 0 && (wouldOverflow || (startsSection && current.length() > maxCharsPerChunk / 4))) {
                 chunks.add(current.toString());
                 current.setLength(0);
             }
@@ -145,12 +156,17 @@ public class AISpecificationIntelligenceService {
             if (apiKey != null && !apiKey.isEmpty()) {
                 endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
                 
+                // Ask for the full output allowance and a low temperature: this is extraction, where the
+                // same document should give the same clauses rather than a differently worded answer.
+                String generationConfig = ",\"generationConfig\":{\"maxOutputTokens\":" + MAX_OUTPUT_TOKENS
+                        + ",\"temperature\":0.1}";
+
                 if (fileBytes != null && fileBytes.length > 0) {
                     String base64Data = Base64.getEncoder().encodeToString(fileBytes);
                     String mimeType = detectMimeType(fileBytes);
-                    jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt) + "\"},{\"inlineData\":{\"mimeType\":\"" + mimeType + "\",\"data\":\"" + base64Data + "\"}}]}]}";
+                    jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt) + "\"},{\"inlineData\":{\"mimeType\":\"" + mimeType + "\",\"data\":\"" + base64Data + "\"}}]}]" + generationConfig + "}";
                 } else {
-                    jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\"}]}]}";
+                    jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\"}]}]" + generationConfig + "}";
                 }
             } else if (ollamaHost != null && !ollamaHost.isEmpty()) {
                 endpointUrl = ollamaHost + "/api/generate";
