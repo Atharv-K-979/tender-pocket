@@ -279,7 +279,7 @@ public class AISpecificationIntelligenceService {
                 + "5. Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks, productCategory.";
 
         // Model Fallback Order to bypass free tier rate limits (429) & model deprecations (404)
-        String[] modelChain = new String[]{"gemini-3.6-flash", "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-2.0-flash-lite"};
+        String[] modelChain = new String[]{"gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-2.0-flash-lite"};
 
         if (apiKey != null && !apiKey.isEmpty()) {
             String fullPrompt = systemPrompt;
