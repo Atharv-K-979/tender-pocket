@@ -1806,8 +1806,9 @@ public class DocumentGeneratorService {
                 org.apache.poi.xwpf.usermodel.XWPFTableRow tableRow = compTable.getRow(i + 2);
                 tableRow.getCell(0).setText(rowData[0]);
                 tableRow.getCell(1).setText(rowData[1]);
-                tableRow.getCell(2).setText(rowData.length > 2 ? rowData[2] : "Comply");
-                tableRow.getCell(3).setText(rowData.length > 3 ? rowData[3] : "No Deviation");
+                // Left blank for the bidder to complete: these declare what the offered goods do.
+                tableRow.getCell(2).setText(rowData.length > 2 ? rowData[2] : "");
+                tableRow.getCell(3).setText(rowData.length > 3 ? rowData[3] : "");
                 tableRow.getCell(4).setText(rowData.length > 4 ? rowData[4] : "-");
             }
             scheduleNo++;
@@ -2004,8 +2005,9 @@ public class DocumentGeneratorService {
                 html.append("<tr").append(bg).append(">");
                 html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData[0]).append("</td>");
                 html.append("<td style=\"padding: 5px; border: 1px solid #000000;\">").append(rowData[1]).append("</td>");
-                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 2 ? rowData[2] : "Comply").append("</td>");
-                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 3 ? rowData[3] : "No Deviation").append("</td>");
+                // Left blank for the bidder to complete: these declare what the offered goods do.
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 2 ? rowData[2] : "").append("</td>");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 3 ? rowData[3] : "").append("</td>");
                 html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(rowData.length > 4 ? rowData[4] : "-").append("</td>");
                 html.append("</tr>");
             }

@@ -59,7 +59,7 @@ public class AISpecificationIntelligenceService {
                     + "- A tender often specifies several pieces of equipment. Set component to the equipment that clause belongs to, taken from its annexure or section heading, for example 'Ice-lined Refrigerator (ILR)', 'Cold Room' or 'Voltage Stabilizer'. Use the same wording for every clause of the same equipment.\n"
                     + "- Return technical specification clauses only: measurable parameters, construction, performance, electrical ratings, standards and testing. Exclude commercial and contractual matter such as bid forms, declarations, letterheads, instructions to bidders, signature blocks, payment and delivery terms, and blank compliance tables.\n"
                     + "- Ignore repeated page headers and footers, table column headings, and OCR noise.\n"
-                    + "- Set compliance to 'Comply' and deviation to 'No Deviation' unless the document states otherwise. Put an offered or measured value in remarks when the document gives one, otherwise '-'.\n"
+                    + "- Leave compliance and deviation as empty strings. The bidder declares those, not you. Put an offered or measured value in remarks when the document gives one, otherwise '-'.\n"
                     + "- If the document holds no technical specifications, return [].\n"
                     + "Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks, component.";
             
@@ -158,17 +158,17 @@ public class AISpecificationIntelligenceService {
                 }
 
                 String srNo = text(node, "srNo");
-                String comp = text(node, "compliance");
-                String dev = text(node, "deviation");
                 String rem = text(node, "remarks");
 
-                // A sixth column carries the equipment this clause describes, so the generator can put
-                // each piece of equipment on its own page instead of running them together in one table.
+                // Compliance and deviation stay blank whatever the model returns. They declare to the buyer
+                // what the offered goods actually do, which no reader of the tender document can know, so
+                // the bidder fills them in. A sixth column carries the equipment the clause describes, so
+                // the generator can put each item on its own page instead of running them together.
                 clauses.add(new String[]{
                     srNo.isEmpty() ? String.valueOf(clauses.size() + 1) : srNo,
                     escapeHtml(spec),
-                    comp.isEmpty() ? "Comply" : comp,
-                    dev.isEmpty() ? "No Deviation" : dev,
+                    "",
+                    "",
                     rem.isEmpty() ? "-" : rem,
                     escapeHtml(text(node, "component"))
                 });
@@ -256,8 +256,8 @@ public class AISpecificationIntelligenceService {
                 clauses.add(new String[]{
                     "1." + (sr++),
                     escapeHtml(item),
-                    "Comply",
-                    "No Deviation",
+                    "",
+                    "",
                     "-"
                 });
             }
@@ -285,8 +285,8 @@ public class AISpecificationIntelligenceService {
             clauses.add(new String[]{
                 "1.1",
                 escapeHtml(specDetail.toString()),
-                "Comply",
-                "No Deviation",
+                "",
+                "",
                 "-"
             });
             return clauses;
