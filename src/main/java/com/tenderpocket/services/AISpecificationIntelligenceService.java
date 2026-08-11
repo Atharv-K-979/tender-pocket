@@ -99,6 +99,10 @@ public class AISpecificationIntelligenceService {
                 + " chunk(s); " + components.size() + " item(s) of equipment identified"
                 + (components.isEmpty() ? " (chunks will name their own)." : ": " + String.join(", ", components)));
 
+        if (!components.isEmpty()) {
+            return extractPerComponent(rawOcrText, components, data);
+        }
+
         LinkedHashMap<String, String[]> merged = new LinkedHashMap<>();
         for (int i = 0; i < chunks.size(); i++) {
             // Text only. Extraction has already run OCR over the scanned pages, so the chunk text carries
@@ -116,6 +120,124 @@ public class AISpecificationIntelligenceService {
         }
 
         return new ArrayList<>(merged.values());
+    }
+
+    /**
+     * Reads the document once per piece of equipment rather than once per chunk. A chunk holding several
+     * items had the model settle on the dominant one: the last upload gave 38 clauses to ILR Small and 11
+     * to ILR Large, whose specification is the same size, and left DF Large with a single clause. Asking
+     * for one item at a time removes the competition, and keeps each answer small enough to finish.
+     */
+    private List<String[]> extractPerComponent(String rawOcrText, List<String> components, Map<String, String> data) {
+        LinkedHashMap<String, String[]> merged = new LinkedHashMap<>();
+        List<Section> sections = sliceIntoSections(rawOcrText);
+
+        for (int i = 0; i < components.size(); i++) {
+            String component = components.get(i);
+            String scope = sectionsFor(sections, component, rawOcrText);
+
+            List<String[]> part = callGenerativeLlmAi(scope, null, data, components, component);
+            int found = part == null ? 0 : part.size();
+            if (part != null) {
+                for (String[] clause : part) {
+                    // The answer is for this item, so file it here whatever name came back. Left to the
+                    // model the name drifts, and grouping then splits one item across two schedules.
+                    if (clause.length > 5) {
+                        clause[5] = component;
+                    }
+                    merged.putIfAbsent(clauseKey(clause), clause);
+                }
+            }
+            System.out.println("[AISpecificationIntelligence] " + (i + 1) + "/" + components.size()
+                    + " " + component + ": " + found + " clause(s) from " + scope.length() + " chars.");
+        }
+
+        return new ArrayList<>(merged.values());
+    }
+
+    /** One equipment section: the heading that opens it and the text up to the next heading. */
+    private static final class Section {
+        final String heading;
+        final StringBuilder body = new StringBuilder();
+
+        Section(String heading) {
+            this.heading = heading;
+        }
+    }
+
+    /**
+     * Cuts the document at its equipment headings. Matching an item against whole chunks did not narrow
+     * anything: a chunk runs to twenty thousand characters and mentions most of the equipment in passing,
+     * so nearly every item ended up reading the whole document again. A section runs from its heading to
+     * the next one, which is the part that actually specifies that item.
+     */
+    private List<Section> sliceIntoSections(String text) {
+        List<Section> sections = new ArrayList<>();
+        Section current = new Section("");
+
+        for (String line : text.split("\n")) {
+            if (SECTION_HEADING.matcher(line).matches()) {
+                if (current.body.length() > 0) {
+                    sections.add(current);
+                }
+                current = new Section(line.trim());
+            }
+            current.body.append(line).append("\n");
+        }
+        if (current.body.length() > 0) {
+            sections.add(current);
+        }
+        return sections;
+    }
+
+    /**
+     * The sections specifying this equipment. A heading naming the item is the strong signal; where none
+     * does, the item's terms are counted through the body instead, and failing both the whole document is
+     * read rather than returning nothing for it.
+     */
+    private String sectionsFor(List<Section> sections, String component, String wholeDocument) {
+        List<String> terms = new ArrayList<>();
+        for (String word : component.toLowerCase().split("[^a-z0-9]+")) {
+            // Single letters and bare digits appear everywhere and would match every section.
+            if (word.length() > 1) {
+                terms.add(word);
+            }
+        }
+        if (terms.isEmpty()) {
+            return wholeDocument;
+        }
+
+        int[] headingScore = new int[sections.size()];
+        int[] bodyScore = new int[sections.size()];
+        int bestHeading = 0;
+        int bestBody = 0;
+        for (int i = 0; i < sections.size(); i++) {
+            String heading = sections.get(i).heading.toLowerCase();
+            String body = sections.get(i).body.toString().toLowerCase();
+            for (String term : terms) {
+                if (heading.contains(term)) {
+                    headingScore[i]++;
+                }
+                if (body.contains(term)) {
+                    bodyScore[i]++;
+                }
+            }
+            bestHeading = Math.max(bestHeading, headingScore[i]);
+            bestBody = Math.max(bestBody, bodyScore[i]);
+        }
+
+        StringBuilder scope = new StringBuilder();
+        // A heading match is decisive, so only sections matching it as strongly are read. Falling back to
+        // the body needs every term present, or a passing mention would pull the section in.
+        boolean byHeading = bestHeading > 0;
+        for (int i = 0; i < sections.size(); i++) {
+            boolean take = byHeading ? headingScore[i] == bestHeading : bodyScore[i] == terms.size();
+            if (take) {
+                scope.append(sections.get(i).body);
+            }
+        }
+
+        return scope.length() > 0 ? scope.toString() : wholeDocument;
     }
 
     /** A line opening a numbered clause, such as "3.4. Door: ..." — the only safe place to end a chunk. */
@@ -306,6 +428,30 @@ public class AISpecificationIntelligenceService {
     }
 
     private List<String[]> callGenerativeLlmAi(String rawOcrText, byte[] fileBytes, Map<String, String> data, List<String> components) {
+        return callGenerativeLlmAi(rawOcrText, fileBytes, data, components, null);
+    }
+
+    /**
+     * How the request is told to label a clause. Reading one item at a time is the point of the
+     * per-item pass, so the whole answer belongs to that item and there is nothing to choose between.
+     */
+    private String componentRule(List<String> components, String targetComponent) {
+        if (targetComponent != null && !targetComponent.trim().isEmpty()) {
+            return "4. Extract ONLY the clauses specifying \"" + targetComponent + "\", and set productCategory to \""
+                    + targetComponent + "\" on every row. The text also covers other equipment: ignore those clauses "
+                    + "entirely. Return every clause for \"" + targetComponent + "\", including warranty and "
+                    + "maintenance terms. Return [] if this text specifies nothing for it.\n";
+        }
+        if (components == null || components.isEmpty()) {
+            return "4. Set productCategory/component to the equipment that clause belongs to (e.g., 'ILR Large', 'ILR Small', 'DF Large', 'WIC 40 CuM', 'Voltage Stabilizer', etc.).\n";
+        }
+        return "4. Set productCategory/component to exactly one of these names, copied character for character: "
+                + String.join(" | ", components)
+                + ". Pick the one the clause describes. Do not invent, abbreviate or reword a name.\n";
+    }
+
+    private List<String[]> callGenerativeLlmAi(String rawOcrText, byte[] fileBytes, Map<String, String> data,
+                                               List<String> components, String targetComponent) {
         String apiKey = getEffectiveApiKey();
         if (apiKey == null || apiKey.trim().isEmpty()) {
             apiKey = System.getenv("OPENAI_API_KEY");
@@ -324,11 +470,7 @@ public class AISpecificationIntelligenceService {
                 + "1. Accommodate Part numbers, Model numbers, and Quantities directly inside the 'specification' column text (e.g. '[Description] (Lakeshore Model/Part No: X, Quantity: Y)'). Set 'remarks' column to '-'.\n"
                 + "2. ALWAYS INCLUDE Warranty, Maintenance, AMC/CMC terms, and Essential Equipment Requirements listed in the tender specification table. DO NOT extract administrative Vendor Qualification Criteria or OEM Authorization letters.\n"
                 + "3. Reuse the document's own clause numbering (for example 3.4, 5.1) as srNo. Number sequentially only when the source has none.\n"
-                + (components == null || components.isEmpty()
-                        ? "4. Set productCategory/component to the equipment that clause belongs to (e.g., 'ILR Large', 'ILR Small', 'DF Large', 'WIC 40 CuM', 'Voltage Stabilizer', etc.).\n"
-                        : "4. Set productCategory/component to exactly one of these names, copied character for character: "
-                                + String.join(" | ", components)
-                                + ". Pick the one the clause describes. Do not invent, abbreviate or reword a name.\n")
+                + componentRule(components, targetComponent)
                 + "5. Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks, productCategory.";
 
         // Model Fallback Order to bypass free tier rate limits (429) & model deprecations (404)
