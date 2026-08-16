@@ -520,45 +520,106 @@ public class AISpecificationIntelligenceService {
         return Collections.emptyList();
     }
 
+    /** Key cooldown tracker: Maps rate-limited API keys to their cooldown expiry timestamp (12 hours) */
+    private static final java.util.concurrent.ConcurrentHashMap<String, Long> RATE_LIMITED_KEYS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private List<String> getAllApiKeys() {
+        List<String> rawKeys = new ArrayList<>();
+        if (geminiApiKey != null && !geminiApiKey.trim().isEmpty()) {
+            rawKeys.addAll(Arrays.asList(geminiApiKey.split(",")));
+        }
+        String envKey = System.getenv("GEMINI_API_KEY");
+        if (envKey != null && !envKey.trim().isEmpty()) {
+            rawKeys.addAll(Arrays.asList(envKey.split(",")));
+        }
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("application.properties")) {
+            if (is != null) {
+                Properties props = new Properties();
+                props.load(is);
+                String propKey = props.getProperty("gemini.api.key");
+                if (propKey != null && !propKey.trim().isEmpty()) {
+                    rawKeys.addAll(Arrays.asList(propKey.split(",")));
+                }
+            }
+        } catch (Exception ignored) {}
+
+        List<String> cleanKeys = new ArrayList<>();
+        for (String k : rawKeys) {
+            if (k != null && !k.trim().isEmpty()) {
+                String clean = k.trim();
+                if (!cleanKeys.contains(clean)) {
+                    cleanKeys.add(clean);
+                }
+            }
+        }
+        return cleanKeys;
+    }
+
+    private void markKeyRateLimited(String key) {
+        if (key != null && !key.trim().isEmpty()) {
+            long cooldownUntil = System.currentTimeMillis() + (12 * 3600 * 1000L);
+            RATE_LIMITED_KEYS.put(key.trim(), cooldownUntil);
+            String masked = key.length() > 8 ? key.substring(0, 4) + "..." + key.substring(key.length() - 4) : "***";
+            System.out.println("[AISpecificationIntelligence] Key [" + masked + "] hit HTTP 429 Quota Limit. Cooldown 12h. Rotating to next API key in pool...");
+        }
+    }
+
     /** One POST to a named model. Returns the response body on success, or null so the caller tries the next. */
     private String postOnce(String modelName, String apiKey, String jsonPayload) {
-        try {
-            URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("x-goog-api-key", apiKey);
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(30000);
-            conn.setReadTimeout(180000);
+        List<String> keys = getAllApiKeys();
+        if (keys.isEmpty() && apiKey != null && !apiKey.trim().isEmpty()) {
+            keys.add(apiKey.trim());
+        }
 
-            try (OutputStream os = conn.getOutputStream()) {
-                byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
-                os.write(input, 0, input.length);
+        long now = System.currentTimeMillis();
+        for (String currentKey : keys) {
+            Long cooldown = RATE_LIMITED_KEYS.get(currentKey);
+            if (cooldown != null && now < cooldown) {
+                continue; // Skip key currently in rate-limit cooldown
             }
+            try {
+                URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + currentKey);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setRequestProperty("x-goog-api-key", currentKey);
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(30000);
+                conn.setReadTimeout(180000);
 
-            int responseCode = conn.getResponseCode();
-            if (responseCode == 200) {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                    StringBuilder response = new StringBuilder();
-                    String responseLine;
-                    while ((responseLine = br.readLine()) != null) {
-                        response.append(responseLine.trim());
+                try (OutputStream os = conn.getOutputStream()) {
+                    byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
+                    os.write(input, 0, input.length);
+                }
+
+                int responseCode = conn.getResponseCode();
+                if (responseCode == 200) {
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                        StringBuilder response = new StringBuilder();
+                        String responseLine;
+                        while ((responseLine = br.readLine()) != null) {
+                            response.append(responseLine.trim());
+                        }
+                        return response.toString();
                     }
-                    return response.toString();
                 }
-            }
 
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
-                StringBuilder errorRes = new StringBuilder();
-                String errLine;
-                while ((errLine = br.readLine()) != null) {
-                    errorRes.append(errLine.trim());
+                if (responseCode == 429) {
+                    markKeyRateLimited(currentKey);
+                    continue; // Key 429 -> Rotate to next key in key pool!
                 }
-                System.err.println("[AISpecificationIntelligence] Model " + modelName + " HTTP " + responseCode + " Error: " + errorRes);
+
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder errorRes = new StringBuilder();
+                    String errLine;
+                    while ((errLine = br.readLine()) != null) {
+                        errorRes.append(errLine.trim());
+                    }
+                    System.err.println("[AISpecificationIntelligence] Model " + modelName + " HTTP " + responseCode + " Error: " + errorRes);
+                }
+            } catch (Exception e) {
+                System.err.println("[AISpecificationIntelligence] Exception with model " + modelName + ": " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.err.println("[AISpecificationIntelligence] Exception with model " + modelName + ": " + e.getMessage());
         }
         return null;
     }
@@ -593,17 +654,7 @@ public class AISpecificationIntelligenceService {
     private List<String[]> callGenerativeLlmAi(String rawOcrText, byte[] fileBytes, Map<String, String> data,
                                                List<String> components, String targetComponent) {
         String apiKey = getEffectiveApiKey();
-        if (apiKey == null || apiKey.trim().isEmpty()) {
-            apiKey = System.getenv("OPENAI_API_KEY");
-        }
         String ollamaHost = System.getenv("OLLAMA_HOST");
-
-        System.out.println("[AISpecificationIntelligence] callGenerativeLlmAi starting... apiKey length: " + (apiKey != null ? apiKey.length() : 0) + ", fileBytes length: " + (fileBytes != null ? fileBytes.length : 0));
-
-        if ((apiKey == null || apiKey.isEmpty()) && (ollamaHost == null || ollamaHost.isEmpty())) {
-            System.out.println("[AISpecificationIntelligence] No API Key or Ollama Host configured.");
-            return null;
-        }
 
         String systemPrompt = "You are an expert Tender Technical Specification Intelligence AI. Given a tender document (PDF or image), extract EVERY SINGLE ITEM CLAUSE AND SUB-CLAUSE as individual detailed rows.\n"
                 + "RULES:\n"
@@ -613,74 +664,33 @@ public class AISpecificationIntelligenceService {
                 + componentRule(components, targetComponent)
                 + "5. Return ONLY a JSON array of objects with keys: srNo, specification, compliance, deviation, remarks, productCategory.";
 
-        // Model Fallback Order to bypass free tier rate limits (429) & model deprecations (404)
-        String[] modelChain = new String[]{"gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-2.0-flash-lite"};
+        String fullPrompt = systemPrompt;
+        if (rawOcrText != null && rawOcrText.trim().length() > 20) {
+            fullPrompt += "\n\nEXTRACTED DOCUMENT TEXT:\n" + rawOcrText;
+        }
+        String jsonPayload = "";
+        if (fileBytes != null && fileBytes.length > 0) {
+            String base64Data = Base64.getEncoder().encodeToString(fileBytes);
+            String mimeType = detectMimeType(fileBytes);
+            jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(fullPrompt) + "\"},{\"inlineData\":{\"mimeType\":\"" + mimeType + "\",\"data\":\"" + base64Data + "\"}}]}]}";
+        } else {
+            jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(fullPrompt) + "\"}]}]}";
+        }
 
-        if (apiKey != null && !apiKey.isEmpty()) {
-            String fullPrompt = systemPrompt;
-            if (rawOcrText != null && rawOcrText.trim().length() > 20) {
-                fullPrompt += "\n\nEXTRACTED DOCUMENT TEXT:\n" + rawOcrText;
-            }
-            String jsonPayload = "";
-            if (fileBytes != null && fileBytes.length > 0) {
-                String base64Data = Base64.getEncoder().encodeToString(fileBytes);
-                String mimeType = detectMimeType(fileBytes);
-                jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(fullPrompt) + "\"},{\"inlineData\":{\"mimeType\":\"" + mimeType + "\",\"data\":\"" + base64Data + "\"}}]}]}";
-            } else {
-                jsonPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + escapeJson(fullPrompt) + "\"}]}]}";
-            }
-
-            for (String modelName : modelChain) {
-                try {
-                    String endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey;
-                    System.out.println("[AISpecificationIntelligence] Attempting Gemini Model: " + modelName);
-
-                    URL url = new URL(endpointUrl);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("POST");
-                    conn.setRequestProperty("Content-Type", "application/json");
-                    conn.setRequestProperty("x-goog-api-key", apiKey);
-                    conn.setDoOutput(true);
-                    conn.setConnectTimeout(30000);
-                    conn.setReadTimeout(180000);
-
-                    try (OutputStream os = conn.getOutputStream()) {
-                        byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
-                        os.write(input, 0, input.length);
-                    }
-
-                    int responseCode = conn.getResponseCode();
-                    System.out.println("[AISpecificationIntelligence] Model " + modelName + " HTTP Response Code: " + responseCode);
-                    if (responseCode == 200) {
-                        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                            StringBuilder response = new StringBuilder();
-                            String responseLine;
-                            while ((responseLine = br.readLine()) != null) {
-                                response.append(responseLine.trim());
-                            }
-                            List<String[]> clauses = parseLlmJsonResponse(response.toString(), data);
-                            if (clauses != null && !clauses.isEmpty()) {
-                                return clauses;
-                            }
-                        }
-                    } else {
-                        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
-                            StringBuilder errorRes = new StringBuilder();
-                            String errLine;
-                            while ((errLine = br.readLine()) != null) {
-                                errorRes.append(errLine.trim());
-                            }
-                            System.err.println("[AISpecificationIntelligence] Model " + modelName + " HTTP " + responseCode + " Error: " + errorRes.toString());
-                        }
-                    }
-                } catch (Exception e) {
-                    System.err.println("[AISpecificationIntelligence] Exception with model " + modelName + ": " + e.getMessage());
+        for (String modelName : MODEL_CHAIN) {
+            System.out.println("[AISpecificationIntelligence] Attempting Gemini Model: " + modelName);
+            String response = postOnce(modelName, apiKey, jsonPayload);
+            if (response != null && !response.trim().isEmpty()) {
+                List<String[]> clauses = parseLlmJsonResponse(response, data);
+                if (clauses != null && !clauses.isEmpty()) {
+                    return clauses;
                 }
             }
-        } else if (ollamaHost != null && !ollamaHost.isEmpty()) {
+        }
+        if (ollamaHost != null && !ollamaHost.isEmpty()) {
             try {
                 String endpointUrl = ollamaHost + "/api/generate";
-                String jsonPayload = "{\"model\":\"llama3\",\"prompt\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\",\"stream\":false}";
+                String ollamaPayload = "{\"model\":\"llama3\",\"prompt\":\"" + escapeJson(systemPrompt + "\n\nRAW OCR TEXT:\n" + rawOcrText) + "\",\"stream\":false}";
                 URL url = new URL(endpointUrl);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
@@ -690,7 +700,7 @@ public class AISpecificationIntelligenceService {
                 conn.setReadTimeout(60000);
 
                 try (OutputStream os = conn.getOutputStream()) {
-                    byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
+                    byte[] input = ollamaPayload.getBytes(StandardCharsets.UTF_8);
                     os.write(input, 0, input.length);
                 }
 
