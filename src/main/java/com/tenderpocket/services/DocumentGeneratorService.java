@@ -1673,7 +1673,16 @@ public class DocumentGeneratorService {
 
         // Fail-safe backup: If Gemini Vision AI is rate-limited (HTTP 429), use local digital text parser
         if (text != null && text.trim().length() > 50) {
-            System.out.println("[DocumentGeneratorService] Gemini API offline or rate-limited. Falling back to local digital text clause parser...");
+            // Said plainly, because the two paths produce documents that look alike and are not. The
+            // local parser hardcodes its product list and its clause numbering, so a sheet built this way
+            // has been judged several times over as though it were the model's work.
+            System.out.println("[DocumentGeneratorService] ==================================================");
+            System.out.println("[DocumentGeneratorService] WARNING: the AI returned nothing, so this sheet is");
+            System.out.println("[DocumentGeneratorService] being built by the local keyword parser instead.");
+            System.out.println("[DocumentGeneratorService] Its product list and clause numbers are hardcoded");
+            System.out.println("[DocumentGeneratorService] and it does not read the tender's own structure.");
+            System.out.println("[DocumentGeneratorService] Check the Gemini errors logged above before using it.");
+            System.out.println("[DocumentGeneratorService] ==================================================");
             List<String[]> fallbackClauses = parseClausesFromDigitalText(text);
             if (fallbackClauses != null && !fallbackClauses.isEmpty()) {
                 return fallbackClauses;

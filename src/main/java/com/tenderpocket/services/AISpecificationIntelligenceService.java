@@ -358,8 +358,14 @@ public class AISpecificationIntelligenceService {
     }
 
     /** Model fallback order, shared so naming the equipment survives a rate limit the same way extraction does. */
+    /**
+     * Models to try, in order. The 1.5 family is retired and answers 404, so a chain of
+     * gemini-flash-latest, gemini-1.5-flash, gemini-1.5-pro left nothing to fall through to and every
+     * item came back empty. These are the models the run was working against when it last produced a
+     * full document.
+     */
     private static final String[] MODEL_CHAIN =
-            {"gemini-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"};
+            {"gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest"};
 
     /**
      * Asks once for the equipment the document specifies, so every chunk can be told to label its clauses
@@ -686,14 +692,12 @@ public class AISpecificationIntelligenceService {
                     continue; // Daily quota or no stated delay -> rotate to the next key in the pool.
                 }
 
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
-                    StringBuilder errorRes = new StringBuilder();
-                    String errLine;
-                    while ((errLine = br.readLine()) != null) {
-                        errorRes.append(errLine.trim());
-                    }
-                    System.err.println("[AISpecificationIntelligence] Model " + modelName + " HTTP " + responseCode + " Error: " + errorRes);
-                }
+                // On stdout, beside the "Attempting" line it answers. Sent to stderr this sat in a stream
+                // nobody was reading, so a run where every model 404'd looked from the log like a run that
+                // simply found nothing, and the retired-model chain took several uploads to spot.
+                String errorRes = readBody(conn.getErrorStream());
+                System.out.println("[AISpecificationIntelligence] Model " + modelName + " HTTP " + responseCode
+                        + ": " + (errorRes.length() > 300 ? errorRes.substring(0, 300) + "..." : errorRes));
             } catch (Exception e) {
                 System.err.println("[AISpecificationIntelligence] Exception with model " + modelName + ": " + e.getMessage());
             }
