@@ -373,8 +373,16 @@ public class AISpecificationIntelligenceService {
      * Deep Freezer - DF (Small)" or "ANNEXURE-1: Diesel Generating Set". The tender writes one per item.
      */
     private static final Pattern PRODUCT_HEADING = Pattern.compile(
-            "(?i)^\\s*(?:technical\\s+)?specifications?\\s+(?:for|of)\\s+(.{3,80}?)\\s*$"
-                    + "|^\\s*annexure\\s*[-–—]?\\s*[0-9ivx]*\\s*[:.]\\s*(.{3,80}?)\\s*$");
+            // A tender qualifies the word differently per section -- "Technical Specifications for",
+            // "Equipment Specifications for", "Detailed Specification for" -- so a couple of leading
+            // words are allowed. They must be capitalised, as must "Specification" itself, which is what
+            // separates a heading from a citation mid-sentence: "as per the BIS published Specification
+            // for Water Packs" names a standard being referenced, not an item to quote for.
+            "^\\s*(?:[A-Z][A-Za-z]*\\s+){0,2}Specifications?\\s+(?:for|of)\\s+(.{3,80}?)\\s*$"
+                    + "|(?i)^\\s*annexure\\s*[-–—]?\\s*[0-9ivx]*\\s*[:.]\\s*(.{3,80}?)\\s*$");
+
+    /** A heading naming its item in quotes, as in: Equipment Specifications for "Freeze Marker" for ... */
+    private static final Pattern QUOTED_NAME = Pattern.compile("[\"“”']([^\"“”']{3,60})[\"“”']");
 
     /** Trailing words that mean the heading wrapped mid-phrase rather than ending on the item's name. */
     private static final Pattern DANGLING_TAIL = Pattern.compile("(?i)[\\s,–—-]+(and|or|the|of|for|with|to|in|a|an|as|per)$");
@@ -396,6 +404,13 @@ public class AISpecificationIntelligenceService {
             String name = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
             if (name == null) {
                 continue;
+            }
+
+            // Where the heading quotes its item, the quotes are the name and the rest describes what it
+            // is for: Equipment Specifications for "Freeze Marker" for transportation of freeze ...
+            Matcher quoted = QUOTED_NAME.matcher(name);
+            if (quoted.find()) {
+                name = quoted.group(1);
             }
 
             // A heading broken across lines leaves a conjunction hanging; trim it back to the name.
