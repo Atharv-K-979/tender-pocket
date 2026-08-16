@@ -93,10 +93,16 @@ public class AISpecificationIntelligenceService {
 
         List<String> chunks = splitIntoChunks(rawOcrText);
 
-        // Name the equipment once, before any chunk is read, so every chunk labels its clauses the same way.
-        List<String> components = discoverComponents(rawOcrText);
+        // Name the equipment once, before any chunk is read, so every chunk labels its clauses the same
+        // way. The document's own section headings lead and the model fills in what has no heading, so
+        // an item the model overlooks is still quoted for.
+        List<String> declared = headingsDeclaringProducts(rawOcrText);
+        List<String> suggested = discoverComponents(rawOcrText);
+        List<String> components = mergeComponents(declared, suggested);
+
         System.out.println("[AISpecificationIntelligence] Document split into " + chunks.size()
-                + " chunk(s); " + components.size() + " item(s) of equipment identified"
+                + " chunk(s); " + declared.size() + " declared by heading, " + suggested.size()
+                + " named by the model, " + components.size() + " item(s) to extract"
                 + (components.isEmpty() ? " (chunks will name their own)." : ": " + String.join(", ", components)));
 
         if (!components.isEmpty()) {
@@ -132,13 +138,26 @@ public class AISpecificationIntelligenceService {
         LinkedHashMap<String, String[]> merged = new LinkedHashMap<>();
         List<Section> sections = sliceIntoSections(rawOcrText);
 
+        List<String> empty = new ArrayList<>();
+
         for (int i = 0; i < components.size(); i++) {
             String component = components.get(i);
             String scope = sectionsFor(sections, component, rawOcrText);
 
             List<String[]> part = callGenerativeLlmAi(scope, null, data, components, component);
+
+            // Nothing found in the section picked for it: the heading match may have been wrong, so look
+            // again across the whole document before accepting that the tender says nothing about it.
+            if ((part == null || part.isEmpty()) && scope.length() < rawOcrText.length()) {
+                System.out.println("[AISpecificationIntelligence] " + component
+                        + ": nothing in its section, re-reading the whole document.");
+                part = callGenerativeLlmAi(rawOcrText, null, data, components, component);
+            }
+
             int found = part == null ? 0 : part.size();
-            if (part != null) {
+            if (found == 0) {
+                empty.add(component);
+            } else {
                 for (String[] clause : part) {
                     // The answer is for this item, so file it here whatever name came back. Left to the
                     // model the name drifts, and grouping then splits one item across two schedules.
@@ -151,6 +170,15 @@ public class AISpecificationIntelligenceService {
             System.out.println("[AISpecificationIntelligence] " + (i + 1) + "/" + components.size()
                     + " " + component + ": " + found + " clause(s) from " + scope.length() + " chars.");
         }
+
+        // A schedule the buyer expects and cannot find reads as an unanswered requirement, so say plainly
+        // which items came back with nothing rather than letting them go quietly missing from the sheet.
+        if (!empty.isEmpty()) {
+            System.out.println("[AISpecificationIntelligence] No clauses found for " + empty.size()
+                    + " item(s) the document declares: " + String.join(", ", empty));
+        }
+        System.out.println("[AISpecificationIntelligence] " + (components.size() - empty.size()) + "/"
+                + components.size() + " item(s) produced clauses; " + merged.size() + " unique clause(s) in total.");
 
         return new ArrayList<>(merged.values());
     }
@@ -340,6 +368,101 @@ public class AISpecificationIntelligenceService {
      * files one piece of equipment under two schedules. Returns empty when unavailable, which leaves the
      * chunks naming the equipment themselves and the fuzzy matcher to reconcile what it can.
      */
+    /**
+     * A heading declaring that a specification section follows, such as "Technical Specifications for
+     * Deep Freezer - DF (Small)" or "ANNEXURE-1: Diesel Generating Set". The tender writes one per item.
+     */
+    private static final Pattern PRODUCT_HEADING = Pattern.compile(
+            "(?i)^\\s*(?:technical\\s+)?specifications?\\s+(?:for|of)\\s+(.{3,80}?)\\s*$"
+                    + "|^\\s*annexure\\s*[-–—]?\\s*[0-9ivx]*\\s*[:.]\\s*(.{3,80}?)\\s*$");
+
+    /** Trailing words that mean the heading wrapped mid-phrase rather than ending on the item's name. */
+    private static final Pattern DANGLING_TAIL = Pattern.compile("(?i)[\\s,–—-]+(and|or|the|of|for|with|to|in|a|an|as|per)$");
+
+    /**
+     * The equipment the document itself declares a section for. The model's list is what it chose to
+     * mention, and on the last run it named eight items where the document has sections for twelve,
+     * dropping ILR (Small) and DF (Small) as though the Large variants covered them. A heading is not a
+     * judgement call: where the tender writes "Technical Specifications for X", X is an item to quote for.
+     */
+    private List<String> headingsDeclaringProducts(String text) {
+        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
+
+        for (String line : text.split("\n")) {
+            Matcher matcher = PRODUCT_HEADING.matcher(line.trim());
+            if (!matcher.matches()) {
+                continue;
+            }
+            String name = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+            if (name == null) {
+                continue;
+            }
+
+            // A heading broken across lines leaves a conjunction hanging; trim it back to the name.
+            name = DANGLING_TAIL.matcher(name.trim()).replaceAll("").trim();
+            name = name.replaceAll("[\\s:.;,-]+$", "").trim();
+
+            // Product names carry a capital. Prose swept up by the pattern, such as "high efficiency and
+            // low", does not, and would otherwise be quoted for as though it were a piece of equipment.
+            boolean named = false;
+            for (String word : name.split("\\s+")) {
+                if (!word.isEmpty() && Character.isUpperCase(word.charAt(0))) {
+                    named = true;
+                    break;
+                }
+            }
+
+            if (named && name.length() >= 3) {
+                found.add(name);
+            }
+        }
+        return new ArrayList<>(found);
+    }
+
+    /**
+     * Combines what the document declares with what the model noticed. The headings lead, being the
+     * tender's own words, and a model entry is added only when no heading already covers it: "ILR Large"
+     * and "Ice-lined Refrigerator - ILR (Large)" are one item, and listing both would quote for it twice.
+     */
+    private List<String> mergeComponents(List<String> fromHeadings, List<String> fromModel) {
+        List<String> merged = new ArrayList<>(fromHeadings);
+
+        for (String candidate : fromModel) {
+            boolean alreadyCovered = false;
+            for (String existing : merged) {
+                if (sameEquipment(existing, candidate)) {
+                    alreadyCovered = true;
+                    break;
+                }
+            }
+            if (!alreadyCovered) {
+                merged.add(candidate);
+            }
+        }
+        return merged;
+    }
+
+    /** Two names describe one item when either's significant words are all contained in the other's. */
+    private boolean sameEquipment(String left, String right) {
+        Set<String> leftWords = significantWords(left);
+        Set<String> rightWords = significantWords(right);
+        if (leftWords.isEmpty() || rightWords.isEmpty()) {
+            return false;
+        }
+        return leftWords.containsAll(rightWords) || rightWords.containsAll(leftWords);
+    }
+
+    private Set<String> significantWords(String name) {
+        Set<String> words = new java.util.LinkedHashSet<>();
+        for (String word : name.toLowerCase().split("[^a-z0-9]+")) {
+            // Single characters carry no meaning on their own and match everything.
+            if (word.length() > 1) {
+                words.add(word);
+            }
+        }
+        return words;
+    }
+
     private List<String> discoverComponents(String text) {
         String apiKey = getEffectiveApiKey();
         if (apiKey == null || apiKey.trim().isEmpty() || text == null || text.trim().isEmpty()) {
@@ -348,6 +471,8 @@ public class AISpecificationIntelligenceService {
 
         String prompt = "List the distinct pieces of equipment for which this tender document gives technical specifications.\n"
                 + "Use the name the document titles each item with, and keep size or rating variants separate, for example \"ILR Large\" and \"ILR Small\".\n"
+                + "A variant is its own item and must never be merged into another: ILR (Large) and ILR (Small) are two\n"
+                + "items, as are a 150-280V and a 100-280V stabiliser, and a walk-in cooler and a walk-in freezer.\n"
                 + "Name each item exactly once. Ignore bid forms, declarations and general conditions.\n"
                 + "Return ONLY a JSON array of strings. Return [] if the document specifies no equipment.\n\n"
                 + "DOCUMENT TEXT:\n" + text;
