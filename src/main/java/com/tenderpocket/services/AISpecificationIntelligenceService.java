@@ -555,6 +555,64 @@ public class AISpecificationIntelligenceService {
         return cleanKeys;
     }
 
+    /** Longest the API may ask us to wait before it is treated as a quota to stand the key down over. */
+    private static final long MAX_INLINE_WAIT_MS = 75_000;
+
+    /**
+     * Smallest gap between requests. A document asks for one extraction per item, a dozen in a row, and
+     * fired back to back they cross the free tier's per-minute cap partway through: the run then loses
+     * every item after that point. Spacing them is what keeps the cap from being reached at all.
+     */
+    @org.springframework.beans.factory.annotation.Value("${techspec.min-request-interval-ms:4000}")
+    private long minRequestIntervalMs = 4000;
+
+    private static final Object PACE_LOCK = new Object();
+    private static long lastRequestAt = 0L;
+
+    /** Holds a request back until the gap has passed, so the per-minute cap is not reached in the first place. */
+    private void pace() {
+        synchronized (PACE_LOCK) {
+            long wait = (lastRequestAt + minRequestIntervalMs) - System.currentTimeMillis();
+            if (wait > 0) {
+                sleepQuietly(wait);
+            }
+            lastRequestAt = System.currentTimeMillis();
+        }
+    }
+
+    /** The delay the API states in a 429, as in "retryDelay": "37s". Zero when it says nothing. */
+    private long retryDelayFrom(String errorBody) {
+        if (errorBody == null || errorBody.isEmpty()) {
+            return 0;
+        }
+        Matcher matcher = Pattern.compile("\"retryDelay\"\\s*:\\s*\"(\\d+)(?:\\.\\d+)?s\"").matcher(errorBody);
+        return matcher.find() ? Long.parseLong(matcher.group(1)) * 1000L : 0;
+    }
+
+    private String readBody(InputStream stream) {
+        if (stream == null) {
+            return "";
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            StringBuilder body = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                body.append(line.trim());
+            }
+            return body.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private void markKeyRateLimited(String key) {
         if (key != null && !key.trim().isEmpty()) {
             long cooldownUntil = System.currentTimeMillis() + (12 * 3600 * 1000L);
@@ -572,12 +630,14 @@ public class AISpecificationIntelligenceService {
         }
 
         long now = System.currentTimeMillis();
+        boolean waited = false;
         for (String currentKey : keys) {
             Long cooldown = RATE_LIMITED_KEYS.get(currentKey);
             if (cooldown != null && now < cooldown) {
                 continue; // Skip key currently in rate-limit cooldown
             }
             try {
+                pace();
                 URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + currentKey);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
@@ -605,8 +665,25 @@ public class AISpecificationIntelligenceService {
                 }
 
                 if (responseCode == 429) {
+                    String quotaError = readBody(conn.getErrorStream());
+                    long retryAfterMs = retryDelayFrom(quotaError);
+                    boolean dailyQuota = quotaError.contains("PerDay") || quotaError.contains("per day");
+
+                    // A free-tier key is capped per minute as well as per day, and the two need different
+                    // answers. Benching a key for twelve hours over a per-minute cap costs the rest of the
+                    // run and every upload after it: one document asks for a dozen items in a row, so the
+                    // first cap would take the other eleven with it. Wait the delay the API states and use
+                    // the same key again; only a daily quota is worth standing the key down for.
+                    if (!dailyQuota && retryAfterMs > 0 && retryAfterMs <= MAX_INLINE_WAIT_MS && !waited) {
+                        System.out.println("[AISpecificationIntelligence] Rate limited; waiting "
+                                + (retryAfterMs / 1000) + "s as the API asks, then retrying the same key.");
+                        sleepQuietly(retryAfterMs + 500);
+                        waited = true;
+                        continue;
+                    }
+
                     markKeyRateLimited(currentKey);
-                    continue; // Key 429 -> Rotate to next key in key pool!
+                    continue; // Daily quota or no stated delay -> rotate to the next key in the pool.
                 }
 
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
