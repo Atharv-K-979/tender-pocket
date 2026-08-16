@@ -359,7 +359,7 @@ public class AISpecificationIntelligenceService {
 
     /** Model fallback order, shared so naming the equipment survives a rate limit the same way extraction does. */
     private static final String[] MODEL_CHAIN =
-            {"gemini-3.6-flash", "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash", "gemini-2.0-flash-lite"};
+            {"gemini-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"};
 
     /**
      * Asks once for the equipment the document specifies, so every chunk can be told to label its clauses
