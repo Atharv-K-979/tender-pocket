@@ -138,6 +138,27 @@ public class Tender {
     @Column(name = "bid_qty")
     private Integer bidQty;
 
+    @Column(name = "official_reference_number")
+    private String officialReferenceNumber;
+
+    @Column(name = "eprocurement_portal_id")
+    private String eprocurementPortalId;
+
+    @Column(name = "is_corrigendum")
+    private Boolean isCorrigendum = false;
+
+    @Column(name = "assigned_mis_executive")
+    private String assignedMisExecutive;
+
+    @Column(name = "tpc_purchase_price")
+    private Double tpcPurchasePrice;
+
+    @Column(name = "mis_final_price")
+    private Double misFinalPrice;
+
+    @Column(name = "current_stage")
+    private String currentStage = "SPEC_CLEARANCE";
+
     @Column(name = "quoted_qty")
     private Integer quotedQty;
 
@@ -372,4 +393,25 @@ public class Tender {
 
     public String getOfferedModel() { return offeredModel; }
     public void setOfferedModel(String offeredModel) { this.offeredModel = offeredModel; }
+
+    public String getOfficialReferenceNumber() { return officialReferenceNumber; }
+    public void setOfficialReferenceNumber(String officialReferenceNumber) { this.officialReferenceNumber = officialReferenceNumber; }
+
+    public String getEprocurementPortalId() { return eprocurementPortalId; }
+    public void setEprocurementPortalId(String eprocurementPortalId) { this.eprocurementPortalId = eprocurementPortalId; }
+
+    public Boolean getIsCorrigendum() { return isCorrigendum != null && isCorrigendum; }
+    public void setIsCorrigendum(Boolean isCorrigendum) { this.isCorrigendum = isCorrigendum; }
+
+    public String getAssignedMisExecutive() { return assignedMisExecutive; }
+    public void setAssignedMisExecutive(String assignedMisExecutive) { this.assignedMisExecutive = assignedMisExecutive; }
+
+    public Double getTpcPurchasePrice() { return tpcPurchasePrice; }
+    public void setTpcPurchasePrice(Double tpcPurchasePrice) { this.tpcPurchasePrice = tpcPurchasePrice; }
+
+    public Double getMisFinalPrice() { return misFinalPrice; }
+    public void setMisFinalPrice(Double misFinalPrice) { this.misFinalPrice = misFinalPrice; }
+
+    public String getCurrentStage() { return currentStage; }
+    public void setCurrentStage(String currentStage) { this.currentStage = currentStage; }
 }
