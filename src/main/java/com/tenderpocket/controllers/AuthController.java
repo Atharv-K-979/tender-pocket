@@ -51,9 +51,15 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username and password required"));
         }
 
-        // Auto-seed default accounts if missing
+        // Auto-seed default accounts if missing for all 4 primary roles
         if (!userRepository.existsById("admin")) {
             userRepository.save(new User("admin", passwordEncoder.encode("Marken@123$"), "Admin", "admin@company.com"));
+        }
+        if (!userRepository.existsById("misteam")) {
+            userRepository.save(new User("misteam", passwordEncoder.encode("misteam"), "MIS Team", "mis@company.com"));
+        }
+        if (!userRepository.existsById("executive")) {
+            userRepository.save(new User("executive", passwordEncoder.encode("executive123"), "Tender Executive", "executive@company.com"));
         }
         if (!userRepository.existsById("clearance")) {
             userRepository.save(new User("clearance", passwordEncoder.encode("clearance123"), "Clearance Team", "clearance@company.com"));
@@ -195,6 +201,19 @@ public class AuthController {
 
         if (username == null || password == null || role == null) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username, password, and role are required"));
+        }
+
+        // Standardize legacy role names
+        if ("MIS Executive".equalsIgnoreCase(role) || "Tender Operations Executive".equalsIgnoreCase(role)) {
+            role = "Tender Executive";
+        }
+
+        List<String> validRoles = List.of("Admin", "MIS Team", "Tender Executive", "Clearance Team", "TPC Team");
+        if (!validRoles.contains(role)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "error", "Invalid role specified. Allowed roles: MIS Team, Tender Executive, Clearance Team, TPC Team, Admin"
+            ));
         }
 
         username = username.trim();
