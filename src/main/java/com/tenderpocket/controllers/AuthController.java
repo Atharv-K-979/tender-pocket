@@ -51,9 +51,15 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username and password required"));
         }
 
-        // Auto-seed admin account if missing
+        // Auto-seed default accounts if missing
         if (!userRepository.existsById("admin")) {
             userRepository.save(new User("admin", passwordEncoder.encode("Marken@123$"), "Admin", "admin@company.com"));
+        }
+        if (!userRepository.existsById("clearance")) {
+            userRepository.save(new User("clearance", passwordEncoder.encode("clearance123"), "Clearance Team", "clearance@company.com"));
+        }
+        if (!userRepository.existsById("tpc")) {
+            userRepository.save(new User("tpc", passwordEncoder.encode("tpc123"), "TPC Team", "tpc@company.com"));
         }
 
         Optional<User> opt = userRepository.findById(username);
@@ -276,6 +282,39 @@ public class AuthController {
             }
         }
         return ResponseEntity.ok(Map.of("success", true, "executives", result));
+    }
+
+    @GetMapping("/roles")
+    public ResponseEntity<?> getAvailableRoles() {
+        List<String> roles = List.of(
+            "Admin",
+            "Clearance Team",
+            "TPC Team",
+            "MIS Team",
+            "MIS Executive",
+            "Tender Executive"
+        );
+        return ResponseEntity.ok(Map.of("success", true, "roles", roles));
+    }
+
+    @GetMapping("/clearance-team")
+    public ResponseEntity<?> getClearanceTeam() {
+        List<User> team = userRepository.findByRole("Clearance Team");
+        List<String> result = new ArrayList<>();
+        for (User u : team) {
+            result.add(u.getUsername());
+        }
+        return ResponseEntity.ok(Map.of("success", true, "clearanceTeam", result));
+    }
+
+    @GetMapping("/tpc-team")
+    public ResponseEntity<?> getTpcTeam() {
+        List<User> team = userRepository.findByRole("TPC Team");
+        List<String> result = new ArrayList<>();
+        for (User u : team) {
+            result.add(u.getUsername());
+        }
+        return ResponseEntity.ok(Map.of("success", true, "tpcTeam", result));
     }
 
     @GetMapping("/mis-team")
