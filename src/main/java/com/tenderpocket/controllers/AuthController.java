@@ -291,7 +291,6 @@ public class AuthController {
             "Clearance Team",
             "TPC Team",
             "MIS Team",
-            "MIS Executive",
             "Tender Executive"
         );
         return ResponseEntity.ok(Map.of("success", true, "roles", roles));
