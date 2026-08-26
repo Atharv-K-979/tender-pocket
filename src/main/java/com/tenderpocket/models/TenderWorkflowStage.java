@@ -1,7 +1,8 @@
 package com.tenderpocket.models;
 
 public enum TenderWorkflowStage {
-    TPC_CLEARANCE_PRICING,
+    SPEC_CLEARANCE,
+    TPC_PRICING,
     MIS_PRICING,
     BID_DOC_GENERATED,
     PAYMENT_APPROVAL,

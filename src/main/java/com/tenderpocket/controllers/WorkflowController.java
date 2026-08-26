@@ -63,7 +63,7 @@ public class WorkflowController {
         return ResponseEntity.ok(resp);
     }
 
-    // POST /api/tenders/{id}/clearance-request (Send spec to TPC / Specification Team)
+    // POST /api/tenders/{id}/clearance-request (Send spec to Clearance Team)
     @PostMapping("/{id}/clearance-request")
     public ResponseEntity<?> sendClearanceRequest(
             @PathVariable("id") String id,
@@ -74,19 +74,46 @@ public class WorkflowController {
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
         Tender tender = tOpt.get();
-        tender.setCurrentStage("TPC_CLEARANCE_PRICING");
+        tender.setCurrentStage("SPEC_CLEARANCE");
         tenderRepository.save(tender);
 
-        TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.TPC_CLEARANCE_PRICING, username, "TPC / Specification Team", "PENDING");
+        TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.SPEC_CLEARANCE, username, "Clearance Team", "PENDING");
         approvalRepository.save(req);
 
-        String note = (body != null && body.containsKey("note")) ? body.get("note") : "Submitted technical specification for clearance & TPC purchase pricing.";
-        commentRepository.save(new TenderComment(id, "TPC_CLEARANCE_PRICING", username, "Tender Executive", note));
+        String note = (body != null && body.containsKey("note")) ? body.get("note") : "Submitted technical specification for clearance approval.";
+        commentRepository.save(new TenderComment(id, "SPEC_CLEARANCE", username, "Tender Executive", note));
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Technical specification submitted to TPC / Specification Team for clearance and purchase pricing."));
+        return ResponseEntity.ok(Map.of("success", true, "message", "Technical specification submitted to Clearance Team for approval."));
     }
 
-    // POST /api/tenders/{id}/tpc-price (TPC / Specification Team approves specification and submits purchase price)
+    // POST /api/tenders/{id}/approve-clearance (Clearance Team approves spec -> Notify Executive & send to TPC Team)
+    @PostMapping("/{id}/approve-clearance")
+    public ResponseEntity<?> approveClearance(
+            @PathVariable("id") String id,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "clearance") String username,
+            @RequestBody(required = false) Map<String, String> body) {
+
+        Optional<Tender> tOpt = tenderRepository.findById(id);
+        if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+
+        Tender tender = tOpt.get();
+        tender.setCurrentStage("TPC_PRICING");
+        tenderRepository.save(tender);
+
+        TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.TPC_PRICING, username, "TPC Team", "APPROVED");
+        approvalRepository.save(req);
+
+        String comment = (body != null && body.containsKey("comment")) ? body.get("comment") : "Technical specification approved by Clearance Team.";
+        commentRepository.save(new TenderComment(id, "SPEC_CLEARANCE", username, "Clearance Team", comment + " [Notification to Executive: Technical specification cleared! Tender sent to TPC Team for manufacturer purchase price.]"));
+
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Technical specification approved! Executive notified and tender forwarded to TPC Team for manufacturer purchase price.",
+            "notification", "Technical specification cleared by Clearance Team! Sent to TPC Team for purchase price."
+        ));
+    }
+
+    // POST /api/tenders/{id}/tpc-price (TPC Team obtains manufacturer price & sends to MIS Team)
     @PostMapping("/{id}/tpc-price")
     public ResponseEntity<?> submitTpcPrice(
             @PathVariable("id") String id,
@@ -102,13 +129,13 @@ public class WorkflowController {
         tender.setCurrentStage("MIS_PRICING");
         tenderRepository.save(tender);
 
-        TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.TPC_CLEARANCE_PRICING, username, "MIS Team", "APPROVED");
+        TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.TPC_PRICING, username, "MIS Team", "APPROVED");
         req.setTpcPurchasePrice(price);
         approvalRepository.save(req);
 
-        commentRepository.save(new TenderComment(id, "TPC_CLEARANCE_PRICING", username, "TPC / Specification Team", "Technical specification cleared. Submitted TPC purchase price to MIS Team."));
+        commentRepository.save(new TenderComment(id, "TPC_PRICING", username, "TPC Team", "Obtained manufacturer purchase price (₹" + price + "). Forwarded securely to MIS Team."));
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Technical specification cleared and TPC purchase price submitted securely to MIS Team."));
+        return ResponseEntity.ok(Map.of("success", true, "message", "Manufacturer purchase price obtained by TPC Team and forwarded securely to MIS Team."));
     }
 
     // POST /api/tenders/{id}/mis-price (MIS Team provides final purchase price to Tender Executive)
