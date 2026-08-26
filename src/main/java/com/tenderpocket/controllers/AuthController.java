@@ -96,9 +96,9 @@ public class AuthController {
         }
         if (userRole == null || userRole.isEmpty()) userRole = "Admin";
 
-        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole) && !"Specification Team".equalsIgnoreCase(userRole)) {
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole) && !"Clearance Team".equalsIgnoreCase(userRole) && !"TPC Team".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, Executive, or Specification Team only"));
+                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, Tender Executive, Clearance Team, or TPC Team only"));
         }
 
         List<User> rawUsers = userRepository.findAll();
