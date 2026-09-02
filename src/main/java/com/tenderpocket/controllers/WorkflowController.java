@@ -63,12 +63,19 @@ public class WorkflowController {
         return ResponseEntity.ok(resp);
     }
 
-    // POST /api/tenders/{id}/clearance-request (Send spec to Clearance Team)
     @PostMapping("/{id}/clearance-request")
     public ResponseEntity<?> sendClearanceRequest(
             @PathVariable("id") String id,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Tender Executive") String userRole,
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
             @RequestBody(required = false) Map<String, String> body) {
+
+        if ("Admin".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "success", false,
+                    "error", "Access denied: Only Tender Executives have permission to submit specifications for clearance. Admin role is for system administration only."
+            ));
+        }
 
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));

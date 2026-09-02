@@ -461,6 +461,13 @@ public class TenderController {
             @RequestBody Map<String, String> body) {
 
 
+        if ("Admin".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "success", false,
+                    "error", "Access denied: Only Tender Executives have permission to generate technical specifications. Admin role is for system administration only."
+            ));
+        }
+
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
