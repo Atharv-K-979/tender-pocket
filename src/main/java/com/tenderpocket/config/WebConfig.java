@@ -29,4 +29,10 @@ public class WebConfig implements WebMvcConfigurer {
                         "file:./public/documents/"
                 );
     }
+
+    @Override
+    public void addViewControllers(org.springframework.web.servlet.config.annotation.ViewControllerRegistry registry) {
+        registry.addViewController("/tenders/**")
+                .setViewName("forward:/index.html");
+    }
 }
