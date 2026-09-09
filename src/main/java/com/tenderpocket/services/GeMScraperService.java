@@ -37,6 +37,9 @@ public class GeMScraperService {
     @Autowired
     private TenderRepository tenderRepository;
 
+    @Autowired
+    private ObjectStorageService objectStorageService;
+
     @Value("${gemini.api.key}")
     private String geminiApiKey;
 
@@ -47,38 +50,39 @@ public class GeMScraperService {
     private String cachedCsrfHash = null;
 
     private static final List<String> RAW_KEYWORDS = Arrays.asList(
-            "EXAMINATION TABLE", "Active Cold Box", "BIPAP", "Blood Bag Sealer", "Blood Bag Tube Sealer", 
-            "Boyle's Machine", "C-ARM Machine", "Cautery Machine", "Cell Counter", "Chemistry Analyser", 
-            "Colorimeter", "Colour Doppler", "CPAP", "Crash Cart", "CTG Machine", "Defibrillator", 
-            "Ward Plain Bed", "Dielectric Sealer", "Digital Analytical Balance", "Digital X-Ray", 
-            "Double Pan Balance", "Dressing Drum", "Dressing Trolley", "DVT Pump", "ECG Machine", 
-            "Electric Bed", "Electro Surgical Unit", "Electrolyte", "Electrosurgical Device", 
-            "Examination Couch", "Fetal Doppler", "Fogger Machine", "Foot Step", "Four Seater Chair Cushion", 
-            "Fowler Bed", "Gel Card Incubator", "Haematology Analyzer", "Hematology Analyzer", 
-            "Hemoglobin Analyzer", "Hemoglobinometer", "Holder Machine", "Hospital Bed", "Hospital Chair", 
-            "Hospital Furniture", "Hospital Table", "Hospital Trolley", "ICU Bed", "Instrument Trolley", 
-            "IV Rod", "Modular Operation Theatre", "Laminar Cabinet", "Laparoscopy Set", "Laparoscopy Trolley", 
-            "LDR Bed", "Mattress for ICU", "Mattress for Semi Fowler", "Medical Equipment", 
-            "Medical Gas Pipeline System", "Medical Hospital Lamps", "Microscope", "Modular Multipara Monitor", 
-            "Office Chair", "Operating Theatre Pendant", "Operation Table", "OT LED Light Double Dome", 
-            "OT Pendant", "OT Table Electric cum Manual", "Over Bed Table", "Oxygen Concentrator", 
-            "Patient Monitor", "Pediatric Bed", "PH Meter", "Plain Bed", "Pulse Oximeter", "Radiant Warmer", 
-            "Radiology & Imaging", "Recovery Trolley Hydraulic", "Revolving Stool", "RH View Box", 
-            "Rolling Hypothermia Treatment Carts", "Fradi", "Semi Auto Analyser", "Semi Fowler Bed", 
-            "Sterile Connecting Device", "Stretcher", "Suction Machine", "Syringe Pump", "Thermometer", 
-            "Three Seater Chair", "TMT Machine", "Tube Stripper", "Ultrasonic Cleaner", "Ultrasound Machine", 
-            "Ultrasound USG Machine", "USG Machine", "VDRL Shaker", "Ventilator", "Visi Cooler", 
-            "Visual Light Box", "Volumetric Infusion Pump", "Weighing Scale", "X-Ray Machine", "IVD Pathology", 
-            "Laproscopy and endoscopy", "Commercial Refrigeration", "Freezer / Deep Freezer", "Chest Freezer", 
-            "Chiller", "Insulated Truck / Vehicles", "Insulated Van / Vehicles", "Refrigerated Vans / Trucks / Vehicles", 
-            "Refrigerator", "Remote Temperature Monitoring Device (WHO Tested)", 
-            "Solar Walk In Cooler and Freezer / Cold Room", "Walk-In-Freezer / Cold Room", "Steel Cupboards & Funriture Range", 
-            "3 door steel cupboards", "2 door steel cupboards", "Office steel cupboards", 
-            "Particle Board Box bed Particle Board", "Particle Board Single Bed", "Particle Board Double Bed", 
-            "Particle Board Diwan", "Particle Board 3 Door Cupboard", "Particle Board 2 Door Cupboard", 
-            "Particle Board Dressing Table", "Particle Board TV Showcase", "Particle Board Office Table", 
-            "Steel Funriture", "ALMIRAH"
-    );
+            "EXAMINATION TABLE", "Active Cold Box", "BIPAP", "Blood Bag Sealer", "Blood Bag Tube Sealer",
+            "Boyle's Machine", "C-ARM Machine", "Cautery Machine", "Cell Counter", "Chemistry Analyser",
+            "Colorimeter", "Colour Doppler", "CPAP", "Crash Cart", "CTG Machine", "Defibrillator",
+            "Ward Plain Bed", "Dielectric Sealer", "Digital Analytical Balance", "Digital X-Ray",
+            "Double Pan Balance", "Dressing Drum", "Dressing Trolley", "DVT Pump", "ECG Machine",
+            "Electric Bed", "Electro Surgical Unit", "Electrolyte", "Electrosurgical Device",
+            "Examination Couch", "Fetal Doppler", "Fogger Machine", "Foot Step", "Four Seater Chair Cushion",
+            "Fowler Bed", "Gel Card Incubator", "Haematology Analyzer", "Hematology Analyzer",
+            "Hemoglobin Analyzer", "Hemoglobinometer", "Holder Machine", "Hospital Bed", "Hospital Chair",
+            "Hospital Furniture", "Hospital Table", "Hospital Trolley", "ICU Bed", "Instrument Trolley",
+            "IV Rod", "Modular Operation Theatre", "Laminar Cabinet", "Laparoscopy Set", "Laparoscopy Trolley",
+            "LDR Bed", "Mattress for ICU", "Mattress for Semi Fowler", "Medical Equipment",
+            "Medical Gas Pipeline System", "Medical Hospital Lamps", "Microscope", "Modular Multipara Monitor",
+            "Office Chair", "Operating Theatre Pendant", "Operation Table", "OT LED Light Double Dome",
+            "OT Pendant", "OT Table Electric cum Manual", "Over Bed Table", "Oxygen Concentrator",
+            "Patient Monitor", "Pediatric Bed", "PH Meter", "Plain Bed", "Pulse Oximeter", "Radiant Warmer",
+            "Radiology & Imaging", "Recovery Trolley Hydraulic", "Revolving Stool", "RH View Box",
+            "Rolling Hypothermia Treatment Carts", "Fradi", "Semi Auto Analyser", "Semi Fowler Bed",
+            "Sterile Connecting Device", "Stretcher", "Suction Machine", "Syringe Pump", "Thermometer",
+            "Three Seater Chair", "TMT Machine", "Tube Stripper", "Ultrasonic Cleaner", "Ultrasound Machine",
+            "Ultrasound USG Machine", "USG Machine", "VDRL Shaker", "Ventilator", "Visi Cooler",
+            "Visual Light Box", "Volumetric Infusion Pump", "Weighing Scale", "X-Ray Machine", "IVD Pathology",
+            "Laproscopy and endoscopy", "Commercial Refrigeration", "Freezer / Deep Freezer", "Chest Freezer",
+            "Chiller", "Insulated Truck / Vehicles", "Insulated Van / Vehicles",
+            "Refrigerated Vans / Trucks / Vehicles",
+            "Refrigerator", "Remote Temperature Monitoring Device (WHO Tested)",
+            "Solar Walk In Cooler and Freezer / Cold Room", "Walk-In-Freezer / Cold Room",
+            "Steel Cupboards & Funriture Range",
+            "3 door steel cupboards", "2 door steel cupboards", "Office steel cupboards",
+            "Particle Board Box bed Particle Board", "Particle Board Single Bed", "Particle Board Double Bed",
+            "Particle Board Diwan", "Particle Board 3 Door Cupboard", "Particle Board 2 Door Cupboard",
+            "Particle Board Dressing Table", "Particle Board TV Showcase", "Particle Board Office Table",
+            "Steel Funriture", "ALMIRAH");
 
     public int syncTenders(boolean allDates, List<String> customKeywords) throws Exception {
         List<String> keywords = customKeywords != null && !customKeywords.isEmpty() ? customKeywords : RAW_KEYWORDS;
@@ -89,7 +93,8 @@ public class GeMScraperService {
 
         for (int i = 0; i < keywords.size(); i++) {
             String keyword = keywords.get(i).trim();
-            if (keyword.length() < 3) continue;
+            if (keyword.length() < 3)
+                continue;
             System.out.println(String.format("[%d/%d] Querying GeM for: \"%s\"...", i + 1, keywords.size(), keyword));
 
             try {
@@ -100,7 +105,8 @@ public class GeMScraperService {
                     String bId = getJsonString(doc, "b_id");
                     String bidNo = getJsonString(doc, "b_bid_number");
 
-                    if (bId == null || bidNo == null) continue;
+                    if (bId == null || bidNo == null)
+                        continue;
 
                     // Deduplication check
                     Optional<Tender> existing = tenderRepository.findById(bId);
@@ -140,7 +146,8 @@ public class GeMScraperService {
                     String officialRefNo = bidNoParent != null ? bidNoParent : bidNo;
 
                     Map<String, String> loc = parseLocationFromDept(dept);
-                    Map<String, String> defaults = computeDefaultBusinessMetadata(items, officialRefNo, loc.get("place") + ", " + loc.get("state"), url);
+                    Map<String, String> defaults = computeDefaultBusinessMetadata(items, officialRefNo,
+                            loc.get("place") + ", " + loc.get("state"), url);
 
                     String startDateTimeStr = formatDateTime(start);
                     String endDateTimeStr = end != null ? formatDateTime(end) : defaults.get("due_date");
@@ -164,7 +171,8 @@ public class GeMScraperService {
                     tender.setOriginalUrl(url);
                     tender.setStatus("Issued");
                     tender.setScrapedAt(new Date().toString());
-                    tender.setNotes(String.format("Imported automatically by daily GeM Sync job matching keyword \"%s\".", keyword));
+                    tender.setNotes(String
+                            .format("Imported automatically by daily GeM Sync job matching keyword \"%s\".", keyword));
                     tender.setEntryDate(defaults.get("entry_date"));
                     tender.setMisExecutive("");
                     tender.setSource("GeM");
@@ -207,62 +215,132 @@ public class GeMScraperService {
     }
 
     private void downloadAndParseGemPdf(String tenderId, String downloadUrl, String bidNo, JsonNode doc) {
-        try {
-            String localDir = "public/documents/" + tenderId;
-            String localFileName = "Bid_Document_" + tenderId + ".pdf";
-            String outputPath = localDir + "/" + localFileName;
-            String localPath = "/documents/" + tenderId + "/" + localFileName;
+        String localDir = "public/documents/" + tenderId;
+        String localFileName = "Bid_Document_" + tenderId + ".pdf";
+        String outputPath = localDir + "/" + localFileName;
+        String s3Key = "tenders/" + tenderId + "/" + localFileName;
 
+        try {
             Files.createDirectories(Paths.get(localDir));
-            
+
             System.out.println("  - Downloading Bid PDF to " + outputPath + "...");
             boolean success = downloadFile(downloadUrl, outputPath);
-            if (success) {
-                // Call external python parser
-                ProcessBuilder pb = new ProcessBuilder("python3", "scripts/parse-gem-pdf.py", outputPath);
-                Process process = pb.start();
-                
-                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line);
-                }
-                
-                int exitCode = process.waitFor();
-                if (exitCode == 0) {
-                    JsonNode parsed = objectMapper.readTree(sb.toString());
-                    String place = parsed.has("place") ? parsed.get("place").asText() : "N/A";
-                    String state = parsed.has("state") ? parsed.get("state").asText() : "N/A";
-                    String dueDate = parsed.has("due_date") ? parsed.get("due_date").asText() : null;
-                    String dueTime = parsed.has("due_time") ? parsed.get("due_time").asText() : null;
-                    Double emdAmount = parsed.has("emd_amount") && !parsed.get("emd_amount").isNull() ? parsed.get("emd_amount").asDouble() : null;
 
-                    Optional<Tender> opt = tenderRepository.findById(tenderId);
-                    if (opt.isPresent()) {
-                        Tender t = opt.get();
-                        t.setDocumentUrl(localPath);
-                        if (!"N/A".equals(place)) {
-                            t.setPlace(place);
-                            t.setLocation(place + ", " + state);
-                        }
-                        if (!"N/A".equals(state)) t.setState(state);
-                        if (dueDate != null) {
-                            t.setDueDate(dueDate + (dueTime != null ? " " + dueTime : ""));
-                        }
-                        if (emdAmount != null) {
-                            t.setEmd(emdAmount);
-                            t.setEmdRaw("₹" + emdAmount);
-                        }
-                        t.setDownloadedDocs(String.format("[{\"name\":\"Bid Document\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}]", 
-                                localFileName, localPath, LocalDate.now().toString()));
-                        tenderRepository.save(t);
-                        System.out.println("  - Successfully updated PDF metadata for tender " + tenderId);
-                    }
-                }
+            if (!success) {
+                System.err.println("  - Failed to download PDF for tender " + tenderId);
+                return;
             }
+
+            // Upload PDF to S3
+            File pdfFile = new File(outputPath);
+
+            System.out.println("  - Uploading Bid PDF to S3: " + s3Key);
+
+            try (java.io.InputStream inputStream = Files.newInputStream(pdfFile.toPath())) {
+                objectStorageService.upload(
+                        s3Key,
+                        inputStream,
+                        "application/pdf",
+                        pdfFile.length());
+            }
+
+            System.out.println("  - Successfully uploaded PDF to S3.");
+
+            // Generate temporary S3 URL for document access
+            String s3DownloadUrl = objectStorageService.generateDownloadUrl(s3Key);
+
+            // Existing Python parser still uses the temporary local PDF
+            ProcessBuilder pb = new ProcessBuilder(
+                    "python3",
+                    "scripts/parse-gem-pdf.py",
+                    outputPath);
+
+            Process process = pb.start();
+
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()));
+
+            StringBuilder sb = new StringBuilder();
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                sb.append(line);
+            }
+
+            int exitCode = process.waitFor();
+
+            if (exitCode == 0) {
+                JsonNode parsed = objectMapper.readTree(sb.toString());
+
+                String place = parsed.has("place")
+                        ? parsed.get("place").asText()
+                        : "N/A";
+
+                String state = parsed.has("state")
+                        ? parsed.get("state").asText()
+                        : "N/A";
+
+                String dueDate = parsed.has("due_date")
+                        ? parsed.get("due_date").asText()
+                        : null;
+
+                String dueTime = parsed.has("due_time")
+                        ? parsed.get("due_time").asText()
+                        : null;
+
+                Double emdAmount = parsed.has("emd_amount")
+                        && !parsed.get("emd_amount").isNull()
+                                ? parsed.get("emd_amount").asDouble()
+                                : null;
+
+                Optional<Tender> opt = tenderRepository.findById(tenderId);
+
+                if (opt.isPresent()) {
+                    Tender t = opt.get();
+
+                    // Store temporary S3 URL for document access
+                    t.setDocumentUrl(s3DownloadUrl);
+
+                    if (!"N/A".equals(place)) {
+                        t.setPlace(place);
+                        t.setLocation(place + ", " + state);
+                    }
+
+                    if (!"N/A".equals(state)) {
+                        t.setState(state);
+                    }
+
+                    if (dueDate != null) {
+                        t.setDueDate(
+                                dueDate + (dueTime != null ? " " + dueTime : ""));
+                    }
+
+                    if (emdAmount != null) {
+                        t.setEmd(emdAmount);
+                        t.setEmdRaw("₹" + emdAmount);
+                    }
+
+                    t.setDownloadedDocs(
+                            String.format(
+                                    "[{\"name\":\"Bid Document\",\"filename\":\"%s\",\"s3_key\":\"%s\",\"created_date\":\"%s\"}]",
+                                    localFileName,
+                                    s3Key,
+                                    LocalDate.now().toString()));
+
+                    tenderRepository.save(t);
+
+                    System.out.println(
+                            "  - Successfully updated PDF metadata for tender " + tenderId);
+                }
+            } else {
+                System.err.println(
+                        "  - PDF parser failed for tender " + tenderId +
+                                " with exit code " + exitCode);
+            }
+
         } catch (Exception e) {
-            System.err.println("  - Failed to parse PDF: " + e.getMessage());
+            System.err.println(
+                    "  - Failed to parse PDF: " + e.getMessage());
         }
     }
 
@@ -291,7 +369,8 @@ public class GeMScraperService {
         String proxyPort = System.getenv("HTTP_PROXY_PORT");
         if (proxyHost != null && !proxyHost.isEmpty() && proxyPort != null && !proxyPort.isEmpty()) {
             try {
-                builder.proxy(java.net.ProxySelector.of(new java.net.InetSocketAddress(proxyHost, Integer.parseInt(proxyPort))));
+                builder.proxy(java.net.ProxySelector
+                        .of(new java.net.InetSocketAddress(proxyHost, Integer.parseInt(proxyPort))));
             } catch (Exception e) {
                 System.err.println("Failed to set HTTP proxy: " + e.getMessage());
             }
@@ -303,7 +382,7 @@ public class GeMScraperService {
         getCredentials();
 
         String url = "https://bidplus.gem.gov.in/all-bids-data";
-        
+
         Map<String, Object> param = new HashMap<>();
         param.put("searchBid", keyword);
         param.put("searchType", "fullText");
@@ -329,7 +408,8 @@ public class GeMScraperService {
                 .uri(URI.create(url))
                 .version(HttpClient.Version.HTTP_1_1)
                 .timeout(java.time.Duration.ofSeconds(20))
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .header("User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
                 .header("Accept", "application/json, text/javascript, */*; q=0.01")
                 .header("Accept-Language", "en-US,en;q=0.9")
                 .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
@@ -355,21 +435,22 @@ public class GeMScraperService {
         }
 
         String mainUrl = "https://bidplus.gem.gov.in/all-bids";
-        
+
         HttpClient client = buildHttpClient();
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(mainUrl))
                 .version(HttpClient.Version.HTTP_1_1)
                 .timeout(java.time.Duration.ofSeconds(20))
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .header("User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
                 .header("Accept-Language", "en-US,en;q=0.9")
                 .GET()
                 .build();
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        
+
         // Parse cookies
         List<String> cookies = response.headers().allValues("Set-Cookie");
         StringBuilder cookieBuilder = new StringBuilder();
@@ -409,7 +490,8 @@ public class GeMScraperService {
     }
 
     private String formatDateTime(String dt) {
-        if (dt == null) return null;
+        if (dt == null)
+            return null;
         return dt.replace("T", " ").replace("Z", "").split("\\.")[0];
     }
 
@@ -417,11 +499,16 @@ public class GeMScraperService {
         Map<String, String> loc = new HashMap<>();
         loc.put("place", "N/A");
         loc.put("state", "N/A");
-        if (dept == null) return loc;
-        
-        List<String> states = Arrays.asList("Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Jammu","Kashmir","Ladakh","Puducherry","Chandigarh");
+        if (dept == null)
+            return loc;
+
+        List<String> states = Arrays.asList("Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+                "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh",
+                "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim",
+                "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi", "Jammu",
+                "Kashmir", "Ladakh", "Puducherry", "Chandigarh");
         String lowerDept = dept.toLowerCase();
-        
+
         for (String s : states) {
             if (lowerDept.contains(s.toLowerCase())) {
                 loc.put("state", s);
@@ -431,20 +518,26 @@ public class GeMScraperService {
         return loc;
     }
 
-    private Map<String, String> computeDefaultBusinessMetadata(String title, String refNo, String location, String originalUrl) {
+    private Map<String, String> computeDefaultBusinessMetadata(String title, String refNo, String location,
+            String originalUrl) {
         Map<String, String> defaults = new HashMap<>();
         defaults.put("entry_date", LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy")));
-        
+
         String vertical = "Others";
         if (title != null) {
             String lowerTitle = title.toLowerCase();
-            if (lowerTitle.contains("wheelchair") || lowerTitle.contains("trolley") || lowerTitle.contains("couch") || lowerTitle.contains("screen") || lowerTitle.contains("cart") || lowerTitle.contains("cabinet") || lowerTitle.contains("ward") || lowerTitle.contains("bed") || lowerTitle.contains("furniture") || lowerTitle.contains("table")) {
+            if (lowerTitle.contains("wheelchair") || lowerTitle.contains("trolley") || lowerTitle.contains("couch")
+                    || lowerTitle.contains("screen") || lowerTitle.contains("cart") || lowerTitle.contains("cabinet")
+                    || lowerTitle.contains("ward") || lowerTitle.contains("bed") || lowerTitle.contains("furniture")
+                    || lowerTitle.contains("table")) {
                 vertical = "Medical Equipment & Furniture";
             } else if (lowerTitle.contains("centrifuge")) {
                 vertical = "Centrifuge";
             } else if (lowerTitle.contains("freezer") || lowerTitle.contains("deep freezer")) {
                 vertical = "Deep Freezer";
-            } else if (lowerTitle.contains("hvac") || lowerTitle.contains("conditioning") || lowerTitle.contains("split ac") || lowerTitle.contains("chiller") || lowerTitle.contains("cooling")) {
+            } else if (lowerTitle.contains("hvac") || lowerTitle.contains("conditioning")
+                    || lowerTitle.contains("split ac") || lowerTitle.contains("chiller")
+                    || lowerTitle.contains("cooling")) {
                 vertical = "HVAC";
             }
         }
