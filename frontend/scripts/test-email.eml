@@ -1,0 +1,602 @@
+Delivered-To: anuthibhansali@gmail.com
+Received: by 2002:a05:6358:b3d6:b0:299:8a05:3360 with SMTP id pb22csp789509rwc;
+        Sat, 23 May 2026 00:34:21 -0700 (PDT)
+X-Received: by 2002:a17:90b:2246:b0:369:971:4888 with SMTP id 98e67ed59e1d1-36a677f4b97mr6821594a91.15.1779521661344;
+        Sat, 23 May 2026 00:34:21 -0700 (PDT)
+Return-Path: <megha@markenworld.com>
+Received: from MA0PR01CU012.outbound.protection.outlook.com (mail-southindiaazlp170110002.outbound.protection.outlook.com. [2a01:111:f403:c409::2])
+        by mx.google.com with ESMTPS id 98e67ed59e1d1-36a72d88dd6si7485970a91.17.2026.05.23.00.34.20
+        for <anuthibhansali@gmail.com>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Sat, 23 May 2026 00:34:21 -0700 (PDT)
+Received-SPF: pass (google.com: domain of megha@markenworld.com designates 2a01:111:f403:c409::2 as permitted sender) client-ip=2a01:111:f403:c409::2;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@markenworld.com header.s=selector1 header.b=YoPAi2q4;
+       arc=fail (signature failed);
+       spf=pass (google.com: domain of megha@markenworld.com designates 2a01:111:f403:c409::2 as permitted sender) smtp.mailfrom=megha@markenworld.com
+ARC-Seal: i=1; a=rsa-sha256; s=arcselector10001; d=microsoft.com; cv=none;
+ b=hXTh15eBCGuKPDisLd9D1IVTEoPLndarJGySbdOEKQ4rmRyHdbzPfbR3ubF1YsCElEQa0KrvaCT8aPVgs5qs6YZhEBfkMOWhZ8xAKp+N6r2IZjCspf3qIloD40HLHaM2kb2OiuFC0LY588DqukmMdA3kqInygAmwv6penYuu2JktSubQtU1HHw1xH/a3j9f5CSJ8sT0Z+MFIf33T2540V8cHAxCkWEdAaYIMOt6hsieorrImoUK/oLGw5n1QWC8X3w6FweUlZs8nUNT6ZriC1UcG3dPxkrwSVUxkNY4X1moDkNUtYvaQ+O4U/KJ75Bh8fj2bT7kb2vRvM+f3kgarQw==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=microsoft.com;
+ s=arcselector10001;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-AntiSpam-MessageData-ChunkCount:X-MS-Exchange-AntiSpam-MessageData-0:X-MS-Exchange-AntiSpam-MessageData-1;
+ bh=IK88cSwW4fs8P3ljOPcdjy7QM3Jd53kS7YPg5ruuKm0=;
+ b=ErkzGQOzrHNb9gA4Qhf7vR26DCifJUMLyOWXy1IpEbuO6W3AFsNw9cpDJavX/5GQ1G3Geq84uKYSFSk4jDi2av35fYI5KwUeFcCkxbX9X3RwyVIlvtilP6YIEzjtcok9ow9+yhvQ+LITdXwNiVr9q2W+nuaJLcuq4Nl13iYIQFAU3REQFmv802ZWm2WoAjiVd/cnYJ00zYRXUxGYv8IyiJ3XGL8Tzi84xLWdzE5CU/DNOONmLbAxNAzF+cSy3OgGksVfTpSYZH8+aLeBuFOIWWWl/HlTWOqyxq8UlmsxxThdsIZLufdsfv7ruOBHB4NNqsxgJrY0MC4xhDwhZfei3Q==
+ARC-Authentication-Results: i=1; mx.microsoft.com 1; spf=pass
+ smtp.mailfrom=markenworld.com; dmarc=pass action=none
+ header.from=markenworld.com; dkim=pass header.d=markenworld.com; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=markenworld.com;
+ s=selector1;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-SenderADCheck;
+ bh=IK88cSwW4fs8P3ljOPcdjy7QM3Jd53kS7YPg5ruuKm0=;
+ b=YoPAi2q4qB58LjsCv4xtH9CecThqPGkXx2OqB5+a7lrGJVIVfI6/3swEqR4r+yqZRjBUVwt08//Gpcnq3pAigGRGq0idJN1H6l9879OdXdrpTTCQc7D7OENagP4od4SoGodbcbz/BV7WRYHu+X5GC1N/BfKicbI/QGkLgxsOcwm1Z++Bc0kekoj0XSIrC+wtZZWUCHza6Woelmpri3KZYiY2uQ5WRITFg84UWy6oW8gzfLc1l/3WpHOz8RtBtZDQLRUXcJxF2G5QgN9ytULv7zGIc3sCkN/lNDF0yix9EJBnawwAXNy4gCwjvMv69reVV6q4cA/AlxjtP4HJqPPsqg==
+Received: from PNZPR01MB8505.INDPRD01.PROD.OUTLOOK.COM (2603:1096:c01:39::14)
+ by PN2PPF265646D58.INDPRD01.PROD.OUTLOOK.COM (2603:1096:c04:1::190) with
+ Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.21.48.18; Sat, 23 May
+ 2026 07:34:16 +0000
+Received: from PNZPR01MB8505.INDPRD01.PROD.OUTLOOK.COM
+ ([fe80::317e:cb73:c9f4:955a]) by PNZPR01MB8505.INDPRD01.PROD.OUTLOOK.COM
+ ([fe80::317e:cb73:c9f4:955a%6]) with mapi id 15.21.0048.013; Sat, 23 May 2026
+ 07:34:16 +0000
+From: Megha Ahire <megha@markenworld.com>
+To: "anuthibhansali@gmail.com" <anuthibhansali@gmail.com>
+CC: Tender Manager <shridhars@markenworld.com>
+Subject: Fw: 38 New Tender/s, Blood Bank and Medical Cold Chain Equipment
+ 22-May-26 (Noon) - Tender247
+Thread-Topic: 38 New Tender/s, Blood Bank and Medical Cold Chain Equipment
+ 22-May-26 (Noon) - Tender247
+Thread-Index: AQHc6cblLOrTaB9RV0O5AzdeJUXthLYbOVOk
+Date: Sat, 23 May 2026 07:34:15 +0000
+Message-ID:
+ <PNZPR01MB850551AFED19A0EC751AC023AF0C2@PNZPR01MB8505.INDPRD01.PROD.OUTLOOK.COM>
+References: <8797438c-e382-4400-98a5-11a409f85b01@smtp-relay.sendinblue.com>
+In-Reply-To: <8797438c-e382-4400-98a5-11a409f85b01@smtp-relay.sendinblue.com>
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Has-Attach:
+X-MS-TNEF-Correlator:
+msip_labels:
+authentication-results: dkim=none (message not signed)
+ header.d=none;dmarc=none action=none header.from=markenworld.com;
+x-ms-publictraffictype: Email
+x-ms-traffictypediagnostic: PNZPR01MB8505:EE_|PN2PPF265646D58:EE_
+x-ms-office365-filtering-correlation-id: 1f843af7-b2ca-44b5-7f74-08deb89db174
+x-ms-exchange-senderadcheck: 1
+x-ms-exchange-antispam-relay: 0
+x-microsoft-antispam:
+ BCL:0;ARA:13230040|1800799024|4022899009|3109299003|376014|7049299003|69100299015|366016|3023799007|22082099003|18002099003|56012099003|38070700021|8096899003;
+x-microsoft-antispam-message-info:
+ fbPuKPJdF2eWxZsU5I0yBc2nQnPFyCOVDEgWzjH0HiIEscdvZKwBwWKHoT9y8Me4WBRq6K8l+a1mACQVCj+dbzu/1iOz7dp8Ehet2E3W3v+zGSyAvAXuF8B8y5ZMFcrvMhYfF24dh6azx6p6mpqJvHg6XodaDG4gAmcTg2/C/qjvG7Vw7EulPUHxh0AGpeP6ahyJ9YRLEz3mjWJk5QlQGIRM8eGp/MZAy3yGDLaM+xmwxrdAi/KYsgD4zfmQouaSkVdPJR3KY+A8hnq84uvSPeZPNaBgEBZ/etQJIyywJxNM5pBR1GI9b7L/1jclDcejIPz5vRbdY+x9PkrM+XtjUFPqyTUxyOfwNY3w6r0ZCfrh8eWcoOCtxdzwSVj7kkmZTcKEBKkHMabS3xHO6VYAHNcInB3IizAN/gUK8njC9jLi6EfrA2vUDJgCZgOqQ05lo3J6WmJKI2vm/pHpsTYaopcFlMlg13XGFGeEGL7uNHGW4dvSuWgRwWHBCqkGDNgVCkS5ur9JqOxIIX4dDN/crnqz+03/PdDgIYX3WlA99+08blgN1urD6K42B2edz+RR0MtfVuSyRLs3ovC592Q9Jv6oC5/up8o63/Akhr+Z7n7kvQfsfx/TgdkZaklynJzXxYNy8gNN6EB+69lTF5/3XjxYxdea5lYH9tb0QVDtkMJMJHMoDdxTTH7szYt44nlWkdk+TdO6lV5fMmFPLk305A==
+x-forefront-antispam-report:
+ CIP:255.255.255.255;CTRY:;LANG:en;SCL:1;SRV:;IPV:NLI;SFV:NSPM;H:PNZPR01MB8505.INDPRD01.PROD.OUTLOOK.COM;PTR:;CAT:NONE;SFS:(13230040)(1800799024)(4022899009)(3109299003)(376014)(7049299003)(69100299015)(366016)(3023799007)(22082099003)(18002099003)(56012099003)(38070700021)(8096899003);DIR:OUT;SFP:1102;
+x-ms-exchange-antispam-messagedata-chunkcount: 1
+x-ms-exchange-antispam-messagedata-0:
+ =?us-ascii?Q?BNce5oUDxqlztOfCkGy+f1qwY7xJYQda3K1elHenxQz6uE2k/TyebTH2zTy7?=
+ =?us-ascii?Q?wk5f1typqqI+XRxOauod2EiMLnGzrZ4js2/o9KntZr1+0/y7iN0qTsST85pM?=
+ =?us-ascii?Q?c42PQ0gB9Szg+OABpwqeyr6vHV6UJhOeTzbPMOxfdQQtY64DkXHayaJcT4ep?=
+ =?us-ascii?Q?Zkz/fRF5rTcygHro2DEen+LszKT8ORMFedDEU7naf1TLtZj7ttqb+JEOdpj1?=
+ =?us-ascii?Q?UuczGKEtRekg1zAKUJnQ4Af+GpkfyXpHlr5jqSuSVd7ikWz8TsJMc9qOmeLu?=
+ =?us-ascii?Q?CIqU6SMKPaROsf6OGFx8jkBH/AHPRXaYppeVlYLUM1zI61VHZzmH3MrB3BhX?=
+ =?us-ascii?Q?vMebfZNsZOvuIpYX6Ha2bFxgRDZ1htuGjhmPdtteSxifqL7bK4v8kci8aTUE?=
+ =?us-ascii?Q?DweFNlrSVbm2iDkJ14fa+UfXjFmtLu+fJP+aTSCkPyaIQFrACQ5iE6XaYVVn?=
+ =?us-ascii?Q?9QYvCkDzk+UqKVAIwSx7vlOnUciUiiL6jlwTr1t0XIcNW439kCMk5j/FXx4d?=
+ =?us-ascii?Q?ITxsjgS7PlP3MpbjrxKsGSk+/2AcZEkjO2oOr0A3TStUPHaEzjZ6Tq0i3iY/?=
+ =?us-ascii?Q?JpbK8Kz8hqqHvLwH0JTz/pEKuypulcwTwMDQOr1zsrPNV6/StcSOuG85PjdL?=
+ =?us-ascii?Q?HRqUO/O9obQrBUYvLaZFo6CIVDwTZQFQTtYTeH7zoBBzoMB041Z/UI5zh1JX?=
+ =?us-ascii?Q?ZyFWZF0psvpGAeba78HPD2OqQrHfIMMiCT3vgtKL9kMayn8Ttml97Oc9GVA5?=
+ =?us-ascii?Q?R3RrmICiUQCQlcXMJAHHLdBLrain2rsuIiB+CmakvSRWcrWrPQ8wAxWyWc+q?=
+ =?us-ascii?Q?c2nuTv4AJlzDgamzotrg18th6UP9bp9XnMxnw7aKYROq18eLdCfIqMtNY23c?=
+ =?us-ascii?Q?EC7RR2DnuHTdrAWZuvEYhH8RSvOuK7f5LkXoMMwIr9nyF9IthyLQQakAAhJi?=
+ =?us-ascii?Q?OKGu6krzn2oPSjnJXzvpyTR1ZIzMhnbsjYEuAAek0agQt+00R035RdAfeivs?=
+ =?us-ascii?Q?auZqVlVHt9baQhfNjjK21aIDMLjuZhVgFnN99xpSIcU1um+bCXWWaadiP/u2?=
+ =?us-ascii?Q?aY6Zn3rzeahYF7GwkcacNgAtYzQUauxcMyPwCpFovX4xuBoPFUaayyQ31wLf?=
+ =?us-ascii?Q?UV2S51UeDnWjzg8pfRoAb3ybtVGTeCy6pz68iQPAJU3S9Oc2482VufucOawC?=
+ =?us-ascii?Q?AMGM/o+hD21sRqgEks5mWX4PpK3Ye28Bq35FD263QvAWzIJEXlyBSASkYrHh?=
+ =?us-ascii?Q?E5pJvUFENWnC8ZfpYHTOnoE4l7HLDWWTW+HS6SiQES0Z7PpmjddCS28xJ2Ls?=
+ =?us-ascii?Q?SKGzNSC17YCjkva/DguhUaoKtwMUY1dYsww8yACoU2RMpLrUZ5PXn9Vn7vRY?=
+ =?us-ascii?Q?KcBOjnRM+cdSiLyW8YYAkQbUFjK7JoWl+n4/lq1txWnwBKxXeT8DvhHHl7yf?=
+ =?us-ascii?Q?cocP/1Ow21aTcQdks1wMCFD6NK18FQRvjeMVVfPG/X2WmNsTcVy33uAOjEX4?=
+ =?us-ascii?Q?1sDLCIBHfGDLuBTsFH8vh7odlpXGRGCqankSbGB3CtXXiIc/QIfnfU0Q6gM7?=
+ =?us-ascii?Q?ZRk1wPwsqdyb6KIRN7H9tiMB4dBA9rIew9/E2644zhdGT9c34hoEx6FZXC3C?=
+ =?us-ascii?Q?V/o30lJMIJxjuPwc2TQAc62pwAprDhh0tBBQ4Q4Q8TnY5mK0X74OGLUWrtE5?=
+ =?us-ascii?Q?4x1c2zRy9gWfIseiNCqKYuM0eokV4wrSRsjhDxOQyUc1CbzzeqwfWLpyg+A0?=
+ =?us-ascii?Q?BYVtVATxKQ=3D=3D?=
+Content-Type: multipart/alternative;
+	boundary="_000_PNZPR01MB850551AFED19A0EC751AC023AF0C2PNZPR01MB8505INDP_"
+MIME-Version: 1.0
+X-OriginatorOrg: markenworld.com
+X-MS-Exchange-CrossTenant-AuthAs: Internal
+X-MS-Exchange-CrossTenant-AuthSource: PNZPR01MB8505.INDPRD01.PROD.OUTLOOK.COM
+X-MS-Exchange-CrossTenant-Network-Message-Id: 1f843af7-b2ca-44b5-7f74-08deb89db174
+X-MS-Exchange-CrossTenant-originalarrivaltime: 23 May 2026 07:34:15.9744
+ (UTC)
+X-MS-Exchange-CrossTenant-fromentityheader: Hosted
+X-MS-Exchange-CrossTenant-id: 9b053663-2dae-4d7a-b418-4a3b57b5debc
+X-MS-Exchange-CrossTenant-mailboxtype: HOSTED
+X-MS-Exchange-CrossTenant-userprincipalname: RjLTA5fOtYLrkUwKhAhZKiUmUc73X7BaRdBU0AycfKwHzWBeBbF9GInR1rOd9kcn5fBTuVVEwUvY4EAbrRgItg==
+X-MS-Exchange-Transport-CrossTenantHeadersStamped: PN2PPF265646D58
+
+--_000_PNZPR01MB850551AFED19A0EC751AC023AF0C2PNZPR01MB8505INDP_
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+
+________________________________
+From: Tender247 Tender Alert <admin@bidsnrfp.com>
+Sent: Friday, May 22, 2026 2:12 PM
+To: markenterp.nsk@gmail.com <markenterp.nsk@gmail.com>; Tender Manager <shridhars@markenworld.com>; markenhealthtechltd@gmail.com <markenhealthtechltd@gmail.com>; Rutik Mutadak <rutikm@markenworld.com>; MarkEn Tender <tender@markenworld.com>; Megha Ahire <megha@markenworld.com>
+Subject: 38 New Tender/s, Blood Bank and Medical Cold Chain Equipment 22-May-26 (Noon) - Tender247
+
+
+[https://r.tenders.bidsnrfp.com/im/1455364/aecb13f1a3ec6574ff03b00447042c004dcf5b64b2f8d02f38554a0ba04b795b.svg?e=3DiETpZ2nHVfmU0PEQdpkTubT3nk4Ikvj-VFyk5etY5yQITMBz47pdsyPxGjflI9WL3iW2AG1K-4mG6kqxEa5hWRA88ySLiabH7ZzO8t101G3Lpc5SPi3gqES_xqSZQ75YMVnYRQP9nBTfzkCiT44-E5nbVg8UEp18jk3gNN-8jfkHJr3goI7gothMwpKrJhrzVcUOd7yM_SVAdU27CJKj6eaK2_0eci2YCRKDXY0nph-hBzDvuN3f9RmQei6Kfr4p4exp] Download iPhone App<https://r.tenders.bidsnrfp.com/tr/cl/469k247o98uk-9UhLgXuB7A4ddQlX6_KY1drpKzNs5g6B1NCH5hSWBiBDC--H25gE_1WGQZ4vWzm4AZKJV7mIX7yVwWuYHBe5-fioZ-3FIUpOj_Yaxj7e2SYsOqXuKMhhaFor91F6o7hq_0fjJ0OpcdlCtnRD_L0d7hVlUlyAokbuezt2QX00J55Od-IjI9LAAc8aiXxA_oZBtPS6SIphF7ng4pm0yyrTA8w9IMH_ywGWIEiJjyaRQ4lezsnKp-UKPYBvo_U8WK1dnJlBDbBmb_Sd1cdZ4cF67fer862u176c38W5hIbmcIsF2GCTQ> & Android App<https://r.tenders.bidsnrfp.com/tr/cl/hZMP0EGW0spMBcAdAYulr27ZLWAZa-CF34yFyhNdPBjEnC-Ob6WqL_KbJcqZ0_SOJdSXsWH2glSHPDzZJYMWFhqSYVIXyzVXVx2LMJ12dbIAB0vnHKpcGitV9fsPCJaDhOGQGPZXwc4203hfSse0NdAT8wjbfCZY79Ko4xb7L1zsEzmGIbmi8nVPlAmjIxgATHCW17XHN4zqILYdZjwANukVPO3cFb5e0WXsWMc1mYaAxADW0zCJYZOTNp1BxJlcObZ_hpV6OvPw0U_eYeAVxEm2iB7rs_B_RfdYULMLc6NfHXGfEwKAlSnLIHA_aTflTTG4qN0zQj_wYk-FXw>
+Dear Member,
+
+If the tenders sent to you are not relevant or the query needs to be updated, we request you to mail us at info@tender24x7.com with the exact Product / Service / Categories of which you would like to receive the tenders to serve you better.
+
+Click here to view all (38) Fresh Tenders<https://r.tenders.bidsnrfp.com/tr/cl/JL53sZLVYU9Id7vIthEgT3Yzyfxh4tWLbT5bYUVqE0IWpociUbr5F6LU__lodHk3MrBP8kkYyldyvjaUUDFFA1bHzyIvmg4nz5MCsLE9GukuRlOjM6Tw4pd_sBkr4bnog_zTqDpIFGa8hqP_xeaj7csI5FS2AIa2vpdH91xgLtHPxCyJJDrzVa--40_FgiXnXNW4PaoREELnd-l9gWm0vhghV-v_GRdISk3Kj9-QKOGyThfNk97agBmfHYODQYLLlK18pJcZmdKfkjxYMPArNjFELi9DvqyWFZ1I22kvBYMAh7x8avqLtENt1c4cilcIbN34CXGkDjazy7zVVV6JqMJRbBFB7Y_xjp4>
+
+TENDER DETAILS
+
+ORGANIZATION & LOCATION
+
+VALUE & DEADLINE
+
+1.      T247 ID : 99316347
+corrigendum : supply of - refrigerated centrifuge - | quantity - 22<https://r.tenders.bidsnrfp.com/tr/cl/PoghfD9PPxTAxHlDekIXW9ovICA3RQzZP3XAtPu4kmVyubR5KkpDRxMOMtDUaqQVPjMaMDZaOGQsq9srxflLwFg9Gchd1B_ACkSljdsTye9PVRtN7YWeMo9yEKE5CKjnul3Dl8n2cY9jBPs19JTsElTHw6TRobyZPMJV1biU6uJYbRMmBSnNBgJhVRL-ntOwvn5wcwa4ypkex9KfjX6oHSk3u9yR9YXXEACkmPyFl6FQDdyGDebtfmbXdPgmDF_9MIo-KGfmavI_zMJIiORa720QxceBRlalFPQADRLJoaUCU3JKhlz5cHlLmXCIMQj5ILvV-H-MtepXpfzCT0bfhkRn9yw_qumrpDRT94>
+
+
+Gujarat State Electricity Corporation Limited
+
+Bharuch, Gujarat, India
+
+7.7 Cr
+
+28-05-2026
+
+2.      T247 ID : 100575724
+operation and maintenance of hvac system (heating, ventilation and air conditioning system) - complete system<https://r.tenders.bidsnrfp.com/tr/cl/DTsRQOZJfkCjz7IdvjnE7k9aBY3Lo3dq_Rxm-Hk3sgghdKeiEjuzgvCzmrHyNrmURdmyqWBI9WTuAEf1vvvEJe3T_ykoTkTwrlgNEpjOupE7E4elhocEmrmh9VGC3hksYOkXRnXoc_nJZk5LcXY2JKGaTTzKmNcFpRrmUjiSKkNPIZSgx1ClNg5GFd_Pe2HIt9hHl8fWMHL6y52Ax1qn5N6hXL3dEi8MN7DKoWZpFyUfA9K3Onq5OnECb8-1xbl0TX_3kpQZzngrEvuup9tSG3DwKwSJWPE0x9jPM2LE52XmlN6MCykV1LL9Rniyg9Um1p2dr2q4brcdnW2htzZiyqJio8-D0pJyQTMNw6D>
+
+
+All India Institute Of Medical Sciences
+
+Raipur, Chhattisgarh, India
+
+1.44 Cr
+
+12-06-2026
+
+3.      T247 ID : 100594819
+sitc of hvac, electrification& elv works at 7 years c.a.m.c work of hvac system for neonatal icu (n.i.c.u) of smimmer hospital at smimmer of surat municipal corporation(2nd attempt)<https://r.tenders.bidsnrfp.com/tr/cl/ZP_TeyObSnO-gRBjI53FO0tDb3qmeR00lg6u0ZDXDwxsj_ACDcXsvhp05YJaH9GbItyMNGORXATVvC5yN_3NyLY8VeZ5I4cI7P6kqYlVnza1W6sQj_vwqFrC_hWpNH6GAKuakJW5allSKLCte7xKbg_HF2XVXKBPiyGSbo_yZIP0QvuPTaQ10arfyoAwBteIPtMQGL0aP9H4yoJ5o2k94qquGWnaMxl2L7YF82KYQPgNe3P1rNkV047iLYEF3LCAepXt8LxuXFa_V4SYOK0H2WdlKLZveIQAb364r7-XI-HiqxRQ5OAy3eTVK09T0xREDgvUucDuq47Ud-iSH1Rbg3VXfi69Hpeu8Lh6NUaa>
+
+
+Surat Municipal Corporation
+
+Surat, Gujarat, India
+
+68.59 Lacs
+
+01-06-2026
+
+4.      T247 ID : 99853520
+corrigendum : supply of - deep freezer for universal immunization program (q3) - | quantity - 26<https://r.tenders.bidsnrfp.com/tr/cl/cBv5KiTzACvKn001b1mSaKKCm4cErX00Ftxh8WXOkAB-2j7X1TBKNTfSXOIZjG2McqV6mlg08p4BSJI5NKCGkYHYMC8-r-DCDBYY2RbzcEdtiH2_fpHL50MnG9vEwxi-9Vh8agDWjAHq34KwGBxI3qtmHO7pL7C2Qkh2G-oX783TyXPWdZP8EN0HCpPPn4FXw-BWssLKnVfxoMxMxUbrZX2M8oVCJKhJ0TRPNu_eM3TkM3XJ4QQSYxthEhsMwFEROXtgPSuZ0Ap2QikrJsmpiwbXcuQyeUSphIh6iB_tLaXGgbbTuuVpY4Ogc_xafkvBtqYJJnr9OkEWV9oBSmcstmM2PB1rmkOc9cTCr4c>
+
+
+Urban Development And Urban Housing Construction Department
+
+Surat, Gujarat, India
+
+18.2 Lacs
+
+30-05-2026
+
+5.      T247 ID : 100584185
+carrying out furnishing, interior, civil, electrical & hvac related works of existing branch mollarpurdakshingram branch (d. no.320200)<https://r.tenders.bidsnrfp.com/tr/cl/0P_umeQWyaT9iVJBgX-yodzq6dqSKaMsrpHkKZwwHrNprQd8T6oOadONoMWJp8_FYI5avz8T23j5s9rhN3Xo362oioDRRqb4-L3CBsjxOgSL8WN2OIdziSBasyLZ_lU4vDMrYkculLne7Xs_MCtevyz8nPDVRpwC5l6AWGZ50LqWGLP7B9paFzoeoUjYDHM_q-kYRlC8q6YRWWYNX9Twzycp3kNpXbrWKmhHNKbEUDZ69thiB9bXNDRbJKqbsH4EyQnBqVLKIeby6CIvJlprjFWYP_X26IR3nihsLaJ_rJMeoXHyxIpeE2nSA7osOISwydLDwK9qvikcTAH8dzQY3PzlzjFAUSv76gaC5APo>
+
+
+Punjab National Bank
+
+Burdwan, West Bengal, India
+
+15 Lacs
+
+29-05-2026
+
+Click here to view all (38) Fresh Tenders<https://r.tenders.bidsnrfp.com/tr/cl/vlhlj1t1z_YGrt3Ry6ONA94v1-pZJ2BVh4tl8wsJTEbDvWFacZ8_mSQHGjpdrS1dQkgBzjOS89KfheSQ_6d1LuieG7d84dyYnkE7NwD-aEWUgR_wCUUbVGEp61RjeanvEdoHQMFAEYRwFy7uTbaxznSt7vWvU_4EF8oP7nHTH4V_fRM1Z4hBhuIYhb2-7yiWFxvINrGx58Zc5cFyIHrxbZg2uuOJL-7CYigH9Etpb1Dh3WdRgk04sd46aJK7Yz-ea-JqzBUBaQj12YED6gzzxUloJY81HzRBBcb4AUWDKog7jygh5LkWdFWTOA5L9mqF1bicpRG95kUdTdLVmEUCaBrKuiZtGPGovOo>
+To receive Whatsapp notifications, please send a message with START and your registered email address to 9227859210<https://r.tenders.bidsnrfp.com/tr/cl/RM5l-lLJFzotHbuu__QUYz0yJ1LHdFXTlhym4AWY3QbmfgOJ985ca8WKDbkmoB_L5UdHPh3WCn6vjFAPGAXW9FKThBbiXQB49TJzSdXX8aA4ghUKdHPHVhXUyE0vcpmduFG1fqqFUvTQnG4JXwtjXkchcTTTPxuDcvsB68pNuq_3oT68m5kWV0PmXyyxZ9glXM3wp3qfOIoUnVmdtkjLkgQ3q3bSN12YD30AUKnWotqolWx4iQvarlsEq6TZr7zgefxywHLlhxg9PU0ojDOrad4KszrMGu8HY4gclQ3zo2yDylEZzgZZEb5kD1UE7miK>
+If you need DEMO to access Tenders on Web, Please reply to this email or call our customer support Number - 8000 263 450
+If the tenders sent to you are not relevant or the query needs to be updated, we request you to mail us at info@Tender24x7.com<mailto:info@Tender24x7.com> with the exact Product / Service / Categories of which you would like to receive the tenders to serve you better.
+If you have any query or problem, please feel free to contact our support team:
+
+Cell: +91-8000 263 450
+E-mail ID: info@Tender24x7.com
+
+You have received this mail from Tender247 because you have subscribed to our Tender alert service. Please add info@Tender24x7.com to your address book to ensure delivery into your inbox.
+
+This Email has been generated for Marken Healthtech Limited and should be used by the authorized users only.
+
+Head Office : Tender247, 601, Shikhar Complex, Nr. Adani House, Mithakhali Six Road, Navarangpura, Ahmedabad-380009, Gujarat, India.
+
+Unsubscribe from this list<https://r.tenders.bidsnrfp.com/tr/cl/0l1FRuch5kB7fSLxI38ApJlDYRsz3MfLm3OXLrxR4GHE-que_b6Z-vBhJaE7fWAjz4antMg3NTgmCstVpulZIgMt2KQu-XOJc3DQyGscp8kEyLef4FzGmRX_xPGcgGJZDy83fByIlMIqqpFhXXuLwiR55ePQH1SnNC3J4JCGTT37lyD9qVjRywC5DT_0wtOcmYd2l5U50bRfCGJ6JX_YnJWQL6yzvOWTsa4EpJvP8b_kdyo3uhHNzyQ>
+
+--_000_PNZPR01MB850551AFED19A0EC751AC023AF0C2PNZPR01MB8505INDP_
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=us-ascii">
+<style type="text/css" style="display:none;"> P {margin-top:0;margin-bottom:0;} </style>
+</head>
+<body dir="ltr">
+<div style="font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0);">
+<br>
+</div>
+<div id="appendonsend"></div>
+<hr style="display:inline-block;width:98%" tabindex="-1">
+<div id="divRplyFwdMsg" dir="ltr"><font face="Calibri, sans-serif" style="font-size:11pt" color="#000000"><b>From:</b> Tender247 Tender Alert &lt;admin@bidsnrfp.com&gt;<br>
+<b>Sent:</b> Friday, May 22, 2026 2:12 PM<br>
+<b>To:</b> markenterp.nsk@gmail.com &lt;markenterp.nsk@gmail.com&gt;; Tender Manager &lt;shridhars@markenworld.com&gt;; markenhealthtechltd@gmail.com &lt;markenhealthtechltd@gmail.com&gt;; Rutik Mutadak &lt;rutikm@markenworld.com&gt;; MarkEn Tender &lt;tender@markenworld.com&gt;; Megha
+ Ahire &lt;megha@markenworld.com&gt;<br>
+<b>Subject:</b> 38 New Tender/s, Blood Bank and Medical Cold Chain Equipment 22-May-26 (Noon) - Tender247</font>
+<div>&nbsp;</div>
+</div>
+<div>
+<center>
+<div style="font-family:Arial; font-size:12px; color:#464545; line-height:20px"><br>
+<table width="100%" border="0" cellspacing="0" cellpadding="2">
+<tbody>
+<tr>
+<td colspan="2" align="left" valign="middle">
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td align="left" valign="middle">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-bottom:1px solid #f7931e; padding-bottom:10px">
+<tbody>
+<tr>
+<td width="50%" align="left" valign="bottom"><img alt="" src="https://r.tenders.bidsnrfp.com/im/1455364/aecb13f1a3ec6574ff03b00447042c004dcf5b64b2f8d02f38554a0ba04b795b.svg?e=3DiETpZ2nHVfmU0PEQdpkTubT3nk4Ikvj-VFyk5etY5yQITMBz47pdsyPxGjflI9WL3iW2AG1K-4mG6kqxEa5hWRA88ySLiabH7ZzO8t101G3Lpc5SPi3gqES_xqSZQ75YMVnYRQP9nBTfzkCiT44-E5nbVg8UEp18jk3gNN-8jfkHJr3goI7gothMwpKrJhrzVcUOd7yM_SVAdU27CJKj6eaK2_0eci2YCRKDXY0nph-hBzDvuN3f9RmQei6Kfr4p4exp"></td>
+<td width="50%" colspan="2" align="right" valign="bottom" style="color:#0000EE">Download
+<a href="https://r.tenders.bidsnrfp.com/tr/cl/469k247o98uk-9UhLgXuB7A4ddQlX6_KY1drpKzNs5g6B1NCH5hSWBiBDC--H25gE_1WGQZ4vWzm4AZKJV7mIX7yVwWuYHBe5-fioZ-3FIUpOj_Yaxj7e2SYsOqXuKMhhaFor91F6o7hq_0fjJ0OpcdlCtnRD_L0d7hVlUlyAokbuezt2QX00J55Od-IjI9LAAc8aiXxA_oZBtPS6SIphF7ng4pm0yyrTA8w9IMH_ywGWIEiJjyaRQ4lezsnKp-UKPYBvo_U8WK1dnJlBDbBmb_Sd1cdZ4cF67fer862u176c38W5hIbmcIsF2GCTQ" target="_blank" style="color:#0000EE">
+iPhone App</a> &amp; <a href="https://r.tenders.bidsnrfp.com/tr/cl/hZMP0EGW0spMBcAdAYulr27ZLWAZa-CF34yFyhNdPBjEnC-Ob6WqL_KbJcqZ0_SOJdSXsWH2glSHPDzZJYMWFhqSYVIXyzVXVx2LMJ12dbIAB0vnHKpcGitV9fsPCJaDhOGQGPZXwc4203hfSse0NdAT8wjbfCZY79Ko4xb7L1zsEzmGIbmi8nVPlAmjIxgATHCW17XHN4zqILYdZjwANukVPO3cFb5e0WXsWMc1mYaAxADW0zCJYZOTNp1BxJlcObZ_hpV6OvPw0U_eYeAVxEm2iB7rs_B_RfdYULMLc6NfHXGfEwKAlSnLIHA_aTflTTG4qN0zQj_wYk-FXw" target="_blank" style="color:#0000EE">
+Android App</a></td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td style="font-family:Arial; color:#464545; padding:15px 0 0 0; font-size:15px">
+Dear Member,<br>
+<br>
+If the tenders sent to you are not relevant or the query needs to be updated, we request you to mail us at info@tender24x7.com with the exact Product / Service / Categories of which you would like to receive the tenders to serve you better.<br>
+<br>
+</td>
+</tr>
+<tr>
+<td align="center"><b><a href="https://r.tenders.bidsnrfp.com/tr/cl/JL53sZLVYU9Id7vIthEgT3Yzyfxh4tWLbT5bYUVqE0IWpociUbr5F6LU__lodHk3MrBP8kkYyldyvjaUUDFFA1bHzyIvmg4nz5MCsLE9GukuRlOjM6Tw4pd_sBkr4bnog_zTqDpIFGa8hqP_xeaj7csI5FS2AIa2vpdH91xgLtHPxCyJJDrzVa--40_FgiXnXNW4PaoREELnd-l9gWm0vhghV-v_GRdISk3Kj9-QKOGyThfNk97agBmfHYODQYLLlK18pJcZmdKfkjxYMPArNjFELi9DvqyWFZ1I22kvBYMAh7x8avqLtENt1c4cilcIbN34CXGkDjazy7zVVV6JqMJRbBFB7Y_xjp4" target="_blank" style="font-size:20px; color:red">Click
+ here to view all (38) Fresh Tenders</a><br>
+</b></td>
+</tr>
+<tr>
+<td>
+<table cellspacing="0" cellpadding="0" style="font-family:Arial; border:1px solid #dfdfdf">
+<thead>
+<tr style="background-color:#f9f9f9">
+<td align="left" valign="middle" style="width:65%; line-height:14px; text-transform:uppercase; border-right:1px solid #A69E9E; border-bottom:1px solid #dfdfdf">
+<p style="font-family:Arial; color:#464545; margin-left:9px; float:left; font-size:13px; font-stretch:normal">
+<b>TENDER DETAILS</b> </p>
+</td>
+<td valign="middle" style="width:20%; line-height:14px; text-transform:uppercase; border-bottom:1px solid #dfdfdf; border-right:1px solid #A69E9E">
+<p style="font-size:13px; font-stretch:normal; text-align:center; font-family:Arial; color:#464545">
+<b>ORGANIZATION &amp; LOCATION</b> </p>
+</td>
+<td valign="middle" style="width:15%; line-height:14px; text-transform:uppercase; border-bottom:1px solid #dfdfdf">
+<p style="font-size:13px; font-stretch:normal; text-align:center; font-family:Arial; color:#464545">
+<b>VALUE &amp; DEADLINE</b> </p>
+</td>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td width="65%" style="border-right:1px solid #A69E9E; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<table width="100%" style="font-family:sans-serif; font-size:13px">
+<tbody>
+<tr>
+<td>
+<table>
+<tbody>
+<tr>
+<td width="5%;"><strong>1.</strong></td>
+<td width="95%;" style="padding-top:10px; font-family:Arial,sans-serif">T247 ID :
+<label style="color:black; font-size:15px; line-height:20px">99316347</label></td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td colspan="2" style="padding-top:5px; font-family:Arial,sans-serif; text-transform:capitalize">
+<a href="https://r.tenders.bidsnrfp.com/tr/cl/PoghfD9PPxTAxHlDekIXW9ovICA3RQzZP3XAtPu4kmVyubR5KkpDRxMOMtDUaqQVPjMaMDZaOGQsq9srxflLwFg9Gchd1B_ACkSljdsTye9PVRtN7YWeMo9yEKE5CKjnul3Dl8n2cY9jBPs19JTsElTHw6TRobyZPMJV1biU6uJYbRMmBSnNBgJhVRL-ntOwvn5wcwa4ypkex9KfjX6oHSk3u9yR9YXXEACkmPyFl6FQDdyGDebtfmbXdPgmDF_9MIo-KGfmavI_zMJIiORa720QxceBRlalFPQADRLJoaUCU3JKhlz5cHlLmXCIMQj5ILvV-H-MtepXpfzCT0bfhkRn9yw_qumrpDRT94" target="_blank" style="text-decoration:none; color:black; font-size:15px; line-height:20px">corrigendum
+ : supply of - refrigerated <b><font color="#ff9600">centrifuge</font></b> - | quantity - 22</a>
+<br>
+<p style="float:right"><span style="float:right; color:#105FFF; font-size:13PX; font-weight:bold"></span><br>
+</p>
+</td>
+</tr>
+<tr>
+<td width="45%;" align="right"></td>
+</tr>
+</tbody>
+</table>
+</td>
+<td style="width:20%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px; border-right:1px solid #A69E9E">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#000; font-weight:bold; padding:0px 2px">Gujarat State Electricity Corporation Limited</span><br>
+<br>
+Bharuch, Gujarat, India </p>
+</td>
+<td style="width:15%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#464545"><span style="color:black">7.7 Cr</span></span><br>
+<br>
+28-05-2026 </p>
+</td>
+</tr>
+<tr>
+<td width="65%" style="border-right:1px solid #A69E9E; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<table width="100%" style="font-family:sans-serif; font-size:13px">
+<tbody>
+<tr>
+<td>
+<table>
+<tbody>
+<tr>
+<td width="5%;"><strong>2.</strong></td>
+<td width="95%;" style="padding-top:10px; font-family:Arial,sans-serif">T247 ID :
+<label style="color:black; font-size:15px; line-height:20px">100575724</label></td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td colspan="2" style="padding-top:5px; font-family:Arial,sans-serif; text-transform:capitalize">
+<a href="https://r.tenders.bidsnrfp.com/tr/cl/DTsRQOZJfkCjz7IdvjnE7k9aBY3lLo3dq_Rxm-Hk3sgghdKeiEjuzgvCzmrHyNrmURdmyqWBI9WTuAEf1vvvEJe3T_ykoTkTwrlgNEpjOupE7E4elhocEmrmh9VGC3hksYOkXRnXoc_nJZk5LcXY2JKGaTTzKmNcFpRrmUjiSKkNPIZSgx1ClNg5GFd_Pe2HIt9hHl8fWMHL6y52Ax1qn5N6hXL3dEi8MN7DKoWZpFyUfA9K3Onq5OnECb8-1xbl0TX_3kpQZzngrEvuup9tSG3DwKwSJWPE0x9jPM2LE52XmlN6MCykV1LL9Rniyg9Um1p2dr2q4brcdnW2htzZiyqJio8-D0pJyQTMNw6D" target="_blank" style="text-decoration:none; color:black; font-size:15px; line-height:20px">operation
+ and maintenance of <b><font color="#ff9600">hvac</font></b> system (heating, ventilation and air conditioning system) - complete system</a>
+<br>
+<p style="float:right"><span style="float:right; color:#105FFF; font-size:13PX; font-weight:bold"></span><br>
+</p>
+</td>
+</tr>
+<tr>
+<td width="45%;" align="right"></td>
+</tr>
+</tbody>
+</table>
+</td>
+<td style="width:20%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px; border-right:1px solid #A69E9E">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#000; font-weight:bold; padding:0px 2px">All India Institute Of Medical Sciences</span><br>
+<br>
+Raipur, Chhattisgarh, India </p>
+</td>
+<td style="width:15%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#464545"><span style="color:black">1.44 Cr</span></span><br>
+<br>
+12-06-2026 </p>
+</td>
+</tr>
+<tr>
+<td width="65%" style="border-right:1px solid #A69E9E; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<table width="100%" style="font-family:sans-serif; font-size:13px">
+<tbody>
+<tr>
+<td>
+<table>
+<tbody>
+<tr>
+<td width="5%;"><strong>3.</strong></td>
+<td width="95%;" style="padding-top:10px; font-family:Arial,sans-serif">T247 ID :
+<label style="color:black; font-size:15px; line-height:20px">100594819</label></td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td colspan="2" style="padding-top:5px; font-family:Arial,sans-serif; text-transform:capitalize">
+<a href="https://r.tenders.bidsnrfp.com/tr/cl/ZP_TeyObSnO-gRBjI53FO0tDb3qmeR00lg6u0ZDXDwxsj_ACDcXsvhp05YJaH9GbItyMNGORXATVvC5yN_3NyLY8VeZ5I4cI7P6kqYlVnza1W6sQj_vwqFrC_hWpNH6GAKuakJW5allSKLCte7xKbg_HF2XVXKBPiyGSbo_yZIP0QvuPTaQ10arfyoAwBteIPtMQGL0aP9H4yoJ5o2k94qquGWnaMxl2L7YF82KYQPgNe3P1rNkV047iLYEF3LCAepXt8LxuXFa_V4SYOK0H2WdlKLZveIQAb364r7-XI-HiqxRQ5OAy3eTVK09T0xREDgvUucDuq47Ud-iSH1Rbg3VXfi69Hpeu8Lh6NUaa" target="_blank" style="text-decoration:none; color:black; font-size:15px; line-height:20px">sitc
+ of <b><font color="#ff9600">hvac</font></b>, electrification&amp; elv works at 7 years c.a.m.c work of
+<b><font color="#ff9600">hvac</font></b> system for neonatal icu (n.i.c.u) of smimmer
+<b><font color="#ff9600">hospital</font></b> at smimmer of surat municipal corporation(2nd attempt)</a>
+<br>
+<p style="float:right"><span style="float:right; color:#105FFF; font-size:13PX; font-weight:bold"></span><br>
+</p>
+</td>
+</tr>
+<tr>
+<td width="45%;" align="right"></td>
+</tr>
+</tbody>
+</table>
+</td>
+<td style="width:20%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px; border-right:1px solid #A69E9E">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#000; font-weight:bold; padding:0px 2px">Surat Municipal Corporation</span><br>
+<br>
+Surat, Gujarat, India </p>
+</td>
+<td style="width:15%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#464545"><span style="color:black">68.59 Lacs</span></span><br>
+<br>
+01-06-2026 </p>
+</td>
+</tr>
+<tr>
+<td width="65%" style="border-right:1px solid #A69E9E; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<table width="100%" style="font-family:sans-serif; font-size:13px">
+<tbody>
+<tr>
+<td>
+<table>
+<tbody>
+<tr>
+<td width="5%;"><strong>4.</strong></td>
+<td width="95%;" style="padding-top:10px; font-family:Arial,sans-serif">T247 ID :
+<label style="color:black; font-size:15px; line-height:20px">99853520</label></td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td colspan="2" style="padding-top:5px; font-family:Arial,sans-serif; text-transform:capitalize">
+<a href="https://r.tenders.bidsnrfp.com/tr/cl/cBv5KiTzACvKn001b1mSaKKCm4cErX00Ftxh8WXOkAB-2j7X1TBKNTfSXOIZjG2McqV6mlg08p4BSJI5NKCGkYHYMC8-r-DCDBYY2RbzcEdtiH2_fpHL50MnG9vEwxi-9Vh8agDWjAHq34KwGBxI3qtmHO7pL7C2Qkh2G-oX783TyXPWdZP8EN0HCpPPn4FXw-BWssLKnVfxoMxMxUbrZX2M8oVCJKhJ0TRPNu_eM3TkM3XJ4QQSYxthEhsMwFEROXtgPSuZ0Ap2QikrJsmpiwbXcuQyeUSphIh6iB_tLaXGgbbTuuVpY4Ogc_xafkvBtqYJJnr9OkEWV9oBSmcstmM2PB1rmkOc9cTCr4c" target="_blank" style="text-decoration:none; color:black; font-size:15px; line-height:20px">corrigendum
+ : supply of - deep <b><font color="#ff9600"><b><font color="#ff9600">freezer</font></b></font></b> for universal immunization program (q3) - | quantity - 26</a>
+<br>
+<p style="float:right"><span style="float:right; color:#105FFF; font-size:13PX; font-weight:bold"></span><br>
+</p>
+</td>
+</tr>
+<tr>
+<td width="45%;" align="right"></td>
+</tr>
+</tbody>
+</table>
+</td>
+<td style="width:20%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px; border-right:1px solid #A69E9E">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#000; font-weight:bold; padding:0px 2px">Urban Development And Urban Housing Construction Department</span><br>
+<br>
+Surat, Gujarat, India </p>
+</td>
+<td style="width:15%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#464545"><span style="color:black">18.2 Lacs</span></span><br>
+<br>
+30-05-2026 </p>
+</td>
+</tr>
+<tr>
+<td width="65%" style="border-right:1px solid #A69E9E; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<table width="100%" style="font-family:sans-serif; font-size:13px">
+<tbody>
+<tr>
+<td>
+<table>
+<tbody>
+<tr>
+<td width="5%;"><strong>5.</strong></td>
+<td width="95%;" style="padding-top:10px; font-family:Arial,sans-serif">T247 ID :
+<label style="color:black; font-size:15px; line-height:20px">100584185</label></td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td colspan="2" style="padding-top:5px; font-family:Arial,sans-serif; text-transform:capitalize">
+<a href="https://r.tenders.bidsnrfp.com/tr/cl/0P_umeQWyaT9iVJBgX-yodzq6dqSKaMsrpHkKZwwHrNprQd8T6oOadONoMWJp8_FYI5avz8T23j5s9rhN3Xo362oioDRRqb4-L3CBsjxOgSL8WN2OIdziSBasyLZ_lU4vDMrYkculLne7Xs_MCtevyz8nPDVRpwC5l6AWGZ50LqWGLP7B9paFzoeoUjYDHM_q-kYRlC8q6YRWWYNX9Twzycp3kNpXbrWKmhHNKbEUDZ69thiB9bXNDRbJKqbsH4EyQnBqVLKIeby6CIvJlprjFWYP_X26IR3nihsLaJ_rJMeoXHyxIpeE2nSA7osOISwydLDwK9qvikcTAH8dzQY3PzlzjFAUSv76gaC5APo" target="_blank" style="text-decoration:none; color:black; font-size:15px; line-height:20px">carrying
+ out furnishing, interior, civil, electrical &amp; <b><font color="#ff9600">hvac</font></b> related works of existing branch mollarpurdakshingram branch (d. no.320200)</a>
+<br>
+<p style="float:right"><span style="float:right; color:#105FFF; font-size:13PX; font-weight:bold"></span><br>
+</p>
+</td>
+</tr>
+<tr>
+<td width="45%;" align="right"></td>
+</tr>
+</tbody>
+</table>
+</td>
+<td style="width:20%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px; border-right:1px solid #A69E9E">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#000; font-weight:bold; padding:0px 2px">Punjab National Bank</span><br>
+<br>
+Burdwan, West Bengal, India </p>
+</td>
+<td style="width:15%; color:#41515e; text-align:center; border-bottom:1px solid #ff9600; padding-bottom:5px">
+<p style="font-family:sans-serif; font-size:13px; font-stretch:normal; line-height:23px">
+<span style="color:#464545"><span style="color:black">15 Lacs</span></span><br>
+<br>
+29-05-2026 </p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td align="center"><b><a href="https://r.tenders.bidsnrfp.com/tr/cl/vlhlj1t1z_YGrt3Ry6ONA94v1-pZJ2BVh4tl8wsJTEbDvWFacZ8_mSQHGjpdrS1dQkgBzjOS89KfheSQ_6d1LuieG7d84dyYnkE7NwD-aEWUgR_wCUUbVGEp61RjeanvEdoHQMFAEYRwFy7uTbaxznSt7vWvU_4EF8oP7nHTH4V_fRM1Z4hBhuIYhb2-7yiWFxvINrGx58Zc5cFyIHrxbZg2uuOJL-7CYigH9Etpb1Dh3WdRgk04sd46aJK7Yz-ea-JqzBUBaQj12YED6gzzxUloJY81HzRBBcb4AUWDKog7jygh5LkWdFWTOA5L9mqF1bicpRG95kUdTdLVmEUCaBrKuiZtGPGovOo" target="_blank" style="font-size:20px; color:red">Click
+ here to view all (38) Fresh Tenders</a><br>
+</b></td>
+</tr>
+<tr>
+<td style="font-family:Arial; color:#464545; padding:15px 0 0 0"><b style="font-size:medium"><a href="https://r.tenders.bidsnrfp.com/tr/cl/RM5l-lLJFzotHbuu__QUYz0yJ1LHdFXTlhym4AWY3QbmfgOJ985ca8WKDbkmoB_L5UdHPh3WCn6vjFAPGAXW9FKThBbiXQB49TJzSdXX8aA4ghUKdHPHVhXUyE0vcpmduFG1fqqFUvTQnG4JXwtjXkchcTTTPxuDcvsB68pNuq_3oT68m5kWV0PmXyyxZ9glXM3wp3qfOIoUnVmdtkjLkgQ3q3bSN12YD30AUKnWotqolWx4iQvarlsEq6TZr7zgefxywHLlhxg9PU0ojDOrad4KszrMGu8HY4gclQ3zo2yDylEZzgZZEb5kD1UE7miK" style="color:#f7931e">To
+ receive <span style="color:#333">Whatsapp </span>notifications, please send a message with
+ <span style="color:#333">START </span>and your registered email address to <span style="color:#333">
+9227859210</span></a></b><br>
+</td>
+</tr>
+<tr>
+<td style="font-family:Arial; color:#464545; padding:15px 0 0 0"><b style="font-size:medium">If you need DEMO to access Tenders on Web, Please reply to this email or call our customer support Number -
+<span style="color:#333">8000 263 450</span></b><br>
+</td>
+</tr>
+<tr>
+<td style="font-family:Arial; color:#464545; padding:15px 0 0 0">If the tenders sent to you are not relevant or the query needs to be updated, we request you to mail us at
+<a href="mailto:info@Tender24x7.com" style="text-decoration:none; color:#105FFF!important">
+info@Tender24x7.com</a> with the exact Product / Service / Categories of which you would like to receive the tenders to serve you better.<br>
+</td>
+</tr>
+<tr>
+<td style="font-family:Arial; color:#464545; padding:15px 0 0 0">If you have any query or problem, please feel free to contact our support team:<br>
+<br>
+Cell: <strong>+91-8000 263 450</strong><br>
+E-mail ID: <strong>info@Tender24x7.com</strong><br>
+<br>
+You have received this mail from Tender247 because you have subscribed to our Tender alert service. Please add
+<strong>info@Tender24x7.com</strong> to your address book to ensure delivery into your inbox.<br>
+<br>
+This Email has been generated for Marken Healthtech Limited and should be used by the authorized users only.<br>
+<br>
+<span style="font-family:Arial; color:#464545; font-size:12px">Head Office : Tender247, 601, Shikhar Complex, Nr. Adani House, Mithakhali Six Road, Navarangpura, Ahmedabad-380009, Gujarat, India.
+</span></td>
+</tr>
+<tr>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
+</center>
+<br>
+<center>
+<table border="0" cellpadding="0" cellspacing="0" width="100%" id="x_canspamBarWrapper" style="background-color:#FFFFFF; border-top:1px solid #E5E5E5">
+<tbody>
+<tr>
+<td align="center" valign="top" style="padding-top:10px; padding-bottom:10px">
+<table border="0" cellpadding="0" cellspacing="0" id="x_canspamBar">
+<tbody>
+<tr>
+<td align="center" valign="top" style="color:#606060; font-family:Helvetica,Arial,sans-serif; font-size:11px; line-height:150%; padding-right:20px; padding-bottom:5px; padding-left:20px; text-align:center">
+<a href="https://r.tenders.bidsnrfp.com/tr/cl/0l1FRuch5kB7fSLxI38ApJlDYRsz3MfLm3OXLrxR4GHE-que_b6Z-vBhJaE7fWAjz4antMg3NTgmCstVpulZIgMt2KQu-XOJc3DQyGscp8kEyLef4FzGmRX_xPGcgGJZDy83fByIlMIqqpFhXXuLwiR55ePQH1SnNC3J4JCGTT37lyD9qVjRywC5DT_0wtOcmYd2l5U50bRfCGJ6JX_YnJWQL6yzvOWTsa4EpJvP8b_kdyo3uhHNzyQ" target="_blank">Unsubscribe
+ from this list</a></td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</center>
+<img width="1" height="1" style="" src="https://r.tenders.bidsnrfp.com/tr/op/qKyZT6oJk49cYEtreS4OXR7tqpgypBlSNIMcH2RreBBByu016aptKCymq8GuMKi8svvLYT4N-_11L6A-Lmv4FsDkkMyOcC7R2CEqYsIrxHbEr8fpSQxHg7d6JuVbhcSfW1e7UZYzreWlKjGCLpL2Qv5GKanLzRrebT_px4eAx1nuJwimRJer0CL3vKeyetK10jV5_hoo9kCx3Zh8Dd43jw">
+</div>
+</body>
+</html>

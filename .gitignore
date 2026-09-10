@@ -1,0 +1,7 @@
+**/node_modules
+**/.next
+**/out
+**/target
+**/app.log
+backend/public/documents/
+backend/src/main/resources/static/documents/

@@ -1,0 +1,28 @@
+# Maven target output
+target/
+*.class
+
+# Package files
+*.jar
+*.war
+*.ear
+*.rar
+
+# Databases & WAL files
+*.db
+*.db-shm
+*.db-wal
+tenders.db
+
+# OS / IDE files
+.DS_Store
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# Logs
+*.log
+client-package/
+public/documents/

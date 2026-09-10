@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tender-pocket-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Database Configuration
+      - DATABASE_PATH=/app/data/tenders.db
+      - PORT=3000
+      - NODE_ENV=production
+      
+      # AI Model Configuration (Client to supply their key)
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      
+      # Email Synchronization Configuration (IMAP)
+      - IMAP_HOST=${IMAP_HOST:-imap.gmail.com}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - IMAP_SECURE=${IMAP_SECURE:-true}
+      - IMAP_USER=${IMAP_USER}
+      - IMAP_PASSWORD=${IMAP_PASSWORD}
+      - SENDER_FILTER=${SENDER_FILTER:-}
+      - SUBJECT_FILTER=${SUBJECT_FILTER:-Tender247}
+      - TENDER_API_URL=http://localhost:3000/api/process-email
+      
+      # Alerts Notification Configuration (SMTP)
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_SECURE=${SMTP_SECURE:-true}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - MANAGER_EMAIL=${MANAGER_EMAIL}
+      
+    volumes:
+      # Mount client server directory (e.g. tenderpocket-data) for SQLite DB and downloaded PDFs
+      - ./tenderpocket-data:/app/data
