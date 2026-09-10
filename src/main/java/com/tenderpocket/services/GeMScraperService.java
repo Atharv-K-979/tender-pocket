@@ -123,20 +123,11 @@ public class GeMScraperService {
                         continue;
                     }
 
-                    String items = getJsonString(doc, "b_category_name");
-                    String dept = getJsonString(doc, "ba_official_details_deptName");
-
-                    // Require at least 2 matching keywords before fetching/importing tender from GeM portal
-                    String fullSearchableText = (items != null ? items : "") + " " + (dept != null ? dept : "") + " " + doc.toString();
-                    int keywordMatches = countMatchingKeywords(fullSearchableText, keywords);
-                    if (keywordMatches < 2) {
-                        System.out.println(String.format("  - Skipping GeM Bid %s (\"%s\"): Only matched %d keyword(s) (Minimum 2 keywords required).", bidNo, items, keywordMatches));
-                        continue;
-                    }
-
                     importCount++;
+                    String items = getJsonString(doc, "b_category_name");
                     String qty = getJsonString(doc, "b_total_quantity");
                     String end = getJsonString(doc, "final_end_date_sort");
+                    String dept = getJsonString(doc, "ba_official_details_deptName");
 
                     String bIdParent = getJsonString(doc, "b_id_parent");
                     String docDownloadId = bIdParent != null ? bIdParent : bId;
@@ -246,9 +237,8 @@ public class GeMScraperService {
 
             System.out.println("  - Successfully uploaded PDF to S3.");
 
-            // Generate temporary S3 URL for document access
-            String s3DownloadUrl = objectStorageService.generateDownloadUrl(s3Key);
-
+            // Store the permanent S3 object key.
+            // A fresh presigned download URL will be generated when the document is requested.
             // Existing Python parser still uses the temporary local PDF
             ProcessBuilder pb = new ProcessBuilder(
                     "python3",
@@ -298,8 +288,8 @@ public class GeMScraperService {
                 if (opt.isPresent()) {
                     Tender t = opt.get();
 
-                    // Store temporary S3 URL for document access
-                    t.setDocumentUrl(s3DownloadUrl);
+                    // Store the permanent S3 object key, not a temporary presigned URL.
+                    t.setDocumentUrl(s3Key);
 
                     if (!"N/A".equals(place)) {
                         t.setPlace(place);
@@ -544,24 +534,5 @@ public class GeMScraperService {
         defaults.put("vertical_name", vertical);
         defaults.put("due_date", "N/A");
         return defaults;
-    }
-
-    public static int countMatchingKeywords(String content, List<String> keywords) {
-        if (content == null || content.trim().isEmpty() || keywords == null || keywords.isEmpty()) {
-            return 0;
-        }
-        String lowerContent = content.toLowerCase();
-        Set<String> matchedKeywords = new HashSet<>();
-
-        for (String kw : keywords) {
-            if (kw == null) continue;
-            String trimmedKw = kw.trim().toLowerCase();
-            if (trimmedKw.length() < 3) continue;
-
-            if (lowerContent.contains(trimmedKw)) {
-                matchedKeywords.add(trimmedKw);
-            }
-        }
-        return matchedKeywords.size();
     }
 }

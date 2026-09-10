@@ -7,14 +7,17 @@ import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.ActivityLogRepository;
 import com.tenderpocket.repositories.TenderRepository;
 import com.tenderpocket.services.DocumentGeneratorService;
+import com.tenderpocket.services.ObjectStorageService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
@@ -41,6 +44,9 @@ public class TenderController {
 
     @Autowired
     private DocumentGeneratorService documentGeneratorService;
+
+    @Autowired
+    private ObjectStorageService objectStorageService;
 
     @Autowired
     private com.tenderpocket.services.GeMScraperService geMScraperService;
@@ -483,53 +489,43 @@ public class TenderController {
         }
 
         try {
-            String docDir = "public/documents/" + id;
-            Files.createDirectories(Paths.get(docDir));
+            String s3Prefix = "tenders/" + id + "/";
 
             // Generate PDF
             byte[] pdfBytes = documentGeneratorService.generatePdf(body);
             String pdfFileName = "Bid_Documents_" + id + ".pdf";
-            String pdfFilePath = docDir + "/" + pdfFileName;
-            String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
-            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
-                fos.write(pdfBytes);
-            }
+            String pdfS3Key = s3Prefix + pdfFileName;
+            uploadToS3(pdfS3Key, pdfBytes, "application/pdf");
 
             // Generate DOCX
             byte[] docxBytes = documentGeneratorService.generateDocx(body);
             String docFileName = "Bid_Documents_" + id + ".docx";
-            String docFilePath = docDir + "/" + docFileName;
-            String docDownloadUrl = "/documents/" + id + "/" + docFileName;
-            try (FileOutputStream fos = new FileOutputStream(docFilePath)) {
-                fos.write(docxBytes);
-            }
+            String docS3Key = s3Prefix + docFileName;
+            uploadToS3(docS3Key, docxBytes,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
             // Generate Technical Specification PDF
             byte[] techPdfBytes = documentGeneratorService.generateTechSpecPdf(body);
             String techPdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
-            String techPdfFilePath = docDir + "/" + techPdfFileName;
-            String techPdfDownloadUrl = "/documents/" + id + "/" + techPdfFileName;
-            try (FileOutputStream fos = new FileOutputStream(techPdfFilePath)) {
-                fos.write(techPdfBytes);
-            }
+            String techPdfS3Key = s3Prefix + techPdfFileName;
+            uploadToS3(techPdfS3Key, techPdfBytes, "application/pdf");
 
             // Generate Technical Specification DOCX
             byte[] techDocxBytes = documentGeneratorService.generateTechSpecDocx(body);
             String techDocFileName = "Technical_Specification_Sheet_" + id + ".docx";
-            String techDocFilePath = docDir + "/" + techDocFileName;
-            String techDocDownloadUrl = "/documents/" + id + "/" + techDocFileName;
-            try (FileOutputStream fos = new FileOutputStream(techDocFilePath)) {
-                fos.write(techDocxBytes);
-            }
+            String techDocS3Key = s3Prefix + techDocFileName;
+            uploadToS3(techDocS3Key, techDocxBytes,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-            // Update downloaded_docs field metadata without overwriting existing files (e.g. GeM Bid PDF)
+            // Store permanent S3 keys in metadata. Download URLs are generated when requested.
             String createdDate = LocalDate.now().toString();
             List<Map<String, String>> newDocs = List.of(
-                    Map.of("name", "Generated Bid Documents (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Generated Bid Documents (Word DOCX)", "filename", docFileName, "local_path", docDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", techPdfFileName, "local_path", techPdfDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", techDocFileName, "local_path", techDocDownloadUrl, "created_date", createdDate)
+                    Map.of("name", "Generated Bid Documents (PDF)", "filename", pdfFileName, "s3_key", pdfS3Key, "created_date", createdDate),
+                    Map.of("name", "Generated Bid Documents (Word DOCX)", "filename", docFileName, "s3_key", docS3Key, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", techPdfFileName, "s3_key", techPdfS3Key, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", techDocFileName, "s3_key", techDocS3Key, "created_date", createdDate)
             );
+
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             tenderRepository.save(tender);
 
@@ -543,8 +539,8 @@ public class TenderController {
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "downloadUrl", docDownloadUrl,
-                    "pdfDownloadUrl", pdfDownloadUrl,
+                    "downloadUrl", objectStorageService.generateDownloadUrl(docS3Key),
+                    "pdfDownloadUrl", objectStorageService.generateDownloadUrl(pdfS3Key),
                     "status", resolveStatus(tender, LocalDate.now().toString())
             ));
 
@@ -569,13 +565,17 @@ public class TenderController {
 
         for (Map<String, String> newDoc : newDocs) {
             String filename = newDoc.get("filename");
-            String localPath = newDoc.get("local_path");
+            String s3Key = newDoc.get("s3_key");
             boolean updated = false;
 
             for (Map<String, Object> item : docsList) {
-                String exFile = (String) item.get("filename");
-                String exPath = (String) item.get("local_path");
-                if ((filename != null && filename.equalsIgnoreCase(exFile)) || (localPath != null && localPath.equalsIgnoreCase(exPath))) {
+                String exFile = item.get("filename") != null ? item.get("filename").toString() : null;
+                String exS3Key = item.get("s3_key") != null ? item.get("s3_key").toString() : null;
+                String exLocalPath = item.get("local_path") != null ? item.get("local_path").toString() : null;
+
+                if ((filename != null && filename.equalsIgnoreCase(exFile))
+                        || (s3Key != null && s3Key.equalsIgnoreCase(exS3Key))
+                        || (filename != null && exLocalPath != null && exLocalPath.endsWith("/" + filename))) {
                     item.putAll(newDoc);
                     updated = true;
                     break;
@@ -636,18 +636,14 @@ public class TenderController {
         Tender tender = opt.get();
 
         try {
-            String docDir = "public/documents/" + id;
-            Files.createDirectories(Paths.get(docDir));
-
             byte[] uploadedBytes = file.getBytes();
             String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "specification.pdf";
 
-            // 1. Save uploaded input file as specification.pdf
-            String inputFilePath = docDir + "/specification.pdf";
-            String inputDownloadUrl = "/documents/" + id + "/specification.pdf";
-            try (FileOutputStream fos = new FileOutputStream(inputFilePath)) {
-                fos.write(uploadedBytes);
-            }
+            // 1. Upload input Technical Specification to S3.
+            String s3Prefix = "tenders/" + id + "/";
+            String inputS3Key = s3Prefix + "specification.pdf";
+            uploadToS3(inputS3Key, uploadedBytes,
+                    file.getContentType() != null ? file.getContentType() : "application/pdf");
 
             // Save offeredModel on Tender entity if passed
             if (offeredModel != null && !offeredModel.trim().isEmpty()) {
@@ -703,40 +699,22 @@ public class TenderController {
             // 4. Generate formatted output PDF
             byte[] pdfBytes = documentGeneratorService.generateTechSpecPdf(data, extractedClauses);
             String pdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
-            String pdfFilePath = docDir + "/" + pdfFileName;
-            String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
-            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
-                fos.write(pdfBytes);
-            }
+            String pdfS3Key = s3Prefix + pdfFileName;
+            uploadToS3(pdfS3Key, pdfBytes, "application/pdf");
 
             // 5. Generate formatted output Word DOCX
             byte[] docxBytes = documentGeneratorService.generateTechSpecDocx(data, extractedClauses);
             String docxFileName = "Technical_Specification_Sheet_" + id + ".docx";
-            String docxFilePath = docDir + "/" + docxFileName;
-            String docxDownloadUrl = "/documents/" + id + "/" + docxFileName;
-            try (FileOutputStream fos = new FileOutputStream(docxFilePath)) {
-                fos.write(docxBytes);
-            }
+            String docxS3Key = s3Prefix + docxFileName;
+            uploadToS3(docxS3Key, docxBytes,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-            // 6. Copy generated Technical Specification PDF and Word DOCX directly to Downloads folder
-            String downloadsDirStr = System.getProperty("user.home") + "/Downloads";
-            File downloadsDir = new File(downloadsDirStr);
-            if (downloadsDir.exists() && downloadsDir.isDirectory()) {
-                try (FileOutputStream fosPdf = new FileOutputStream(new File(downloadsDir, pdfFileName));
-                     FileOutputStream fosDocx = new FileOutputStream(new File(downloadsDir, docxFileName))) {
-                    fosPdf.write(pdfBytes);
-                    fosDocx.write(docxBytes);
-                } catch (Exception dlEx) {
-                    System.err.println("[TenderController] Warning: Could not copy files to Downloads folder: " + dlEx.getMessage());
-                }
-            }
-
-            // 7. Update downloaded_docs metadata without overwriting existing documents
+            // 6. Store permanent S3 keys in downloaded_docs metadata.
             String createdDate = LocalDate.now().toString();
             List<Map<String, String>> newDocs = new ArrayList<>(List.of(
-                    Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf", "local_path", inputDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", docxFileName, "local_path", docxDownloadUrl, "created_date", createdDate)
+                    Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf", "s3_key", inputS3Key, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", pdfFileName, "s3_key", pdfS3Key, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", docxFileName, "s3_key", docxS3Key, "created_date", createdDate)
             ));
 
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
@@ -752,8 +730,8 @@ public class TenderController {
 
             Map<String, Object> response = new java.util.HashMap<>();
             response.put("success", true);
-            response.put("pdfDownloadUrl", pdfDownloadUrl);
-            response.put("docxDownloadUrl", docxDownloadUrl);
+            response.put("pdfDownloadUrl", objectStorageService.generateDownloadUrl(pdfS3Key));
+            response.put("docxDownloadUrl", objectStorageService.generateDownloadUrl(docxS3Key));
             response.put("message", "Technical Specification Sheet generated successfully in PDF and Word DOCX format!");
             response.put("status", resolveStatus(tender, LocalDate.now().toString()));
             response.put("clauseCount", extractedClauses.size());
@@ -782,32 +760,26 @@ public class TenderController {
         Tender tender = opt.get();
 
         try {
-            String docDir = "public/documents/" + id;
-            Files.createDirectories(Paths.get(docDir));
+            String s3Prefix = "tenders/" + id + "/";
 
             // Generate Technical Specification PDF
             byte[] pdfBytes = documentGeneratorService.generateTechSpecPdf(body);
             String pdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
-            String pdfFilePath = docDir + "/" + pdfFileName;
-            String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
-            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
-                fos.write(pdfBytes);
-            }
+            String pdfS3Key = s3Prefix + pdfFileName;
+            uploadToS3(pdfS3Key, pdfBytes, "application/pdf");
 
             // Generate Technical Specification DOCX
             byte[] docxBytes = documentGeneratorService.generateTechSpecDocx(body);
             String docFileName = "Technical_Specification_Sheet_" + id + ".docx";
-            String docFilePath = docDir + "/" + docFileName;
-            String docDownloadUrl = "/documents/" + id + "/" + docFileName;
-            try (FileOutputStream fos = new FileOutputStream(docFilePath)) {
-                fos.write(docxBytes);
-            }
+            String docS3Key = s3Prefix + docFileName;
+            uploadToS3(docS3Key, docxBytes,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-            // Update downloaded_docs metadata without overwriting existing files
+            // Update downloaded_docs metadata without overwriting existing documents.
             String createdDate = LocalDate.now().toString();
             List<Map<String, String>> newDocs = List.of(
-                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", docFileName, "local_path", docDownloadUrl, "created_date", createdDate)
+                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", pdfFileName, "s3_key", pdfS3Key, "created_date", createdDate),
+                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", docFileName, "s3_key", docS3Key, "created_date", createdDate)
             );
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             tenderRepository.save(tender);
@@ -822,8 +794,8 @@ public class TenderController {
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "downloadUrl", docDownloadUrl,
-                    "pdfDownloadUrl", pdfDownloadUrl,
+                    "downloadUrl", objectStorageService.generateDownloadUrl(docS3Key),
+                    "pdfDownloadUrl", objectStorageService.generateDownloadUrl(pdfS3Key),
                     "status", resolveStatus(tender, LocalDate.now().toString())
             ));
 
@@ -831,6 +803,15 @@ public class TenderController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("success", false, "error", "Failed to generate technical specifications: " + e.getMessage()));
+        }
+    }
+
+
+    private void uploadToS3(String key, byte[] content, String contentType) {
+        try (InputStream inputStream = new ByteArrayInputStream(content)) {
+            objectStorageService.upload(key, inputStream, contentType, content.length);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to upload document to S3: " + key, e);
         }
     }
 
@@ -973,29 +954,78 @@ public class TenderController {
         return ResponseEntity.ok(Map.of("success", true, "stats", new ArrayList<>(statsMap.values())));
     }
 
-    @GetMapping("/documents/{id}/{fileName:.+}")
-    public ResponseEntity<org.springframework.core.io.Resource> downloadDocumentFile(
+    @GetMapping({"/documents/{id}/{fileName:.+}", "/{id}/documents/{fileName:.+}"})
+    public ResponseEntity<?> downloadDocumentFile(
             @PathVariable("id") String id,
             @PathVariable("fileName") String fileName) {
         try {
-            java.nio.file.Path filePath = java.nio.file.Paths.get("public/documents", id, fileName).toAbsolutePath().normalize();
-            java.io.File file = filePath.toFile();
+            Optional<Tender> opt = tenderRepository.findById(id);
+            if (opt.isPresent()) {
+                Tender tender = opt.get();
+                String downloadedDocs = tender.getDownloadedDocs();
+
+                if (downloadedDocs != null && !downloadedDocs.isBlank()) {
+                    List<Map<String, Object>> documents = mapper.readValue(
+                            downloadedDocs,
+                            new TypeReference<List<Map<String, Object>>>() {});
+
+                    for (Map<String, Object> document : documents) {
+                        Object filenameValue = document.get("filename");
+                        Object keyValue = document.get("s3_key");
+
+                        if (filenameValue != null
+                                && filenameValue.toString().equalsIgnoreCase(fileName)
+                                && keyValue != null
+                                && !keyValue.toString().isBlank()) {
+                            String downloadUrl = objectStorageService.generateDownloadUrl(keyValue.toString());
+                            return ResponseEntity.status(HttpStatus.FOUND)
+                                    .header(HttpHeaders.LOCATION, downloadUrl)
+                                    .build();
+                        }
+                    }
+                }
+
+                // GeM Bid PDFs use documentUrl as the S3 key.
+                String storedKey = tender.getDocumentUrl();
+                if (storedKey != null
+                        && !storedKey.isBlank()
+                        && storedKey.startsWith("tenders/")
+                        && (storedKey.endsWith("/" + fileName)
+                            || storedKey.equals("tenders/" + id + "/" + fileName))) {
+                    String downloadUrl = objectStorageService.generateDownloadUrl(storedKey);
+                    return ResponseEntity.status(HttpStatus.FOUND)
+                            .header(HttpHeaders.LOCATION, downloadUrl)
+                            .build();
+                }
+            }
+
+            // Backward compatibility for documents that still exist locally.
+            java.nio.file.Path filePath = Paths.get("public/documents", id, fileName)
+                    .toAbsolutePath()
+                    .normalize();
+            File file = filePath.toFile();
+
             if (!file.exists()) {
                 return ResponseEntity.notFound().build();
             }
 
-            org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(filePath.toUri());
-            String contentType = java.nio.file.Files.probeContentType(filePath);
+            org.springframework.core.io.Resource resource =
+                    new org.springframework.core.io.UrlResource(filePath.toUri());
+            String contentType = Files.probeContentType(filePath);
             if (contentType == null) {
                 contentType = "application/octet-stream";
             }
 
             return ResponseEntity.ok()
                     .contentType(org.springframework.http.MediaType.parseMediaType(contentType))
-                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"" + file.getName() + "\"")
                     .body(resource);
+
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            System.err.println("[TenderController] Document download failed: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("success", false, "error", "Failed to download document"));
         }
     }
 }
