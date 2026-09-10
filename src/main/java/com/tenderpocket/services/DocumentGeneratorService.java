@@ -1095,18 +1095,18 @@ public class DocumentGeneratorService {
             "<table style=\"width: 100%; border-collapse: collapse; border: 1px solid #4472c4; font-size: 9.5pt;\">" +
             "<thead><tr style=\"background-color: #4472c4; color: #ffffff; text-align: left;\">" +
             "<th style=\"padding: 6px; width: 6%; border: 1px solid #4472c4;\">Sr.</th>" +
-            "<th style=\"padding: 6px; width: 38%; border: 1px solid #4472c4;\">Tender Parameter / Requirement</th>" +
-            "<th style=\"padding: 6px; width: 38%; border: 1px solid #4472c4;\">Offered Specification</th>" +
-            "<th style=\"padding: 6px; width: 9%; border: 1px solid #4472c4; text-align: center;\">Compliance</th>" +
-            "<th style=\"padding: 6px; width: 9%; border: 1px solid #4472c4;\">Remarks</th></tr></thead><tbody>" +
+            "<th style=\"padding: 6px; width: 34%; border: 1px solid #4472c4;\">Tender Parameter / Requirement</th>" +
+            "<th style=\"padding: 6px; width: 14%; border: 1px solid #4472c4; text-align: center;\">Compliance (Yes/No)</th>" +
+            "<th style=\"padding: 6px; width: 14%; border: 1px solid #4472c4;\">Deviations, if any</th>" +
+            "<th style=\"padding: 6px; width: 12%; border: 1px solid #4472c4;\">Remarks</th></tr></thead><tbody>" +
 
-            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">1</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Equipment Design &amp; Construction</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Heavy-duty industrial grade construction with ISO certified standards</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
-            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">2</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Power Supply / Electrical Input</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">220V - 240V AC, 50 Hz Single Phase input with surge protection</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
-            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">3</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Operational Temperature Range</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Standard operating ambient temperature range (2°C to 43°C)</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
-            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">4</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Quality &amp; Safety Certifications</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">ISO 9001 / ISO 13485 / CE / BIS Certified Equipment</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
-            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">5</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Performance Warranty &amp; Service</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">5 Years comprehensive warranty with prompt local service support</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
-            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">6</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Installation &amp; Commissioning</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Free on-site installation, testing, and operational training</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
-            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">7</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Spares Availability Guarantee</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Guaranteed availability of spare parts for at least 10 years</td><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center; color: green; font-weight: bold;\">YES</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Compliant</td></tr>" +
+            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">1</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Equipment Design &amp; Construction</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td></tr>" +
+            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">2</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Power Supply / Electrical Input</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td></tr>" +
+            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">3</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Operational Temperature Range</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td></tr>" +
+            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">4</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Quality &amp; Safety Certifications</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td></tr>" +
+            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">5</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Performance Warranty &amp; Service</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td></tr>" +
+            "<tr style=\"background-color: #f9fafb;\"><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">6</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Installation &amp; Commissioning</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td></tr>" +
+            "<tr><td style=\"padding: 5px; border: 1px solid #d0d7de; text-align: center;\">7</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">Spares Availability Guarantee</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td><td style=\"padding: 5px; border: 1px solid #d0d7de;\">&#160;</td></tr>" +
             "</tbody></table></div>" +
             "<p style=\"margin-top: 10px; font-size: 10pt;\"><strong>Declaration:</strong> We hereby declare and confirm that the model and specifications offered above comply fully with all technical parameter requirements stated in Tender Ref No: <strong>" + data.getOrDefault("bidNumber", "") + "</strong>.</p>" + sigBlock
         ));
@@ -2052,10 +2052,10 @@ public class DocumentGeneratorService {
                 org.apache.poi.xwpf.usermodel.XWPFTableRow tableRow = compTable.getRow(i + 2);
                 tableRow.getCell(0).setText(rowData[0]);
                 tableRow.getCell(1).setText(rowData[1]);
-                // Left blank for the bidder to complete: these declare what the offered goods do.
-                tableRow.getCell(2).setText(rowData.length > 2 ? rowData[2] : "");
-                tableRow.getCell(3).setText(rowData.length > 3 ? rowData[3] : "");
-                tableRow.getCell(4).setText(rowData.length > 4 ? rowData[4] : "-");
+                // Left empty for bidder completion: Compliance (Yes/No), Deviations, if any, Remarks
+                tableRow.getCell(2).setText("");
+                tableRow.getCell(3).setText("");
+                tableRow.getCell(4).setText("");
             }
             scheduleNo++;
         }
@@ -2296,9 +2296,9 @@ public class DocumentGeneratorService {
                 html.append("<tr style=\"page-break-inside: avoid; ").append(bg).append("\">");
                 html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(escapeHtml(rowData[0])).append("</td>");
                 html.append("<td style=\"padding: 5px; border: 1px solid #000000;\">").append(escapeHtml(rowData[1])).append("</td>");
-                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(escapeHtml(rowData.length > 2 && !rowData[2].isEmpty() ? rowData[2] : "Comply")).append("</td>");
-                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(escapeHtml(rowData.length > 3 && !rowData[3].isEmpty() ? rowData[3] : "No Deviation")).append("</td>");
-                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">").append(escapeHtml(rowData.length > 4 && !rowData[4].isEmpty() ? rowData[4] : "-")).append("</td>");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">&#160;</td>");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">&#160;</td>");
+                html.append("<td style=\"padding: 5px; border: 1px solid #000000; text-align: center;\">&#160;</td>");
                 html.append("</tr>");
             }
 

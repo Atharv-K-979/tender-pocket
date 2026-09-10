@@ -51,9 +51,21 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username and password required"));
         }
 
-        // Auto-seed admin account if missing
+        // Auto-seed default accounts if missing for all 4 primary roles
         if (!userRepository.existsById("admin")) {
             userRepository.save(new User("admin", passwordEncoder.encode("Marken@123$"), "Admin", "admin@company.com"));
+        }
+        if (!userRepository.existsById("misteam")) {
+            userRepository.save(new User("misteam", passwordEncoder.encode("misteam"), "MIS Team", "mis@company.com"));
+        }
+        if (!userRepository.existsById("executive")) {
+            userRepository.save(new User("executive", passwordEncoder.encode("executive123"), "Tender Executive", "executive@company.com"));
+        }
+        if (!userRepository.existsById("clearance")) {
+            userRepository.save(new User("clearance", passwordEncoder.encode("clearance123"), "Clearance Team", "clearance@company.com"));
+        }
+        if (!userRepository.existsById("tpc")) {
+            userRepository.save(new User("tpc", passwordEncoder.encode("tpc123"), "TPC Team", "tpc@company.com"));
         }
 
         Optional<User> opt = userRepository.findById(username);
@@ -84,9 +96,9 @@ public class AuthController {
         }
         if (userRole == null || userRole.isEmpty()) userRole = "Admin";
 
-        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole) && !"Specification Team".equalsIgnoreCase(userRole)) {
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole) && !"Clearance Team".equalsIgnoreCase(userRole) && !"TPC Team".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, Executive, or Specification Team only"));
+                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, Tender Executive, Clearance Team, or TPC Team only"));
         }
 
         List<User> rawUsers = userRepository.findAll();
@@ -191,6 +203,19 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username, password, and role are required"));
         }
 
+        // Standardize legacy role names
+        if ("MIS Executive".equalsIgnoreCase(role) || "Tender Operations Executive".equalsIgnoreCase(role)) {
+            role = "Tender Executive";
+        }
+
+        List<String> validRoles = List.of("Admin", "MIS Team", "Tender Executive", "Clearance Team", "TPC Team");
+        if (!validRoles.contains(role)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "error", "Invalid role specified. Allowed roles: MIS Team, Tender Executive, Clearance Team, TPC Team, Admin"
+            ));
+        }
+
         username = username.trim();
         if (username.length() < 3 || username.length() > 20) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username must be between 3 and 20 characters"));
@@ -276,6 +301,38 @@ public class AuthController {
             }
         }
         return ResponseEntity.ok(Map.of("success", true, "executives", result));
+    }
+
+    @GetMapping("/roles")
+    public ResponseEntity<?> getAvailableRoles() {
+        List<String> roles = List.of(
+            "Admin",
+            "Clearance Team",
+            "TPC Team",
+            "MIS Team",
+            "Tender Executive"
+        );
+        return ResponseEntity.ok(Map.of("success", true, "roles", roles));
+    }
+
+    @GetMapping("/clearance-team")
+    public ResponseEntity<?> getClearanceTeam() {
+        List<User> team = userRepository.findByRole("Clearance Team");
+        List<String> result = new ArrayList<>();
+        for (User u : team) {
+            result.add(u.getUsername());
+        }
+        return ResponseEntity.ok(Map.of("success", true, "clearanceTeam", result));
+    }
+
+    @GetMapping("/tpc-team")
+    public ResponseEntity<?> getTpcTeam() {
+        List<User> team = userRepository.findByRole("TPC Team");
+        List<String> result = new ArrayList<>();
+        for (User u : team) {
+            result.add(u.getUsername());
+        }
+        return ResponseEntity.ok(Map.of("success", true, "tpcTeam", result));
     }
 
     @GetMapping("/mis-team")

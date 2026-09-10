@@ -179,8 +179,6 @@ public class AnalyticsController {
         statusRows.add(Map.of("status", "Won", "count", awardedCount, "total_val", valWon));
         statusRows.add(Map.of("status", "Lost", "count", notAwardedCount, "total_val", valLost));
         statusRows.add(Map.of("status", "Missed Deadline", "count", nonSubmissionLossCount, "total_val", valMissedDead));
-        statusRows.add(Map.of("status", "Missed Opportunity", "count", nonParticipationLossCount, "total_val", valMissedOpp));
-
         Map<String, Object> metrics = new HashMap<>();
         metrics.put("totalEmails", 12);
         metrics.put("totalTenders", totalTenders);
@@ -209,6 +207,107 @@ public class AnalyticsController {
                 "authorities", authorityList,
                 "valueBrackets", bracketsList
         ));
+    }
+
+    @GetMapping("/executive-performance")
+    public ResponseEntity<?> getExecutivePerformance(
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Tender Executive") String userRole) {
+
+        List<Tender> tenders = ("Admin".equalsIgnoreCase(userRole) || "MIS Team".equalsIgnoreCase(userRole))
+                ? tenderRepository.findAll()
+                : tenderRepository.findByMisExecutive(username);
+
+        LocalDate today = LocalDate.now();
+        LocalDate sevenDaysAgo = today.minusDays(7);
+        LocalDate thirtyDaysAgo = today.minusDays(30);
+        LocalDate oneYearAgo = today.minusDays(365);
+
+        int filled7Days = 0, filled30Days = 0, filled1Year = 0;
+        int won7Days = 0, won30Days = 0, won1Year = 0;
+        int lost7Days = 0, lost30Days = 0, lost1Year = 0;
+
+        Map<String, Integer> statusDistribution = new HashMap<>();
+        statusDistribution.put("Live", 0);
+        statusDistribution.put("Participating", 0);
+        statusDistribution.put("Submitted", 0);
+        statusDistribution.put("Won", 0);
+        statusDistribution.put("Lost", 0);
+        statusDistribution.put("Missed", 0);
+
+        for (Tender t : tenders) {
+            String status = t.getStatus() != null ? t.getStatus() : "Live";
+            statusDistribution.put(status, statusDistribution.getOrDefault(status, 0) + 1);
+
+            LocalDate date = null;
+            if (t.getEntryDate() != null && !t.getEntryDate().isEmpty()) {
+                try {
+                    date = LocalDate.parse(t.getEntryDate().substring(0, 10));
+                } catch (Exception ignored) {}
+            }
+            if (date == null) date = today;
+
+            boolean isSubmitted = "Submitted".equalsIgnoreCase(status) || "Won".equalsIgnoreCase(status) || "Lost".equalsIgnoreCase(status);
+            boolean isWon = "Won".equalsIgnoreCase(status);
+            boolean isLost = "Lost".equalsIgnoreCase(status);
+
+            if (!date.isBefore(sevenDaysAgo)) {
+                if (isSubmitted) filled7Days++;
+                if (isWon) won7Days++;
+                if (isLost) lost7Days++;
+            }
+            if (!date.isBefore(thirtyDaysAgo)) {
+                if (isSubmitted) filled30Days++;
+                if (isWon) won30Days++;
+                if (isLost) lost30Days++;
+            }
+            if (!date.isBefore(oneYearAgo)) {
+                if (isSubmitted) filled1Year++;
+                if (isWon) won1Year++;
+                if (isLost) lost1Year++;
+            }
+        }
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("username", username);
+        resp.put("role", userRole);
+        resp.put("timeWindows", Map.of(
+            "last7Days", Map.of("filled", filled7Days, "won", won7Days, "lost", lost7Days),
+            "last30Days", Map.of("filled", filled30Days, "won", won30Days, "lost", lost30Days),
+            "last1Year", Map.of("filled", filled1Year, "won", won1Year, "lost", lost1Year)
+        ));
+        resp.put("statusDistribution", statusDistribution);
+
+        return ResponseEntity.ok(resp);
+    }
+
+    private String resolveTenderStatus(Tender t, String todayIST) {
+        boolean hasPassedDueDate = t.getDueDate() != null && t.getDueDate().split(" ")[0].compareTo(todayIST) < 0;
+
+        if ("Awarded".equalsIgnoreCase(t.getStatus())) return "Won";
+        if ("Not Awarded".equalsIgnoreCase(t.getStatus())) return "Lost";
+        if ("Filed".equalsIgnoreCase(t.getStatus())) return "Submitted";
+
+        if (hasPassedDueDate) {
+            if ("Not Participating".equalsIgnoreCase(t.getStatus())) return "Missed Opportunity";
+            if ("Issued".equalsIgnoreCase(t.getStatus()) || "Participating".equalsIgnoreCase(t.getStatus()) || t.getStatus() == null) {
+                return "Missed Deadline";
+            }
+        }
+
+        if ("Not Participating".equalsIgnoreCase(t.getStatus())) return "Not Participating";
+        if ("Participating".equalsIgnoreCase(t.getStatus())) return "Participating";
+
+        if (t.getPublishDate() != null && !"N/A".equals(t.getPublishDate())) {
+            try {
+                LocalDate pub = LocalDate.parse(t.getPublishDate());
+                long diff = ChronoUnit.DAYS.between(pub, LocalDate.now());
+                if (diff > 3) return "Lapsed";
+            } catch (Exception e) {}
+        }
+
+        return "New";
     }
 
     private String resolveStatus(Tender t, String todayIST) {
