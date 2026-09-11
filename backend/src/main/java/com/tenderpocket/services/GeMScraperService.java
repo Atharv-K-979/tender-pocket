@@ -37,6 +37,9 @@ public class GeMScraperService {
     @Autowired
     private TenderRepository tenderRepository;
 
+    @Autowired
+    private ObjectStorageService objectStorageService;
+
     @Value("${gemini.api.key}")
     private String geminiApiKey;
 
@@ -207,59 +210,78 @@ public class GeMScraperService {
     }
 
     private void downloadAndParseGemPdf(String tenderId, String downloadUrl, String bidNo, JsonNode doc) {
-        try {
-            String localDir = "public/documents/" + tenderId;
-            String localFileName = "Bid_Document_" + tenderId + ".pdf";
-            String outputPath = localDir + "/" + localFileName;
-            String localPath = "/documents/" + tenderId + "/" + localFileName;
+        String localDir = "public/documents/" + tenderId;
+        String localFileName = "Bid_Document_" + tenderId + ".pdf";
+        String outputPath = localDir + "/" + localFileName;
+        String localPath = "/documents/" + tenderId + "/" + localFileName;
+        String s3Key = "tenders/" + tenderId + "/" + localFileName;
 
+        try {
             Files.createDirectories(Paths.get(localDir));
             
             System.out.println("  - Downloading Bid PDF to " + outputPath + "...");
             boolean success = downloadFile(downloadUrl, outputPath);
-            if (success) {
-                // Call external python parser
-                ProcessBuilder pb = new ProcessBuilder("python3", "scripts/parse-gem-pdf.py", outputPath);
-                Process process = pb.start();
-                
-                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line);
-                }
-                
-                int exitCode = process.waitFor();
-                if (exitCode == 0) {
-                    JsonNode parsed = objectMapper.readTree(sb.toString());
-                    String place = parsed.has("place") ? parsed.get("place").asText() : "N/A";
-                    String state = parsed.has("state") ? parsed.get("state").asText() : "N/A";
-                    String dueDate = parsed.has("due_date") ? parsed.get("due_date").asText() : null;
-                    String dueTime = parsed.has("due_time") ? parsed.get("due_time").asText() : null;
-                    Double emdAmount = parsed.has("emd_amount") && !parsed.get("emd_amount").isNull() ? parsed.get("emd_amount").asDouble() : null;
+            if (!success) {
+                System.err.println("  - Failed to download PDF for tender " + tenderId);
+                return;
+            }
 
-                    Optional<Tender> opt = tenderRepository.findById(tenderId);
-                    if (opt.isPresent()) {
-                        Tender t = opt.get();
-                        t.setDocumentUrl(localPath);
-                        if (!"N/A".equals(place)) {
-                            t.setPlace(place);
-                            t.setLocation(place + ", " + state);
-                        }
-                        if (!"N/A".equals(state)) t.setState(state);
-                        if (dueDate != null) {
-                            t.setDueDate(dueDate + (dueTime != null ? " " + dueTime : ""));
-                        }
-                        if (emdAmount != null) {
-                            t.setEmd(emdAmount);
-                            t.setEmdRaw("₹" + emdAmount);
-                        }
-                        t.setDownloadedDocs(String.format("[{\"name\":\"Bid Document\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}]", 
-                                localFileName, localPath, LocalDate.now().toString()));
-                        tenderRepository.save(t);
-                        System.out.println("  - Successfully updated PDF metadata for tender " + tenderId);
+            // Upload PDF to S3
+            File pdfFile = new File(outputPath);
+            System.out.println("  - Uploading Bid PDF to S3: " + s3Key);
+            try (java.io.InputStream inputStream = Files.newInputStream(pdfFile.toPath())) {
+                objectStorageService.upload(
+                        s3Key,
+                        inputStream,
+                        "application/pdf",
+                        pdfFile.length());
+            }
+            System.out.println("  - Successfully uploaded PDF to S3.");
+
+            // Call external python parser
+            ProcessBuilder pb = new ProcessBuilder("python3", "scripts/parse-gem-pdf.py", outputPath);
+            Process process = pb.start();
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line);
+            }
+
+            int exitCode = process.waitFor();
+            if (exitCode == 0) {
+                JsonNode parsed = objectMapper.readTree(sb.toString());
+                String place = parsed.has("place") ? parsed.get("place").asText() : "N/A";
+                String state = parsed.has("state") ? parsed.get("state").asText() : "N/A";
+                String dueDate = parsed.has("due_date") ? parsed.get("due_date").asText() : null;
+                String dueTime = parsed.has("due_time") ? parsed.get("due_time").asText() : null;
+                Double emdAmount = parsed.has("emd_amount") && !parsed.get("emd_amount").isNull() ? parsed.get("emd_amount").asDouble() : null;
+
+                Optional<Tender> opt = tenderRepository.findById(tenderId);
+                if (opt.isPresent()) {
+                    Tender t = opt.get();
+                    // Store permanent S3 object key in documentUrl
+                    t.setDocumentUrl(s3Key);
+                    if (!"N/A".equals(place)) {
+                        t.setPlace(place);
+                        t.setLocation(place + ", " + state);
                     }
+                    if (!"N/A".equals(state)) t.setState(state);
+                    if (dueDate != null) {
+                        t.setDueDate(dueDate + (dueTime != null ? " " + dueTime : ""));
+                    }
+                    if (emdAmount != null) {
+                        t.setEmd(emdAmount);
+                        t.setEmdRaw("₹" + emdAmount);
+                    }
+                    t.setDownloadedDocs(String.format("[{\"name\":\"Bid Document\",\"filename\":\"%s\",\"local_path\":\"%s\",\"s3_key\":\"%s\",\"created_date\":\"%s\"}]",
+                            localFileName, localPath, s3Key, LocalDate.now().toString()));
+                    tenderRepository.save(t);
+                    System.out.println("  - Successfully updated PDF metadata for tender " + tenderId);
                 }
+            } else {
+                System.err.println("  - PDF parser failed for tender " + tenderId + " with exit code " + exitCode);
             }
         } catch (Exception e) {
             System.err.println("  - Failed to parse PDF: " + e.getMessage());
