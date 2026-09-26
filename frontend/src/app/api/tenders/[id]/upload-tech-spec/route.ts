@@ -47,7 +47,17 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Uploaded file is empty' }, { status: 400 });
     }
     if (!db.prepare('SELECT id FROM tenders WHERE id = ?').get(id)) {
-      return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
+      db.prepare(`
+        INSERT INTO tenders (id, ref_no, title, authority, original_url, status, scraped_at, source)
+        VALUES (?, ?, ?, ?, ?, 'New', ?, 'Manual Upload')
+      `).run(
+        id,
+        `GEM/${id}`,
+        `Manual Upload Tender ${id}`,
+        'GeM Portal',
+        `https://bidplus.gem.gov.in/showbidDocument/${id}`,
+        new Date().toISOString()
+      );
     }
 
     // Ensure document directory exists: public/documents/{id}

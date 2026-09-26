@@ -743,8 +743,20 @@ public class TenderController {
         }
 
         Optional<Tender> opt = tenderRepository.findById(id);
+        Tender tender;
         if (opt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+            tender = new Tender();
+            tender.setId(id);
+            tender.setRefNo("GEM/" + id);
+            tender.setTitle("Manual Upload Tender " + id);
+            tender.setAuthority("GeM Portal");
+            tender.setOriginalUrl("https://bidplus.gem.gov.in/showbidDocument/" + id);
+            tender.setStatus("New");
+            tender.setScrapedAt(java.time.LocalDateTime.now().toString());
+            tender.setSource("Manual Upload");
+            tender = tenderRepository.save(tender);
+        } else {
+            tender = opt.get();
         }
 
         if (file.isEmpty()) {
@@ -754,8 +766,6 @@ public class TenderController {
         complianceProgressService.start(id,
                 file.getOriginalFilename() != null ? file.getOriginalFilename() : "document");
         ComplianceConversionMetrics conversionMetrics = complianceProgressService.metricsFor(id);
-
-        Tender tender = opt.get();
 
         try {
             String docDir = "public/documents/" + id;
