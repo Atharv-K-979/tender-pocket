@@ -1,40 +1,37 @@
 import { NextResponse } from 'next/server';
 import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
+import { syncGeMTenders } from '@/lib/gemSyncEngine';
+
+export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
     if (!workflowActor(request, 'viewTenders')) return workflowForbidden();
+    
+    // 1. Run live GeM sync engine
+    const syncResult = await syncGeMTenders();
+
+    // 2. Notify Spring Boot backend in background if running
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8090';
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
+      const timeout = setTimeout(() => controller.abort(), 2000);
       const headers: Record<string, string> = { Accept: 'application/json' };
       const authHeader = request.headers.get('authorization');
       if (authHeader) headers['authorization'] = authHeader;
       const role = request.headers.get('x-user-role');
       if (role) headers['x-user-role'] = role;
 
-      const backendRes = await fetch(`${backendUrl}/api/tenders/sync-gem`, {
+      fetch(`${backendUrl}/api/tenders/sync-gem`, {
         method: 'POST',
         headers,
         signal: controller.signal,
         cache: 'no-store'
-      });
+      }).catch(() => {});
       clearTimeout(timeout);
+    } catch (_) {}
 
-      const contentType = backendRes.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await backendRes.json();
-        return NextResponse.json(data, { status: backendRes.status });
-      }
-    } catch (err) {
-      // Backend not running or timeout
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'GeM portal synchronization triggered successfully'
-    });
+    return NextResponse.json(syncResult);
   } catch (error) {
     console.error('[sync-gem] Error:', error);
     return NextResponse.json(

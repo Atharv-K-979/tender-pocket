@@ -64,10 +64,8 @@ export async function GET(request: Request) {
       } else if (status === 'Pending' || status === 'Approved' || status === 'Rejected') {
         query += " AND spec_verification_status = ?";
         params.push(status);
-      } else if (status === 'New') {
-        query += " AND (status = 'Issued' OR status IS NULL)";
-      } else if (status === 'Lapsed') {
-        query += " AND (status = 'Issued' OR status IS NULL)";
+      } else if (status === 'New' || status === 'Lapsed') {
+        query += " AND (status = 'Issued' OR status = 'New' OR status IS NULL)";
       } else if (status === 'Participating') {
         query += " AND status = 'Participating'";
       } else if (status === 'Not Participating') {
@@ -79,16 +77,16 @@ export async function GET(request: Request) {
       } else if (status === 'Lost') {
         query += " AND (status = 'Not Awarded' OR status = 'Lost')";
       } else if (status === 'Missed Deadline') {
-        query += " AND (status = 'Issued' OR status IS NULL OR status = 'Participating') AND due_date IS NOT NULL AND due_date != '' AND due_date < ?";
+        query += " AND (status = 'Issued' OR status = 'New' OR status IS NULL OR status = 'Participating') AND due_date IS NOT NULL AND due_date != '' AND due_date < ?";
         params.push(todayISTString);
       } else if (status === 'Missed Opportunity') {
         query += " AND status = 'Not Participating' AND due_date IS NOT NULL AND due_date != '' AND due_date < ?";
         params.push(todayISTString);
       } else if (status === 'T2') {
-        query += " AND (status = 'Issued' OR status IS NULL OR status = 'Participating') AND due_date = ?";
+        query += " AND (status = 'Issued' OR status = 'New' OR status IS NULL OR status = 'Participating') AND due_date = ?";
         params.push(todayISTString);
       } else if (status === 'T2-3 days') {
-        query += " AND (status = 'Issued' OR status IS NULL OR status = 'Participating') AND due_date > ? AND due_date <= date(?, '+3 days')";
+        query += " AND (status = 'Issued' OR status = 'New' OR status IS NULL OR status = 'Participating') AND due_date > ? AND due_date <= date(?, '+3 days')";
         params.push(todayISTString, todayISTString);
       }
     }
@@ -149,7 +147,7 @@ export async function GET(request: Request) {
         if (t.status === 'Not Participating') {
           return 'Missed Opportunity';
         }
-        if (t.status === 'Issued' || t.status === 'Participating' || !t.status) {
+        if (t.status === 'Issued' || t.status === 'New' || t.status === 'Participating' || !t.status) {
           return 'Missed Deadline';
         }
       }
@@ -157,7 +155,7 @@ export async function GET(request: Request) {
       if (t.status === 'Not Participating') return 'Not Participating';
       if (t.status === 'Participating') return 'Participating';
 
-      // Default or 'Issued' status
+      // Default or 'Issued' / 'New' status
       if (isLapsed(t.publish_date, todayIST)) {
         return 'Lapsed';
       }
@@ -285,7 +283,7 @@ export async function POST(request: Request) {
       opening_date || null,
       document_url || null,
       original_url,
-      status || 'new',
+      status || 'New',
       new Date().toISOString()
     );
 
