@@ -84,7 +84,7 @@ export default function Dashboard() {
 
   // User Authentication & Session States
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
-  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin';
+  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const techSpecUploadInFlight = useRef(false);
   const [usernameInput, setUsernameInput] = useState('');
@@ -225,6 +225,26 @@ export default function Dashboard() {
       return false;
     }
   })() : false;
+
+  // Sequential Pipeline Stage Visibility:
+  // When a tender is at stage 1, do not show remaining stages in the frontend to any user.
+  // The horizontal sections in the tender are only visible if previous required changes are completed.
+  const isStage1Complete = Boolean(selectedTender && selectedTender.spec_verification_status === 'Approved');
+  const isStage2Complete = (isStage1Complete && Boolean(selectedTender && selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0)) || isOutcomeState;
+  const isStage3Complete = (isStage2Complete && areDocsGenerated) || isOutcomeState;
+  const isStage4Complete = (isStage3Complete && Boolean(selectedTender && selectedTender.verification_status === 'Approved')) || isOutcomeState;
+  const isStage5Complete = (isStage4Complete && Boolean(selectedTender && selectedTender.payment_status === 'Approved')) || isOutcomeState;
+  const isStage6Complete = (isStage5Complete && Boolean(selectedTender && (selectedTender.submission_status === 'Approved' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed'))) || isOutcomeState;
+
+  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team';
+  const isStage1Visible = true; // Stage 1 is always visible
+  const isStage2Visible = isOperationalRole && (isStage1Complete || isOutcomeState);
+  const isStage3Visible = isOperationalRole && (isStage2Complete || isOutcomeState);
+  const isStage4Visible = isOperationalRole && (isStage3Complete || isOutcomeState);
+  const isStage5Visible = isOperationalRole && (isStage4Complete || isOutcomeState);
+  const isStage6Visible = isOperationalRole && (isStage5Complete || isOutcomeState);
+  const isStage7Visible = isOperationalRole && (isStage6Complete || isOutcomeState);
+
   const [tenderNotes, setTenderNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -1860,26 +1880,59 @@ export default function Dashboard() {
         </nav>
 
         <div className="sidebar-footer">
-          <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>LOGGED IN AS</div>
-            <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-primary)', textTransform: 'capitalize' }}>{currentUser.username}</div>
+          <div style={{
+            padding: '10px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            background: 'var(--bg-subtle)',
+            borderRadius: '10px',
+            border: '1px solid var(--border-color)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' :
+                    currentUser.role === 'MIS Team' ? '#10b981' :
+                    currentUser.role === 'Clearance Team' ? '#8b5cf6' :
+                    currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'
+                }} />
+                <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Active Session</span>
+              </div>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} title="Online" />
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)', textTransform: 'capitalize' }}>{currentUser.username}</div>
             <div style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: '600' }}>{currentUser.role}</div>
           </div>
           <button className="theme-toggle-btn" onClick={toggleTheme}>
             {theme === 'dark' ? (
               <>
-                <Sun size={16} />
+                <Sun size={15} />
                 <span>Light Mode</span>
               </>
             ) : (
               <>
-                <Moon size={16} />
+                <Moon size={15} />
                 <span>Dark Mode</span>
               </>
             )}
           </button>
-          <button className="btn" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239, 68, 68, 0.2)', width: '100%', justifyContent: 'center', gap: '8px', padding: '10px' }} onClick={handleLogout}>
-            <XCircle size={16} />
+          <button className="btn btn-logout" style={{
+            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            color: 'var(--accent-red)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            width: '100%',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '9px 12px',
+            borderRadius: '10px',
+            fontWeight: '600',
+            fontSize: '13px'
+          }} onClick={handleLogout}>
+            <XCircle size={15} />
             <span>Logout</span>
           </button>
         </div>
@@ -2567,7 +2620,7 @@ export default function Dashboard() {
                 {/* Analytics KPI Row */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                   {/* Card 1: Total Opportunities */}
-                  <div className="card" style={{ padding: '20px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="card" style={{ padding: '20px', borderRadius: '12px', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <FileText size={24} />
                     </div>
@@ -2580,7 +2633,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Card 2: Estimated Pipeline Value */}
-                  <div className="card" style={{ padding: '20px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="card" style={{ padding: '20px', borderRadius: '12px', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <TrendingUp size={24} />
                     </div>
@@ -2593,7 +2646,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Card 3: Success Conversion Rate */}
-                  <div className="card" style={{ padding: '20px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="card" style={{ padding: '20px', borderRadius: '12px', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Activity size={24} />
                     </div>
@@ -2611,7 +2664,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Card 4: Source E-mails Parsed */}
-                  <div className="card" style={{ padding: '20px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="card" style={{ padding: '20px', borderRadius: '12px', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Mail size={24} />
                     </div>
@@ -3349,7 +3402,7 @@ export default function Dashboard() {
                                 gap: '16px',
                                 padding: '16px',
                                 borderRadius: '10px',
-                                background: 'rgba(255, 255, 255, 0.02)',
+                                background: 'var(--bg-subtle)',
                                 border: '1px solid var(--border-color)',
                                 alignItems: 'flex-start',
                                 transition: 'all var(--transition-fast)'
@@ -3753,7 +3806,7 @@ export default function Dashboard() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '12px' }}>
                   
                   {/* Card 1: Total Assignments */}
-                  <div className="card" style={{ padding: '16px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                  <div className="card" style={{ padding: '16px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-card)' }}>
                     <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Layers size={24} />
                     </div>
@@ -3764,7 +3817,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Card 2: Top Assigner */}
-                  <div className="card" style={{ padding: '16px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                  <div className="card" style={{ padding: '16px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-card)' }}>
                     <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Users size={24} />
                     </div>
@@ -3777,7 +3830,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Card 3: Stale Assignments */}
-                  <div className="card" style={{ padding: '16px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '16px', background: staleCount > 0 ? 'rgba(239, 68, 68, 0.05)' : 'rgba(255, 255, 255, 0.02)', border: staleCount > 0 ? '1px solid rgba(239, 68, 68, 0.15)' : '1px solid var(--border-color)' }}>
+                  <div className="card" style={{ padding: '16px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '16px', background: staleCount > 0 ? 'rgba(239, 68, 68, 0.05)' : 'var(--bg-card)', border: staleCount > 0 ? '1px solid rgba(239, 68, 68, 0.15)' : '1px solid var(--border-color)' }}>
                     <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: staleCount > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255, 255, 255, 0.05)', color: staleCount > 0 ? 'var(--accent-red)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <AlertTriangle size={24} />
                     </div>
@@ -3788,7 +3841,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Card 4: Load Balance */}
-                  <div className="card" style={{ padding: '16px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                  <div className="card" style={{ padding: '16px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-card)' }}>
                     <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Activity size={24} />
                     </div>
@@ -4617,8 +4670,8 @@ export default function Dashboard() {
                             /* GROUP BY EXECUTIVE VIEW */
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
                               {Object.entries(filteredExecGroup).map(([exec, items]) => (
-                                <div key={exec} className="card" style={{ padding: '18px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.01)', border: '1px solid rgba(255, 255, 255, 0.04)', display: 'flex', flexDirection: 'column' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '10px', marginBottom: '12px' }}>
+                                <div key={exec} className="card" style={{ padding: '18px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '12px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                       <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#818cf8' }}></span>
                                       <span style={{ fontWeight: '700', fontSize: '15px', color: 'var(--text-primary)' }}>{exec}</span>
@@ -4629,7 +4682,7 @@ export default function Dashboard() {
                                   </div>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '350px', overflowY: 'auto' }}>
                                     {items.map((item) => (
-                                      <div key={item.id} style={{ padding: '10px', borderRadius: '6px', backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <div key={item.id} style={{ padding: '10px', borderRadius: '6px', backgroundColor: 'var(--bg-subtle)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                           <Link
                                             href={`/tenders/${item.id}`}
@@ -5022,7 +5075,7 @@ export default function Dashboard() {
                         const isDocx = doc.filename?.toLowerCase().endsWith('.docx') || doc.name?.toLowerCase().endsWith('.docx');
                         
                         return (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-subtle)', border: '1px solid var(--border-color)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden', marginRight: '12px' }}>
                               <div style={{ 
                                 display: 'flex', 
@@ -5031,7 +5084,7 @@ export default function Dashboard() {
                                 width: '36px', 
                                 height: '36px', 
                                 borderRadius: '6px', 
-                                background: isPdf ? 'rgba(239, 68, 68, 0.1)' : isDocx ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                background: isPdf ? 'rgba(239, 68, 68, 0.1)' : isDocx ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-card)',
                                 color: isPdf ? '#ef4444' : isDocx ? '#3b82f6' : 'var(--text-muted)' 
                               }}>
                                 <FileText size={18} />
@@ -5070,11 +5123,11 @@ export default function Dashboard() {
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '14px',
-                padding: '16px',
+                padding: '18px 20px',
                 borderRadius: '12px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                boxShadow: 'var(--shadow-sm)',
                 marginTop: '16px',
                 marginBottom: '16px'
               }}>
@@ -5082,7 +5135,7 @@ export default function Dashboard() {
                   <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>
                     Executive & Quantity Management
                   </h3>
-                  {(currentUser.role === 'MIS Team' || currentUser.role === 'Admin') && (
+                  {(currentUser?.role === 'MIS Team') && (
                     <button
                       className="btn btn-primary"
                       style={{ padding: '6px 12px', fontSize: '11px' }}
@@ -5105,7 +5158,7 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
-                    {currentUser.role === 'MIS Team' || currentUser.role === 'Admin' ? (
+                    {currentUser?.role === 'MIS Team' ? (
                       <select
                         value={misExecutive}
                         onChange={(e) => setMisExecutive(e.target.value)}
@@ -5150,6 +5203,7 @@ export default function Dashboard() {
                       type="number"
                       placeholder="Bid Qty"
                       value={bidQty}
+                      disabled={currentUser?.role !== 'MIS Team'}
                       onChange={(e) => setBidQty(e.target.value === '' ? '' : Number(e.target.value))}
                       style={{
                         padding: '10px 12px',
@@ -5157,7 +5211,8 @@ export default function Dashboard() {
                         border: '1px solid var(--border-color)',
                         background: 'var(--bg-app)',
                         color: 'var(--text-primary)',
-                        fontSize: '13px'
+                        fontSize: '13px',
+                        opacity: currentUser?.role !== 'MIS Team' ? 0.7 : 1
                       }}
                     />
                   </div>
@@ -5169,6 +5224,7 @@ export default function Dashboard() {
                       type="number"
                       placeholder="Quoted Qty"
                       value={quotedQty}
+                      disabled={currentUser?.role !== 'MIS Team'}
                       onChange={(e) => setQuotedQty(e.target.value === '' ? '' : Number(e.target.value))}
                       style={{
                         padding: '10px 12px',
@@ -5176,7 +5232,8 @@ export default function Dashboard() {
                         border: '1px solid var(--border-color)',
                         background: 'var(--bg-app)',
                         color: 'var(--text-primary)',
-                        fontSize: '13px'
+                        fontSize: '13px',
+                        opacity: currentUser?.role !== 'MIS Team' ? 0.7 : 1
                       }}
                     />
                   </div>
@@ -5187,13 +5244,15 @@ export default function Dashboard() {
               <div className="notes-area" style={{ marginBottom: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <label className="detail-label">Internal Bidding Notes</label>
-                  <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }} onClick={saveNotes} disabled={notesSaving}>
-                    {notesSaving ? 'Saving...' : 'Save Notes'}
-                  </button>
+                  {currentUser?.role !== 'Admin' && (
+                    <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }} onClick={saveNotes} disabled={notesSaving}>
+                      {notesSaving ? 'Saving...' : 'Save Notes'}
+                    </button>
+                  )}
                 </div>
                 <textarea
                   className="notes-textarea"
-                  placeholder={currentUser?.role === 'Admin' ? 'No notes recorded for this tender.' : 'Record credentials, contact details, pricing estimates, task checklists, or notes for this bid...'}
+                  placeholder={currentUser?.role === 'Admin' ? 'Internal bidding notes are view-only for Admin.' : 'Record credentials, contact details, pricing estimates, task checklists, or notes for this bid...'}
                   value={tenderNotes}
                   onChange={(e) => setTenderNotes(e.target.value)}
                   readOnly={currentUser?.role === 'Admin'}
@@ -5293,7 +5352,7 @@ export default function Dashboard() {
                 {/* Workflow Cards */}
                 
                 {/* 0. Technical Specification Review Card */}
-                <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>1. Technical Specification Clearance</h4>
                     <span style={{ 
@@ -5317,7 +5376,7 @@ export default function Dashboard() {
                   )}
 
                   {/* Executive Controls: 2-Phase Sequence (1. Generate/Upload -> 2. Send to Clearance Team) */}
-                  {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && selectedTender.spec_verification_status !== 'Approved' && (
+                  {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.spec_verification_status !== 'Approved' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
                       {(!selectedTender.has_tech_spec && selectedTender.spec_verification_status !== 'Pending' && selectedTender.spec_verification_status !== 'Generated') ? (
                         /* PHASE 1: UPLOAD DOCUMENT TO GENERATE TECHNICAL SPECIFICATION */
@@ -5437,8 +5496,8 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* Clearance Team / Admin Action Controls */}
-                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'Admin' || (selectedTender.assigned_mis_member_spec && currentUser?.username === selectedTender.assigned_mis_member_spec)) && (selectedTender.spec_verification_status === 'Pending' || (currentUser?.role === 'Admin' && selectedTender.spec_verification_status !== 'Approved')) && (
+                  {/* Clearance Team Action Controls */}
+                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'MIS Team' || (selectedTender.assigned_mis_member_spec && currentUser?.username === selectedTender.assigned_mis_member_spec)) && selectedTender.spec_verification_status === 'Pending' && (
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
                       <button 
                         className="btn btn-primary" 
@@ -5479,8 +5538,8 @@ export default function Dashboard() {
                 </div>
 
                 {/* 1.5 TPC Manufacturer Pricing Verification Card */}
-                {currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                {isStage2Visible && (
+                  <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
                         2. Pricing Review & Verification (TPC & MIS)
@@ -5498,7 +5557,7 @@ export default function Dashboard() {
                     </div>
 
                     <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 12px 0', lineHeight: '1.4' }}>
-                      The TPC Team submits the Transfer Price (total production cost) to Admin & MIS Team. Admin or MIS Team then sets the Provided Price for the Tender Executive.
+                      The TPC Team submits the Transfer Price (total production cost) to Admin & MIS Team. MIS Team then sets the Provided Price for the Tender Executive.
                     </p>
 
                     {/* Executive: strictly hide TPC price per role security */}
@@ -5511,7 +5570,7 @@ export default function Dashboard() {
                           </div>
                         ) : selectedTender.current_stage === 'MIS_PRICING' ? (
                           <span style={{ color: 'var(--accent-yellow)', fontWeight: '600' }}>
-                            ⏳ TPC Team submitted Transfer Price. Awaiting Admin / MIS Team to configure Provided Price.
+                            ⏳ TPC Team submitted Transfer Price. Awaiting MIS Team to configure Provided Price.
                           </span>
                         ) : selectedTender.spec_verification_status === 'Approved' ? (
                           <span style={{ color: 'var(--accent-yellow)', fontWeight: '600' }}>
@@ -5543,7 +5602,7 @@ export default function Dashboard() {
                               )}
                             </div>
 
-                            {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin') && (
+                            {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team') && (
                               <div style={{ marginTop: selectedTender.tpc_purchase_price ? '8px' : '0' }}>
                                 <div style={{ display: 'flex', gap: '6px' }}>
                                   <input
@@ -5596,7 +5655,7 @@ export default function Dashboard() {
                         {/* If MIS Team / Admin and TPC price not yet entered */}
                         {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && !selectedTender.tpc_purchase_price && (
                           <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '11.5px', color: '#d97706' }}>
-                            ⏳ <strong>Awaiting TPC Transfer Price:</strong> TPC Team has not yet submitted total production cost. Once submitted, Admin or MIS Team can set Provided Price.
+                            ⏳ <strong>Awaiting TPC Transfer Price:</strong> TPC Team has not yet submitted total production cost. Once submitted, MIS Team can set Provided Price.
                           </div>
                         )}
 
@@ -5618,46 +5677,56 @@ export default function Dashboard() {
                                 </span>
                               ) : null}
                             </div>
-                            <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                              <input
-                                type="number"
-                                placeholder={selectedTender.mis_final_price ? `Update price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter Provided Price (₹)"}
-                                value={misFinalPriceInput}
-                                onChange={(e) => setMisFinalPriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
-                              />
-                              <button
-                                className="btn btn-primary"
-                                disabled={submittingMisPrice || !misFinalPriceInput}
-                                onClick={async () => {
-                                  if (!misFinalPriceInput || Number(misFinalPriceInput) <= 0) return;
-                                  setSubmittingMisPrice(true);
-                                  try {
-                                    const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/mis-price`, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ misFinalPrice: misFinalPriceInput })
-                                    });
-                                    const data = await res.json();
-                                    if (data.success) {
-                                      showToast(data.message || 'Provided price configured!', 'success');
-                                      setSelectedTender(prev => prev ? { ...prev, mis_final_price: Number(misFinalPriceInput), current_stage: 'BID_DOC_PENDING' } : null);
-                                      setMisFinalPriceInput('');
-                                      alert(data.message || 'Provided price sent to Tender Executive.');
-                                    } else {
-                                      showToast(data.error || 'Failed to update MIS price', 'error');
+                            {currentUser?.role === 'MIS Team' ? (
+                              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                                <input
+                                  type="number"
+                                  placeholder={selectedTender.mis_final_price ? `Update price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter Provided Price (₹)"}
+                                  value={misFinalPriceInput}
+                                  onChange={(e) => setMisFinalPriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                  style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
+                                />
+                                <button
+                                  className="btn btn-primary"
+                                  disabled={submittingMisPrice || !misFinalPriceInput}
+                                  onClick={async () => {
+                                    if (!misFinalPriceInput || Number(misFinalPriceInput) <= 0) return;
+                                    setSubmittingMisPrice(true);
+                                    try {
+                                      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/mis-price`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ misFinalPrice: misFinalPriceInput })
+                                      });
+                                      const data = await res.json();
+                                      if (data.success) {
+                                        showToast(data.message || 'Provided price configured!', 'success');
+                                        setSelectedTender(prev => prev ? { ...prev, mis_final_price: Number(misFinalPriceInput), current_stage: 'BID_DOC_PENDING' } : null);
+                                        setMisFinalPriceInput('');
+                                        alert(data.message || 'Provided price sent to Tender Executive.');
+                                      } else {
+                                        showToast(data.error || 'Failed to update MIS price', 'error');
+                                      }
+                                    } catch (e) {
+                                      showToast('Network error updating MIS price', 'error');
+                                    } finally {
+                                      setSubmittingMisPrice(false);
                                     }
-                                  } catch (e) {
-                                    showToast('Network error updating MIS price', 'error');
-                                  } finally {
-                                    setSubmittingMisPrice(false);
-                                  }
-                                }}
-                                style={{ fontSize: '11px', padding: '6px 12px' }}
-                              >
-                                {submittingMisPrice ? 'Saving...' : 'Send Provided Price to Executive'}
-                              </button>
-                            </div>
+                                  }}
+                                  style={{ fontSize: '11px', padding: '6px 12px' }}
+                                >
+                                  {submittingMisPrice ? 'Saving...' : 'Send Provided Price to Executive'}
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                                {selectedTender.mis_final_price ? (
+                                  <span>Provided Price configured by MIS Team: <strong>₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}</strong> (View Only for Admin)</span>
+                                ) : (
+                                  <span>Awaiting MIS Team to configure Provided Price (View Only for Admin).</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -5666,8 +5735,8 @@ export default function Dashboard() {
                 )}
                 
                 {/* 3. Preparation & Bid Documents ("Docs Prep") */}
-                {currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                {isStage3Visible && (
+                  <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>3. Preparation & Bid Documents ("Docs Prep")</h4>
                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px', backgroundColor: areDocsGenerated ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', color: areDocsGenerated ? '#10b981' : '#f59e0b', fontWeight: '600' }}>
@@ -5707,10 +5776,10 @@ export default function Dashboard() {
                             gap: '6px'
                           }}>
                             <span>🔒</span>
-                            <span><strong>Locked:</strong> Provided Price from Admin / MIS Team must be set before generating bid documents. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
+                            <span><strong>Locked:</strong> Provided Price from MIS Team must be set before generating bid documents. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
                           </div>
                         ) : (
-                          (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
+                          (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && (
                             <button 
                               className="btn btn-primary" 
                               style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
@@ -5759,7 +5828,7 @@ export default function Dashboard() {
                             📁 Working folder: <code>{selectedTender.working_path}</code>
                           </span>
                         )}
-                        {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && selectedTender.verification_status !== 'Approved' && (
+                        {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && (
                           <button 
                             className="btn btn-secondary" 
                             style={{ fontSize: '11px', padding: '4px 10px', alignSelf: 'flex-start', marginTop: '4px' }}
@@ -5774,8 +5843,8 @@ export default function Dashboard() {
                 )}
 
                 {/* 4. Generated Bid Documents Approval (MIS Team) */}
-                {currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && (areDocsGenerated || (selectedTender.verification_status && selectedTender.verification_status !== 'None')) && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                {isStage4Visible && (
+                  <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>4. Generated Bid Documents Approval (MIS Team)</h4>
                       <span style={{ 
@@ -5805,7 +5874,7 @@ export default function Dashboard() {
                           value={workingPath}
                           onChange={(e) => setWorkingPath(e.target.value)}
                           placeholder="e.g. /Shared/Tenders/2026/GEM-7324078"
-                          disabled={selectedTender.verification_status === 'Approved'}
+                          disabled={selectedTender.verification_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team')}
                           style={{ 
                             flexGrow: 1, 
                             padding: '8px 12px', 
@@ -5813,10 +5882,11 @@ export default function Dashboard() {
                             background: 'var(--bg-app)', 
                             border: '1px solid var(--border-color)', 
                             color: 'var(--text-primary)', 
-                            fontSize: '13px'
+                            fontSize: '13px',
+                            opacity: (selectedTender.verification_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team')) ? 0.6 : 1
                           }}
                         />
-                        {selectedTender.verification_status !== 'Approved' && (
+                        {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && (
                           <button 
                             className="btn btn-secondary" 
                             style={{ padding: '8px 12px', fontSize: '12px' }}
@@ -5848,7 +5918,7 @@ export default function Dashboard() {
                       </select>
                     </div>
 
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
+                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
                       <button 
                         className="btn btn-primary" 
                         style={{ width: '100%', padding: '8px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px' }}
@@ -5863,13 +5933,13 @@ export default function Dashboard() {
                       </button>
                     )}
 
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && selectedTender.verification_status === 'Pending' && (
+                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status === 'Pending' && (
                       <div style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#d97706', marginBottom: '12px' }}>
                         ⏳ <strong>Awaiting MIS Review:</strong> Bid documents package has been submitted. EMD Payment will unlock once the MIS Team approves.
                       </div>
                     )}
 
-                    {(selectedTender.verification_status === 'Pending' || (currentUser?.role === 'Admin' && selectedTender.verification_status !== 'Approved')) && (currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
+                    {selectedTender.verification_status === 'Pending' && (currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
                       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
                         <button 
                           className="btn btn-primary" 
@@ -5922,10 +5992,11 @@ export default function Dashboard() {
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <input 
                               type="text" 
-                              placeholder="Add review feedback..." 
+                              placeholder={currentUser?.role === 'Admin' ? "Discussion is read-only for Admin" : "Add review feedback..."} 
                               value={verificationCommentText} 
                               onChange={(e) => setVerificationCommentText(e.target.value)} 
-                              style={{ flexGrow: 1, padding: '4px 8px', fontSize: '11px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                              disabled={currentUser?.role === 'Admin'}
+                              style={{ flexGrow: 1, padding: '4px 8px', fontSize: '11px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', opacity: currentUser?.role === 'Admin' ? 0.7 : 1 }}
                             />
                             <button 
                               className="btn btn-primary" 
@@ -5934,6 +6005,7 @@ export default function Dashboard() {
                                 if (!verificationCommentText.trim()) return;
                                 await postComment('Verification', verificationCommentText);
                               }}
+                              disabled={currentUser?.role === 'Admin'}
                             >
                               Post
                             </button>
@@ -5945,8 +6017,8 @@ export default function Dashboard() {
                 )}
 
                 {/* 5. EMD Payment Card */}
-                {currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                {isStage5Visible && (
+                  <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>5. EMD Payment Details</h4>
                       <span style={{ 
@@ -5961,7 +6033,7 @@ export default function Dashboard() {
                       </span>
                     </div>
 
-                    {selectedTender.verification_status !== 'Approved' && currentUser?.role !== 'Admin' && (!selectedTender.payment_status || selectedTender.payment_status === 'None') ? (
+                    {selectedTender.verification_status !== 'Approved' && (!selectedTender.payment_status || selectedTender.payment_status === 'None') ? (
                       <div style={{
                         background: 'rgba(239, 68, 68, 0.05)',
                         border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -6085,7 +6157,7 @@ export default function Dashboard() {
                         )}
 
                         {/* MIS Verification Controls */}
-                        {(selectedTender.payment_status === 'Pending' || (currentUser?.role === 'Admin' && selectedTender.payment_status !== 'Approved')) && (currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
+                        {selectedTender.payment_status === 'Pending' && (currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
                             <button 
                               className="btn btn-primary" 
@@ -6126,10 +6198,11 @@ export default function Dashboard() {
                               <div style={{ display: 'flex', gap: '6px' }}>
                                 <input 
                                   type="text" 
-                                  placeholder="Discuss payment..." 
+                                  placeholder={currentUser?.role === 'Admin' ? "Discussion is read-only for Admin" : "Discuss payment..."} 
                                   value={emdCommentText} 
                                   onChange={(e) => setEmdCommentText(e.target.value)} 
-                                  style={{ flexGrow: 1, padding: '4px 8px', fontSize: '11px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                                  disabled={currentUser?.role === 'Admin'}
+                                  style={{ flexGrow: 1, padding: '4px 8px', fontSize: '11px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', opacity: currentUser?.role === 'Admin' ? 0.7 : 1 }}
                                 />
                                 <button 
                                   className="btn btn-primary" 
@@ -6138,6 +6211,7 @@ export default function Dashboard() {
                                     if (!emdCommentText.trim()) return;
                                     await postComment('Payment', emdCommentText);
                                   }}
+                                  disabled={currentUser?.role === 'Admin'}
                                 >
                                   Post
                                 </button>
@@ -6151,8 +6225,8 @@ export default function Dashboard() {
                 )}
 
                 {/* 4. Submission Card */}
-                {(selectedTender.verification_status === 'Approved' || currentUser?.role === 'Admin' || (selectedTender.submission_status && selectedTender.submission_status !== 'None') || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed') && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                {isStage6Visible && (
+                  <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>4. Submission Verification</h4>
                       <span style={{ 
@@ -6201,7 +6275,7 @@ export default function Dashboard() {
                       </button>
                     )}
 
-                    {(selectedTender.submission_status === 'Pending' || (currentUser?.role === 'Admin' && selectedTender.submission_status !== 'Approved')) && (currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
+                    {selectedTender.submission_status === 'Pending' && (currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
                       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
                         <button 
                           className="btn btn-primary" 
@@ -6235,10 +6309,11 @@ export default function Dashboard() {
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <input 
                               type="text" 
-                              placeholder="Discuss filing..." 
+                              placeholder={currentUser?.role === 'Admin' ? "Discussion is read-only for Admin" : "Discuss filing..."} 
                               value={submissionCommentText} 
                               onChange={(e) => setSubmissionCommentText(e.target.value)} 
-                              style={{ flexGrow: 1, padding: '4px 8px', fontSize: '11px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                              disabled={currentUser?.role === 'Admin'}
+                              style={{ flexGrow: 1, padding: '4px 8px', fontSize: '11px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', opacity: currentUser?.role === 'Admin' ? 0.7 : 1 }}
                             />
                             <button 
                               className="btn btn-primary" 
@@ -6247,6 +6322,7 @@ export default function Dashboard() {
                                 if (!submissionCommentText.trim()) return;
                                 await postComment('Submission', submissionCommentText);
                               }}
+                              disabled={currentUser?.role === 'Admin'}
                             >
                               Post
                             </button>
@@ -6258,11 +6334,11 @@ export default function Dashboard() {
                 )}
 
                 {/* 5. Final Outcome Card */}
-                {(selectedTender.submission_status === 'Approved' || selectedTender.outcome_status === 'Pending' || selectedTender.current_stage === 'WIN_LOSS_PENDING' || currentUser?.role === 'Admin' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed' || selectedTender.status === 'Won' || selectedTender.status === 'Lost' || selectedTender.status === 'Awarded' || selectedTender.status === 'Not Awarded') && (() => {
+                {isStage7Visible && (() => {
                   const isWon = selectedTender.status === 'Awarded' || selectedTender.status === 'Won' || selectedTender.outcome_status === 'Won' || selectedTender.current_stage === 'WON';
                   const isLost = selectedTender.status === 'Not Awarded' || selectedTender.status === 'Lost' || selectedTender.outcome_status === 'Lost' || selectedTender.current_stage === 'LOST';
                   return (
-                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>5. Final Outcome Verification</h4>
                         <span style={{ 
@@ -6778,25 +6854,9 @@ export default function Dashboard() {
         <span>{toast.message}</span>
       </div>
 
-      {/* Floating Active Session Indicator */}
+      {/* Floating Active Session Indicator - Positioned clear of sidebar and logout button */}
       {currentUser && (
-        <div style={{
-          position: 'fixed',
-          bottom: '24px',
-          left: '24px',
-          background: 'rgba(30, 30, 40, 0.85)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid var(--primary)',
-          borderRadius: '10px',
-          padding: '10px 16px',
-          zIndex: 9999,
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          pointerEvents: 'none',
-          fontFamily: 'system-ui, -apple-system, sans-serif'
-        }}>
+        <div className="active-session-indicator">
           <div style={{
             width: '8px',
             height: '8px',
@@ -6804,18 +6864,18 @@ export default function Dashboard() {
             backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' :
               currentUser.role === 'MIS Team' ? '#10b981' :
               currentUser.role === 'Clearance Team' ? '#8b5cf6' :
-              currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : '#818cf8',
-            boxShadow: `0 0 8px ${currentUser.role === 'Admin' ? '#f59e0b' :
+              currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
+            boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' :
               currentUser.role === 'MIS Team' ? '#10b981' :
               currentUser.role === 'Clearance Team' ? '#8b5cf6' :
-              currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : '#818cf8'}`
+              currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
           }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px' }}>
               Active Session
             </span>
             <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '600' }}>
-              {currentUser.username} ({currentUser.role})
+              {currentUser.username} • <span style={{ color: 'var(--primary)' }}>{currentUser.role}</span>
             </span>
           </div>
         </div>

@@ -562,7 +562,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             <Clock size={16} />
             <span>Pending Approvals</span>
             <span style={{
-              background: adminTab === 'PENDING' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+              background: adminTab === 'PENDING' ? 'rgba(255,255,255,0.25)' : 'var(--bg-subtle, rgba(255,255,255,0.08))',
               color: adminTab === 'PENDING' ? '#ffffff' : 'var(--text-secondary)',
               borderRadius: '12px',
               padding: '2px 8px',
@@ -594,7 +594,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             <History size={16} />
             <span>Approvals History</span>
             <span style={{
-              background: adminTab === 'HISTORY' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+              background: adminTab === 'HISTORY' ? 'rgba(255,255,255,0.25)' : 'var(--bg-subtle, rgba(255,255,255,0.08))',
               color: adminTab === 'HISTORY' ? '#ffffff' : 'var(--text-secondary)',
               borderRadius: '12px',
               padding: '2px 8px',
@@ -714,7 +714,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   {cfg.label}
                   {count > 0 && (
                     <span style={{
-                      background: active ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.06)',
+                      background: active ? 'rgba(255,255,255,0.22)' : 'var(--bg-subtle, rgba(255,255,255,0.06))',
                       color: active ? '#ffffff' : 'var(--text-secondary)',
                       borderRadius: '10px', padding: '1px 6px', fontSize: '10px', fontWeight: '700'
                     }}>{count}</span>

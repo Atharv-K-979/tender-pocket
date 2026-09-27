@@ -23,7 +23,9 @@ import {
   MapPin,
   Tag,
   BookOpen,
-  ExternalLink
+  ExternalLink,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
 
@@ -42,7 +44,8 @@ export default function TenderDetailPage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
-  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin';
+  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
+  const isAdmin = currentUser?.role === 'Admin';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const techSpecUploadInFlight = useRef(false);
 
@@ -195,6 +198,13 @@ export default function TenderDetailPage() {
       router.push('/');
     }
   }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    localStorage.setItem('theme', nextTheme);
+  };
 
   // Fetch data once user is loaded with auto-sync polling
   useEffect(() => {
@@ -669,6 +679,25 @@ export default function TenderDetailPage() {
     }
   })() : false;
 
+  // Sequential Pipeline Stage Visibility:
+  // When a tender is at stage 1, do not show remaining stages in the frontend to any user.
+  // The horizontal sections in the tender are only visible if previous required changes are completed.
+  const isStage1Complete = Boolean(selectedTender && selectedTender.spec_verification_status === 'Approved');
+  const isStage2Complete = (isStage1Complete && Boolean(selectedTender && selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0)) || isOutcomeState;
+  const isStage3Complete = (isStage2Complete && areDocsGenerated) || isOutcomeState;
+  const isStage4Complete = (isStage3Complete && Boolean(selectedTender && selectedTender.verification_status === 'Approved')) || isOutcomeState;
+  const isStage5Complete = (isStage4Complete && Boolean(selectedTender && selectedTender.payment_status === 'Approved')) || isOutcomeState;
+  const isStage6Complete = (isStage5Complete && Boolean(selectedTender && (selectedTender.submission_status === 'Approved' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed'))) || isOutcomeState;
+
+  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team';
+  const isStage1Visible = true; // Stage 1 is always visible
+  const isStage2Visible = isOperationalRole && (isStage1Complete || isOutcomeState);
+  const isStage3Visible = isOperationalRole && (isStage2Complete || isOutcomeState);
+  const isStage4Visible = isOperationalRole && (isStage3Complete || isOutcomeState);
+  const isStage5Visible = isOperationalRole && (isStage4Complete || isOutcomeState);
+  const isStage6Visible = isOperationalRole && (isStage5Complete || isOutcomeState);
+  const isStage7Visible = isOperationalRole && (isStage6Complete || isOutcomeState);
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-app)', color: 'var(--text-primary)', padding: '24px' }}>
       
@@ -701,11 +730,22 @@ export default function TenderDetailPage() {
               </div>
             )}
           </div>
-          {selectedTender && (
-            <span className={`status-badge ${selectedTender.status}`} style={{ fontSize: '13px', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
-              {selectedTender.status}
-            </span>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button 
+              className="theme-toggle-btn" 
+              onClick={toggleTheme}
+              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '12px' }}
+            >
+              {theme === 'dark' ? <Sun size={15} style={{ color: '#f59e0b' }} /> : <Moon size={15} style={{ color: '#6366f1' }} />}
+              <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+            </button>
+            {selectedTender && (
+              <span className={`status-badge ${selectedTender.status}`} style={{ fontSize: '13px', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
+                {selectedTender.status}
+              </span>
+            )}
+          </div>
         </header>
 
         {loadingDetails || !selectedTender ? (
@@ -751,7 +791,7 @@ export default function TenderDetailPage() {
                   <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>Executive & Quantities Assignment</h3>
-                      {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
+                      {(currentUser?.role === 'MIS Team') && (
                         <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }} onClick={saveNotes} disabled={notesSaving}>
                           {notesSaving ? 'Saving...' : 'Save Assignment'}
                         </button>
@@ -770,7 +810,7 @@ export default function TenderDetailPage() {
                             </span>
                           )}
                         </div>
-                        {currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin' ? (
+                        {currentUser?.role === 'MIS Team' ? (
                           <select
                             value={misExecutive}
                             onChange={(e) => setMisExecutive(e.target.value)}
@@ -818,6 +858,7 @@ export default function TenderDetailPage() {
                             type="number"
                             placeholder="Bid Qty"
                             value={bidQty}
+                            disabled={currentUser?.role !== 'MIS Team'}
                             onChange={(e) => setBidQty(e.target.value === '' ? '' : Number(e.target.value))}
                             style={{
                               padding: '10px 12px',
@@ -825,7 +866,8 @@ export default function TenderDetailPage() {
                               border: '1px solid var(--border-color)',
                               background: 'var(--bg-app)',
                               color: 'var(--text-primary)',
-                              fontSize: '13px'
+                              fontSize: '13px',
+                              opacity: currentUser?.role !== 'MIS Team' ? 0.7 : 1
                             }}
                           />
                         </div>
@@ -838,6 +880,7 @@ export default function TenderDetailPage() {
                             type="number"
                             placeholder="Quoted Qty"
                             value={quotedQty}
+                            disabled={currentUser?.role !== 'MIS Team'}
                             onChange={(e) => setQuotedQty(e.target.value === '' ? '' : Number(e.target.value))}
                             style={{
                               padding: '10px 12px',
@@ -845,7 +888,8 @@ export default function TenderDetailPage() {
                               border: '1px solid var(--border-color)',
                               background: 'var(--bg-app)',
                               color: 'var(--text-primary)',
-                              fontSize: '13px'
+                              fontSize: '13px',
+                              opacity: currentUser?.role !== 'MIS Team' ? 0.7 : 1
                             }}
                           />
                         </div>
@@ -857,14 +901,17 @@ export default function TenderDetailPage() {
                   <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>Internal Bidding Notes</h3>
-                      <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }} onClick={saveNotes} disabled={notesSaving}>
-                        {notesSaving ? 'Saving...' : 'Save Notes'}
-                      </button>
+                      {!isAdmin && (
+                        <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }} onClick={saveNotes} disabled={notesSaving}>
+                          {notesSaving ? 'Saving...' : 'Save Notes'}
+                        </button>
+                      )}
                     </div>
                     <textarea
                       id="notes-textarea"
-                      placeholder="Record credentials, contact details, pricing estimates, task checklists, or notes for this bid..."
+                      placeholder={isAdmin ? "Internal bidding notes are view-only for Admin." : "Record credentials, contact details, pricing estimates, task checklists, or notes for this bid..."}
                       value={tenderNotes}
+                      disabled={isAdmin}
                       onChange={(e) => setTenderNotes(e.target.value)}
                       style={{ 
                         width: '100%',
@@ -878,7 +925,8 @@ export default function TenderDetailPage() {
                         fontSize: '12.5px',
                         lineHeight: '1.5',
                         outline: 'none',
-                        resize: 'vertical'
+                        resize: 'vertical',
+                        opacity: isAdmin ? 0.8 : 1
                       }}
                     />
                   </div>
@@ -1170,8 +1218,8 @@ export default function TenderDetailPage() {
                       </div>
                     ) : null}
 
-                    {/* Executive Controls: 2-Phase Sequence (1. Generate/Upload -> 2. Send to Clearance Team) */}
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive') && selectedTender.spec_verification_status !== 'Approved' && (
+                    {/* Executive & MIS Team Controls: 2-Phase Sequence (1. Generate/Upload -> 2. Send to Clearance Team) */}
+                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.spec_verification_status !== 'Approved' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                         {(!selectedTender.has_tech_spec && selectedTender.spec_verification_status !== 'Pending' && selectedTender.spec_verification_status !== 'Generated') ? (
                           /* PHASE 1: UPLOAD DOCUMENT TO GENERATE TECHNICAL SPECIFICATION */
@@ -1195,7 +1243,7 @@ export default function TenderDetailPage() {
                             </div>
 
                             <button 
-                              className="btn btn-primary"
+                              className="btn btn-primary" 
                               disabled={uploadingTechSpec}
                               style={{ width: '100%', justifyContent: 'center', fontSize: '12.5px', marginTop: '4px' }}
                               onClick={async () => {
@@ -1291,8 +1339,8 @@ export default function TenderDetailPage() {
                       </div>
                     )}
 
-                    {/* Clearance Team Verification Controls */}
-                    {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'Admin' || (selectedTender.assigned_mis_member_spec && currentUser?.username === selectedTender.assigned_mis_member_spec)) && (selectedTender.spec_verification_status === 'Pending' || (currentUser?.role === 'Admin' && selectedTender.spec_verification_status !== 'Approved')) && (
+                    {/* Clearance Team / MIS Team Verification Controls */}
+                    {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'MIS Team' || (selectedTender.assigned_mis_member_spec && currentUser?.username === selectedTender.assigned_mis_member_spec)) && selectedTender.spec_verification_status === 'Pending' && (
 
                       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
                         <button 
@@ -1337,7 +1385,7 @@ export default function TenderDetailPage() {
                   <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                     {(() => {
                       const phaseComments = comments.filter(c => c.phase === 'Specification' || c.phase === 'Spec');
-                      const isReadonlyRole = currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team';
+                      const isReadonlyRole = currentUser?.role === 'Admin';
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
                           <div>
@@ -1364,7 +1412,7 @@ export default function TenderDetailPage() {
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <input 
                               type="text" 
-                              placeholder={isReadonlyRole ? "Discussion is read-only for Admin / MIS Team" : "Discuss specifications..."} 
+                              placeholder={isReadonlyRole ? "Discussion is read-only for Admin" : "Discuss specifications..."} 
                               value={specCommentText} 
                               onChange={(e) => setSpecCommentText(e.target.value)} 
                               disabled={isReadonlyRole}
@@ -1388,7 +1436,7 @@ export default function TenderDetailPage() {
               </div>
 
               {/* 2. Pricing Review & Verification (TPC & MIS) Card */}
-              {currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && (
+              {isStage2Visible && (
                 <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1454,8 +1502,8 @@ export default function TenderDetailPage() {
                             )}
                           </div>
 
-                          {/* If TPC Team or Admin and no price or wanting to update */}
-                          {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin') && (
+                          {/* If TPC Team, Admin or MIS Team and no price or wanting to update */}
+                          {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team') && (
                             <div style={{ marginTop: selectedTender.tpc_purchase_price ? '10px' : '0' }}>
                               <div style={{ display: 'flex', gap: '8px' }}>
                                 <input
@@ -1508,11 +1556,11 @@ export default function TenderDetailPage() {
                       {/* If MIS Team or Admin and TPC price not yet entered */}
                       {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && !selectedTender.tpc_purchase_price && (
                         <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '12px', color: '#d97706' }}>
-                          ⏳ <strong>Awaiting TPC Transfer Price:</strong> The TPC Team has not yet submitted the total production cost. Once submitted, Admin or MIS Team can configure the Provided Price for the Tender Executive.
+                          ⏳ <strong>Awaiting TPC Transfer Price:</strong> The TPC Team has not yet submitted the total production cost. Once submitted, MIS Team can configure the Provided Price for the Tender Executive.
                         </div>
                       )}
 
-                      {/* Section B: Provided Price Configuration (Visible to MIS Team & Admin) */}
+                      {/* Section B: Provided Price Configuration (Editable by MIS Team, View-Only for Admin) */}
                       {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
                         <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -1530,46 +1578,56 @@ export default function TenderDetailPage() {
                               </span>
                             ) : null}
                           </div>
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                            <input
-                              type="number"
-                              placeholder={selectedTender.mis_final_price ? `Update Provided Price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter Provided Price (₹)"}
-                              value={misFinalPriceInput}
-                              onChange={(e) => setMisFinalPriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                              style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12.5px' }}
-                            />
-                            <button
-                              className="btn btn-primary"
-                              disabled={submittingMisPrice || !misFinalPriceInput}
-                              onClick={async () => {
-                                if (!misFinalPriceInput || Number(misFinalPriceInput) <= 0) return;
-                                setSubmittingMisPrice(true);
-                                try {
-                                  const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/mis-price`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ misFinalPrice: misFinalPriceInput })
-                                  });
-                                  const data = await res.json();
-                                  if (data.success) {
-                                    showToast(data.message || 'Provided price configured!', 'success');
-                                    setSelectedTender(prev => prev ? { ...prev, mis_final_price: Number(misFinalPriceInput), current_stage: 'BID_DOC_PENDING' } : null);
-                                    setMisFinalPriceInput('');
-                                    alert(data.message || 'Provided Price released to Tender Executive.');
-                                  } else {
-                                    showToast(data.error || 'Failed to update Provided Price', 'error');
+                          {currentUser?.role === 'MIS Team' ? (
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                              <input
+                                type="number"
+                                placeholder={selectedTender.mis_final_price ? `Update Provided Price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter Provided Price (₹)"}
+                                value={misFinalPriceInput}
+                                onChange={(e) => setMisFinalPriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12.5px' }}
+                              />
+                              <button
+                                className="btn btn-primary"
+                                disabled={submittingMisPrice || !misFinalPriceInput}
+                                onClick={async () => {
+                                  if (!misFinalPriceInput || Number(misFinalPriceInput) <= 0) return;
+                                  setSubmittingMisPrice(true);
+                                  try {
+                                    const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/mis-price`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ misFinalPrice: misFinalPriceInput })
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      showToast(data.message || 'Provided price configured!', 'success');
+                                      setSelectedTender(prev => prev ? { ...prev, mis_final_price: Number(misFinalPriceInput), current_stage: 'BID_DOC_PENDING' } : null);
+                                      setMisFinalPriceInput('');
+                                      alert(data.message || 'Provided Price released to Tender Executive.');
+                                    } else {
+                                      showToast(data.error || 'Failed to update Provided Price', 'error');
+                                    }
+                                  } catch (e) {
+                                    showToast('Network error updating Provided Price', 'error');
+                                  } finally {
+                                    setSubmittingMisPrice(false);
                                   }
-                                } catch (e) {
-                                  showToast('Network error updating Provided Price', 'error');
-                                } finally {
-                                  setSubmittingMisPrice(false);
-                                }
-                              }}
-                              style={{ fontSize: '12px', padding: '8px 14px' }}
-                            >
-                              {submittingMisPrice ? 'Saving...' : 'Send Provided Price to Executive'}
-                            </button>
-                          </div>
+                                }}
+                                style={{ fontSize: '12px', padding: '8px 14px' }}
+                              >
+                                {submittingMisPrice ? 'Saving...' : 'Send Provided Price to Executive'}
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                              {selectedTender.mis_final_price ? (
+                                <span>Provided Price configured by MIS Team: <strong>₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}</strong> (View Only for Admin)</span>
+                              ) : (
+                                <span>Awaiting MIS Team to configure Provided Price (View Only for Admin).</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1578,7 +1636,7 @@ export default function TenderDetailPage() {
               )}
 
               {/* 3. Preparation & Bid Documents ("Docs Prep") Card */}
-              {currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && (
+              {isStage3Visible && (
                 <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>3. Preparation & Bid Documents ("Docs Prep")</h4>
@@ -1621,10 +1679,10 @@ export default function TenderDetailPage() {
                         marginTop: '8px'
                       }}>
                         <span>🔒</span>
-                        <span><strong>Locked:</strong> Provided Price from Admin / MIS Team is required before bid documents can be generated. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
+                        <span><strong>Locked:</strong> Provided Price from MIS Team is required before bid documents can be generated. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
                       </div>
                     ) : (
-                      (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
+                      (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && (
                         <button 
                           className="btn btn-primary" 
                           style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
@@ -1673,7 +1731,7 @@ export default function TenderDetailPage() {
                         📁 Working folder: <code>{selectedTender.working_path}</code>
                       </span>
                     )}
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && selectedTender.verification_status !== 'Approved' && (
+                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && (
                       <button 
                         className="btn btn-secondary" 
                         style={{ fontSize: '11px', padding: '4px 10px', alignSelf: 'flex-start', marginTop: '4px' }}
@@ -1688,7 +1746,7 @@ export default function TenderDetailPage() {
               )}
 
               {/* 4. Generated Bid Documents Approval (MIS Team) Card */}
-              {currentUser?.role !== 'Specification Team' && (areDocsGenerated || currentUser?.role === 'Admin' || selectedTender.verification_status !== 'None') && (
+              {isStage4Visible && (
                 <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
                     
@@ -1747,7 +1805,7 @@ export default function TenderDetailPage() {
                             value={workingPath}
                             onChange={(e) => setWorkingPath(e.target.value)}
                             placeholder="e.g. /Shared/Tenders/2026/GEM-7324078"
-                            disabled={(currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Admin') || selectedTender.verification_status === 'Approved'}
+                            disabled={(currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team') || selectedTender.verification_status === 'Approved'}
                             style={{ 
                               flexGrow: 1, 
                               padding: '8px 12px', 
@@ -1756,10 +1814,10 @@ export default function TenderDetailPage() {
                               border: '1px solid var(--border-color)', 
                               color: 'var(--text-primary)', 
                               fontSize: '13px',
-                              opacity: ((currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Admin') || selectedTender.verification_status === 'Approved') ? 0.6 : 1
+                              opacity: ((currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team') || selectedTender.verification_status === 'Approved') ? 0.6 : 1
                             }}
                           />
-                          {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Admin') && selectedTender.verification_status !== 'Approved' && (
+                          {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && (
                             <button 
                               className="btn btn-secondary" 
                               style={{ padding: '8px 12px', fontSize: '12px' }}
@@ -1772,13 +1830,13 @@ export default function TenderDetailPage() {
                       </div>
 
                       {/* Display assigned MIS Team Representative */}
-                      {((selectedTender.verification_status === 'Pending' || selectedTender.verification_status === 'Approved' || currentUser?.role !== 'MIS Executive') && selectedTender.assigned_mis_member_docs) ? (
+                      {((selectedTender.verification_status === 'Pending' || selectedTender.verification_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team')) && selectedTender.assigned_mis_member_docs) ? (
                         <div style={{ marginBottom: '16px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                           <strong>Target MIS Representative:</strong> <span style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_docs}</span>
                         </div>
                       ) : null}
 
-                      {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Admin') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
+                      {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600' }}>TARGET MIS TEAM REPRESENTATIVE</label>
@@ -1813,7 +1871,7 @@ export default function TenderDetailPage() {
                         </div>
                       )}
 
-                      {(selectedTender.verification_status === 'Pending' || (currentUser?.role === 'Admin' && selectedTender.verification_status !== 'Approved')) && (selectedTender.assigned_mis_member_docs && currentUser?.username === selectedTender.assigned_mis_member_docs || currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
+                      {selectedTender.verification_status === 'Pending' && ((selectedTender.assigned_mis_member_docs && currentUser?.username === selectedTender.assigned_mis_member_docs) || currentUser?.role === 'MIS Team') && (
                         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
                           <button 
                             className="btn btn-primary" 
@@ -1888,7 +1946,7 @@ export default function TenderDetailPage() {
               )}
 
               {/* 5. EMD Payment Card */}
-              {currentUser?.role !== 'Specification Team' && (
+              {isStage5Visible && (
                 <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
                     
@@ -1908,7 +1966,7 @@ export default function TenderDetailPage() {
                         </span>
                       </div>
 
-                      {selectedTender.verification_status !== 'Approved' && currentUser?.role !== 'Admin' && (!selectedTender.payment_status || selectedTender.payment_status === 'None') ? (
+                      {selectedTender.verification_status !== 'Approved' && (!selectedTender.payment_status || selectedTender.payment_status === 'None') ? (
                         <div style={{
                           background: 'rgba(239, 68, 68, 0.05)',
                           border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -2036,7 +2094,7 @@ export default function TenderDetailPage() {
                           )}
 
                           {/* MIS Verification Controls */}
-                          {(selectedTender.payment_status === 'Pending' || (currentUser?.role === 'Admin' && selectedTender.payment_status !== 'Approved')) && (selectedTender.assigned_mis_member_emd && currentUser?.username === selectedTender.assigned_mis_member_emd || currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
+                          {selectedTender.payment_status === 'Pending' && ((selectedTender.assigned_mis_member_emd && currentUser?.username === selectedTender.assigned_mis_member_emd) || currentUser?.role === 'MIS Team') && (
                             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', marginTop: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
                               <button 
                                 className="btn btn-primary" 
@@ -2113,7 +2171,7 @@ export default function TenderDetailPage() {
               )}
 
               {/* 6. Submission Verification Card */}
-              {currentUser?.role !== 'Specification Team' && (selectedTender.payment_status === 'Approved' || currentUser?.role === 'Admin' || (selectedTender.submission_status && selectedTender.submission_status !== 'None')) && (
+              {isStage6Visible && (
                 <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
                     
@@ -2172,7 +2230,7 @@ export default function TenderDetailPage() {
                         </div>
                       )}
 
-                      {(selectedTender.submission_status === 'Pending' || (currentUser?.role === 'Admin' && selectedTender.submission_status !== 'Approved')) && (currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team' || (selectedTender.assigned_mis_member_submission && currentUser?.username === selectedTender.assigned_mis_member_submission)) && (
+                      {selectedTender.submission_status === 'Pending' && (currentUser?.role === 'MIS Team' || (selectedTender.assigned_mis_member_submission && currentUser?.username === selectedTender.assigned_mis_member_submission)) && (
                         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                           <button 
                             className="btn btn-primary" 
@@ -2215,15 +2273,17 @@ export default function TenderDetailPage() {
                             <div style={{ display: 'flex', gap: '6px' }}>
                               <input 
                                 type="text" 
-                                placeholder="Discuss submission..." 
+                                placeholder={currentUser?.role === 'Admin' ? "Discussion is read-only for Admin" : "Discuss submission..."} 
                                 value={submissionCommentText} 
                                 onChange={(e) => setSubmissionCommentText(e.target.value)} 
-                                style={{ flexGrow: 1, padding: '6px 10px', fontSize: '11.5px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                                disabled={currentUser?.role === 'Admin'}
+                                style={{ flexGrow: 1, padding: '6px 10px', fontSize: '11.5px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', opacity: currentUser?.role === 'Admin' ? 0.7 : 1 }}
                               />
                               <button 
                                 className="btn btn-primary" 
                                 style={{ padding: '6px 12px', fontSize: '11px' }}
                                 onClick={() => postComment('Submission')}
+                                disabled={currentUser?.role === 'Admin'}
                               >
                                 Post
                               </button>
@@ -2238,7 +2298,7 @@ export default function TenderDetailPage() {
               )}
 
               {/* 5. Final Outcome Declaration Card */}
-              {currentUser?.role !== 'Specification Team' && (selectedTender.submission_status === 'Approved' || selectedTender.outcome_status === 'Pending' || selectedTender.current_stage === 'WIN_LOSS_PENDING' || currentUser?.role === 'Admin' || selectedTender.status === 'Won' || selectedTender.status === 'Lost' || selectedTender.status === 'Awarded' || selectedTender.status === 'Not Awarded' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed') && (() => {
+              {isStage7Visible && (() => {
                 const isWon = selectedTender.status === 'Awarded' || selectedTender.status === 'Won' || selectedTender.outcome_status === 'Won' || selectedTender.current_stage === 'WON';
                 const isLost = selectedTender.status === 'Not Awarded' || selectedTender.status === 'Lost' || selectedTender.outcome_status === 'Lost' || selectedTender.current_stage === 'LOST';
                 return (
@@ -2728,36 +2788,20 @@ export default function TenderDetailPage() {
 
       {/* Floating Active Session Indicator */}
       {currentUser && (
-        <div style={{
-          position: 'fixed',
-          bottom: '24px',
-          left: '24px',
-          background: 'rgba(30, 30, 40, 0.85)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid var(--primary)',
-          borderRadius: '10px',
-          padding: '10px 16px',
-          zIndex: 9999,
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          pointerEvents: 'none',
-          fontFamily: 'system-ui, -apple-system, sans-serif'
-        }}>
+        <div className="active-session-indicator" style={{ left: '24px' }}>
           <div style={{
             width: '8px',
             height: '8px',
             borderRadius: '50%',
-            backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : '#818cf8',
-            boxShadow: `0 0 8px ${currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : '#818cf8'}`
+            backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
+            boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
           }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px' }}>
               Active Session
             </span>
             <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '600' }}>
-              {currentUser.username} ({currentUser.role})
+              {currentUser.username} • <span style={{ color: 'var(--primary)' }}>{currentUser.role}</span>
             </span>
           </div>
         </div>

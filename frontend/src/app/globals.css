@@ -5,34 +5,38 @@
   --font-heading: 'Outfit', -apple-system, sans-serif;
   --font-body: 'Plus Jakarta Sans', -apple-system, sans-serif;
 
-  /* Harmonious Color Palette - Light Mode Default */
-  --bg-app: #f6f8fa;
+  /* Harmonious Color Palette - Smooth & Modern Light Mode */
+  --bg-app: #f8fafc;
   --bg-sidebar: #ffffff;
-  --bg-card: rgba(255, 255, 255, 0.8);
-  --card-bg: rgba(255, 255, 255, 0.8);
-  --bg-card-hover: rgba(255, 255, 255, 0.95);
-  --border-color: rgba(226, 232, 240, 0.8);
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --card-bg: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --bg-subtle: #f1f5f9;
+  --bg-element: #e2e8f0;
+  --border-color: #e2e8f0;
+  --border-subtle: #f1f5f9;
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
   
-  --primary: #6366f1;
-  --primary-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  --primary-glow: rgba(99, 102, 241, 0.15);
+  --primary: #4f46e5;
+  --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  --primary-glow: rgba(79, 70, 229, 0.12);
   
-  --accent-blue: #0ea5e9;
-  --accent-green: #10b981;
-  --accent-yellow: #f59e0b;
-  --accent-red: #ef4444;
-  --accent-purple: #8b5cf6;
+  --accent-blue: #0284c7;
+  --accent-green: #059669;
+  --accent-yellow: #d97706;
+  --accent-red: #dc2626;
+  --accent-purple: #7c3aed;
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 20px -2px rgba(148, 163, 184, 0.12), 0 2px 8px -1px rgba(148, 163, 184, 0.08);
-  --shadow-lg: 0 12px 30px -4px rgba(148, 163, 184, 0.18), 0 4px 12px -2px rgba(148, 163, 184, 0.12);
+  --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.06), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
   
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.6);
-  --glass-blur: blur(16px);
+  --glass-bg: #ffffff;
+  --glass-border: #e2e8f0;
+  --glass-blur: blur(0px);
   
   --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -44,10 +48,14 @@
   /* Dark Mode Palette */
   --bg-app: #030712;
   --bg-sidebar: #0b0f19;
+  --bg-surface: #0f172a;
   --bg-card: rgba(15, 23, 42, 0.45);
   --card-bg: rgba(15, 23, 42, 0.45);
   --bg-card-hover: rgba(15, 23, 42, 0.65);
+  --bg-subtle: rgba(255, 255, 255, 0.025);
+  --bg-element: rgba(255, 255, 255, 0.05);
   --border-color: rgba(30, 41, 59, 0.7);
+  --border-subtle: rgba(255, 255, 255, 0.05);
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
@@ -150,28 +158,31 @@ h1, h2, h3, h4, h5, h6 {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex-grow: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
 }
 
 .menu-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  border-radius: 12px;
+  padding: 11px 14px;
+  border-radius: 10px;
   background-color: transparent;
   border: none;
   color: var(--text-secondary);
   font-weight: 500;
-  font-size: 14px;
+  font-size: 13.5px;
   text-decoration: none;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .menu-item:hover {
-  background-color: var(--border-color);
+  background-color: var(--bg-subtle);
   color: var(--text-primary);
 }
 
@@ -184,10 +195,11 @@ h1, h2, h3, h4, h5, h6 {
 .sidebar-footer {
   margin-top: auto;
   border-top: 1px solid var(--border-color);
-  padding-top: 20px;
+  padding-top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .theme-toggle-btn {
@@ -195,21 +207,60 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px;
+  padding: 8px 12px;
   border-radius: 10px;
   border: 1px solid var(--border-color);
   background: var(--bg-card);
   color: var(--text-secondary);
   cursor: pointer;
   font-family: var(--font-body);
-  font-weight: 500;
-  font-size: 13px;
+  font-weight: 600;
+  font-size: 12.5px;
   transition: all var(--transition-fast);
 }
 
 .theme-toggle-btn:hover {
   background: var(--bg-card-hover);
   color: var(--text-primary);
+  border-color: var(--primary);
+}
+
+/* Active Session Floating Indicator */
+.active-session-indicator {
+  position: fixed;
+  bottom: 20px;
+  left: calc(var(--sidebar-width) + 20px);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 8px 14px;
+  z-index: 90;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  font-family: var(--font-body);
+  transition: all var(--transition-fast);
+  backdrop-filter: blur(10px);
+}
+
+[data-theme="dark"] .active-session-indicator {
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 768px) {
+  .active-session-indicator {
+    left: 20px;
+    bottom: 16px;
+  }
+}
+
+@media (min-width: 769px) {
+  .dashboard-container > .active-session-indicator {
+    display: none;
+  }
 }
 
 /* Main Dashboard Panel */
@@ -539,55 +590,194 @@ h1, h2, h3, h4, h5, h6 {
 .tender-status-badge {
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 20px;
+  padding: 3px 8px;
+  border-radius: 6px;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
 }
 
 .tender-status-badge.new {
-  background-color: rgba(56, 189, 248, 0.1);
-  color: #38bdf8;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border-color: #bae6fd;
 }
 
 .tender-status-badge.participating {
-  background-color: rgba(99, 102, 241, 0.1);
-  color: #818cf8;
+  background-color: #eef2ff;
+  color: #4338ca;
+  border-color: #c7d2fe;
 }
 
 .tender-status-badge.not-participating {
-  background-color: rgba(148, 163, 184, 0.15);
-  color: #94a3b8;
+  background-color: #f1f5f9;
+  color: #475569;
+  border-color: #e2e8f0;
 }
 
 .tender-status-badge.lapsed {
-  background-color: rgba(244, 63, 94, 0.1);
-  color: #f43f5e;
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
 }
 
 .tender-status-badge.submitted {
-  background-color: rgba(167, 139, 250, 0.15);
-  color: #a78bfa;
+  background-color: #f5f3ff;
+  color: #6d28d9;
+  border-color: #ddd6fe;
 }
 
 .tender-status-badge.won {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background-color: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
 }
 
 .tender-status-badge.lost {
-  background-color: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
 }
 
 .tender-status-badge.missed-deadline {
-  background-color: rgba(244, 63, 94, 0.15);
-  color: #f43f5e;
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
 }
 
 .tender-status-badge.missed-opportunity {
+  background-color: #f1f5f9;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+[data-theme="dark"] .tender-status-badge.new {
+  background-color: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
+[data-theme="dark"] .tender-status-badge.participating {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+[data-theme="dark"] .tender-status-badge.not-participating {
+  background-color: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+[data-theme="dark"] .tender-status-badge.lapsed {
+  background-color: rgba(244, 63, 94, 0.15);
+  color: #f87171;
+  border-color: rgba(244, 63, 94, 0.25);
+}
+
+[data-theme="dark"] .tender-status-badge.submitted {
+  background-color: rgba(167, 139, 250, 0.15);
+  color: #c084fc;
+  border-color: rgba(167, 139, 250, 0.25);
+}
+
+[data-theme="dark"] .tender-status-badge.won {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+[data-theme="dark"] .tender-status-badge.lost {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+[data-theme="dark"] .tender-status-badge.missed-deadline {
+  background-color: rgba(244, 63, 94, 0.15);
+  color: #f87171;
+  border-color: rgba(244, 63, 94, 0.25);
+}
+
+[data-theme="dark"] .tender-status-badge.missed-opportunity {
   background-color: rgba(100, 116, 139, 0.15);
-  color: #64748b;
+  color: #94a3b8;
+  border-color: rgba(100, 116, 139, 0.25);
+}
+
+/* Detail & Header Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-body);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 20px;
+  font-size: 12px;
+  padding: 5px 14px;
+  line-height: 1.2;
+  border: 1px solid transparent;
+}
+
+.status-badge.New, .status-badge.Issued {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border-color: #bae6fd;
+}
+
+.status-badge.Participating {
+  background-color: #eef2ff;
+  color: #4338ca;
+  border-color: #c7d2fe;
+}
+
+.status-badge.Won, .status-badge.Awarded {
+  background-color: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.status-badge.Lost, .status-badge.Lapsed {
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.status-badge.Submitted, .status-badge.Filed {
+  background-color: #f5f3ff;
+  color: #6d28d9;
+  border-color: #ddd6fe;
+}
+
+[data-theme="dark"] .status-badge.New, [data-theme="dark"] .status-badge.Issued {
+  background-color: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+[data-theme="dark"] .status-badge.Participating {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+[data-theme="dark"] .status-badge.Won, [data-theme="dark"] .status-badge.Awarded {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="dark"] .status-badge.Lost, [data-theme="dark"] .status-badge.Lapsed {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+[data-theme="dark"] .status-badge.Submitted, [data-theme="dark"] .status-badge.Filed {
+  background-color: rgba(167, 139, 250, 0.15);
+  color: #c084fc;
+  border-color: rgba(167, 139, 250, 0.3);
 }
 
 .tender-authority {
@@ -1159,9 +1349,9 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .modal-content {
-  background: rgba(20, 27, 45, 0.95);
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-lg), 0 0 20px rgba(0,0,0,0.4);
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(0,0,0,0.08);
   border-radius: 16px;
   width: 100%;
   max-width: 900px;
@@ -1171,6 +1361,11 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-primary);
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
+}
+
+[data-theme="dark"] .modal-content {
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(0,0,0,0.4);
 }
 
 .modal-header {
@@ -1202,7 +1397,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .modal-close:hover {
-  background: rgba(255,255,255,0.05);
+  background: var(--bg-subtle, rgba(0,0,0,0.05));
   color: var(--text-primary);
 }
 
@@ -1218,6 +1413,10 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  background: var(--bg-subtle, #f8fafc);
+}
+
+[data-theme="dark"] .modal-footer {
   background: rgba(10, 15, 30, 0.4);
 }
 

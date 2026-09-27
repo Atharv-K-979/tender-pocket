@@ -22,18 +22,21 @@ export function canonicalRole(role: string | null | undefined): string {
 export function canPerform(role: string | null | undefined, action: WorkflowAction): boolean {
   const canonical = canonicalRole(role);
   if (!canonical) return false;
-  if (canonical === 'Admin' || action === 'viewTenders') return true;
+  if (action === 'viewTenders' || action === 'viewAudit') return true;
+  if (canonical === 'Admin') {
+    // Admin has view rights across tenders/history/approvals, with the sole edit right for TPC pricing
+    return action === 'setTpcPrice' || action === 'viewTpcPrice' || action === 'manageUsers';
+  }
+  if (canonical === 'MIS Team') {
+    // MIS Team has full operational and edit rights across all stages (including all executive tasks)
+    return true;
+  }
   switch (action) {
     case 'uploadSpecs':
     case 'generateBids': return canonical === 'Tender Executive';
     case 'approveSpecs': return canonical === 'Clearance Team';
-    case 'setTpcPrice': return canonical === 'TPC Pricing Team';
-    case 'viewTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team';
-    case 'setMisPrice':
-    case 'reviewBids':
-    case 'recordPayment':
-    case 'recordSubmission':
-    case 'recordOutcome': return canonical === 'MIS Team';
+    case 'setTpcPrice':
+    case 'viewTpcPrice': return canonical === 'TPC Pricing Team';
     default: return false;
   }
 }
@@ -64,7 +67,8 @@ export function reviewAction(stage: string): WorkflowAction | null {
 
 export function canReviewAssignment(role: string, username: string, assigned: unknown): boolean {
   const canonical = canonicalRole(role);
-  if (canonical === 'Admin' || assigned == null) return true;
+  if (canonical === 'Admin') return false; // Admin has view-only access in approvals reviews
+  if (assigned == null) return true;
   if (typeof assigned !== 'string') return false;
   const value = assigned.toLowerCase();
   if (value === username.toLowerCase()) return true;
@@ -78,6 +82,7 @@ export function canReviewAssignment(role: string, username: string, assigned: un
 
 export function forbiddenPatchFields(role: string, body: Record<string, unknown>, old: Record<string, unknown>): string[] {
   const denied: string[] = [];
+  const canonical = canonicalRole(role);
   const fields: Record<string, WorkflowAction> = {
     tpc_purchase_price: 'setTpcPrice', mis_final_price: 'setMisPrice',
     verification_status: 'reviewBids', payment_status: 'recordPayment',
@@ -94,13 +99,21 @@ export function forbiddenPatchFields(role: string, body: Record<string, unknown>
       ? 'approveSpecs' : 'uploadSpecs';
     if (!canPerform(role, action)) denied.push('spec_verification_status');
   }
-  if ('current_stage' in body && body.current_stage !== old.current_stage && canonicalRole(role) !== 'Admin') {
+  if ('current_stage' in body && body.current_stage !== old.current_stage) {
     denied.push('current_stage');
+  }
+  if (canonical === 'Admin') {
+    const adminRestrictedFields = ['notes', 'mis_executive', 'bid_qty', 'quoted_qty', 'working_path', 'assigned_mis_member', 'assigned_mis_member_spec', 'assigned_mis_member_docs', 'assigned_mis_member_emd', 'assigned_mis_member_submission', 'mis_final_price'];
+    for (const f of adminRestrictedFields) {
+      if (f in body && body[f] !== old[f]) denied.push(f);
+    }
   }
   if (['Won', 'Lost', 'Awarded', 'Not Awarded', 'Disqualified', 'Missed Opportunity'].includes(String(body.status))
       && !canPerform(role, 'recordOutcome')) denied.push('status');
   if (['Submitted', 'Filed'].includes(String(body.status))
       && !canPerform(role, 'recordSubmission')) denied.push('status');
+  if (['Participating', 'Not Participating', 'New', 'Issued', 'Lapsed'].includes(String(body.status))
+      && canonical === 'Admin') denied.push('status');
   return denied;
 }
 
