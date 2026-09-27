@@ -20,6 +20,12 @@ final class SpecificationSheetRenderer {
 
     static String html(Map<String, String> data, List<SpecificationSheetContent.Product> products,
                        byte[] logo, byte[] partner) {
+        return html(data, products, logo, partner, false);
+    }
+
+    static String html(Map<String, String> data, List<SpecificationSheetContent.Product> products,
+                       byte[] logo, byte[] partner, boolean combined) {
+        if (combined) products = List.of(SpecificationSheetContent.combined(products));
         StringBuilder out = new StringBuilder("""
             <!DOCTYPE html><html><head><meta charset="utf-8"/><style>
             @page { size:A4 portrait; margin:29mm 8mm 10mm;
@@ -45,7 +51,7 @@ final class SpecificationSheetRenderer {
             .product { text-align:center; font-weight:bold; border:0.5pt solid #666; padding:4pt; page-break-after:avoid; }
             .next { page-break-before:always; }
             </style></head><body>
-            """);
+            """.replace("margin:29mm 8mm 10mm", combined ? "margin:33mm 8mm 10mm" : "margin:29mm 8mm 10mm"));
         out.append("<div class=\"letterhead\"><table><tr><td style=\"width:12%\">")
                 .append(image(logo, 62)).append("</td><td><div class=\"company\">")
                 .append(escape(data.getOrDefault("companyName", "").toUpperCase(Locale.ROOT)))
@@ -59,15 +65,22 @@ final class SpecificationSheetRenderer {
         int ordinal = 0;
         for (var product : products) {
             out.append("<div").append(ordinal++ == 0 ? "" : " class=\"next\"").append("><h1>")
-                    .append(TITLE).append("</h1><h2>Schedule No. ").append(escape(product.schedule()))
+                    .append(TITLE).append("</h1>");
+            if (!combined) out.append("<h2>Schedule No. ").append(escape(product.schedule()))
                     .append("</h2><div class=\"product\">").append(escape(product.name()))
-                    .append("<br/>Make: __________<br/>Model No.: __________</div><table class=\"sheet\"><colgroup>");
+                    .append("<br/>Make: __________<br/>Model No.: __________</div>");
+            out.append("<table class=\"sheet\"><colgroup>");
             for (int width : WIDTHS) out.append("<col style=\"width:").append(width).append("%\"/>");
             out.append("</colgroup><thead><tr>");
             for (String label : HEADERS) out.append("<th>").append(label).append("</th>");
             out.append("</tr></thead><tbody>");
             int displayPosition = 0;
             for (var row : product.rows()) {
+                if (combined && row.heading()) {
+                    out.append("<tr class=\"heading\"><td colspan=\"5\">")
+                            .append(escape(row.wording())).append("</td></tr>");
+                    continue;
+                }
                 String reference = displayedReference(row, ++displayPosition);
                 out.append("<tr").append(row.heading() ? " class=\"heading\""
                                 : row.wording().length() > 1200 ? " class=\"long\"" : "")
@@ -83,6 +96,12 @@ final class SpecificationSheetRenderer {
 
     static byte[] docx(Map<String, String> data, List<SpecificationSheetContent.Product> products,
                        byte[] logo, byte[] partner) throws Exception {
+        return docx(data, products, logo, partner, false);
+    }
+
+    static byte[] docx(Map<String, String> data, List<SpecificationSheetContent.Product> products,
+                       byte[] logo, byte[] partner, boolean combined) throws Exception {
+        if (combined) products = List.of(SpecificationSheetContent.combined(products));
         try (XWPFDocument doc = new XWPFDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             CTSectPr section = doc.getDocument().getBody().addNewSectPr();
             CTPageSz size = section.addNewPgSz();
@@ -118,14 +137,16 @@ final class SpecificationSheetRenderer {
                 title.setAlignment(ParagraphAlignment.CENTER);
                 keepNext(title);
                 paragraph(title, TITLE, true, 11);
-                XWPFParagraph schedule = doc.createParagraph();
-                keepNext(schedule); schedule.setSpacingBefore(140);
-                paragraph(schedule, "Schedule No. " + product.schedule(), true, 11);
-                XWPFParagraph productHeading = doc.createParagraph();
-                productHeading.setAlignment(ParagraphAlignment.CENTER); keepNext(productHeading);
-                paragraph(productHeading, product.name(), true, 11).addBreak();
-                paragraph(productHeading, "Make: __________", true, 11).addBreak();
-                paragraph(productHeading, "Model No.: __________", true, 11);
+                if (!combined) {
+                    XWPFParagraph schedule = doc.createParagraph();
+                    keepNext(schedule); schedule.setSpacingBefore(140);
+                    paragraph(schedule, "Schedule No. " + product.schedule(), true, 11);
+                    XWPFParagraph productHeading = doc.createParagraph();
+                    productHeading.setAlignment(ParagraphAlignment.CENTER); keepNext(productHeading);
+                    paragraph(productHeading, product.name(), true, 11).addBreak();
+                    paragraph(productHeading, "Make: __________", true, 11).addBreak();
+                    paragraph(productHeading, "Model No.: __________", true, 11);
+                }
                 XWPFTable table = doc.createTable(1, 5);
                 table.setWidth("100%");
                 table.setCellMargins(30, 75, 30, 75);
@@ -136,6 +157,20 @@ final class SpecificationSheetRenderer {
                 for (var row : product.rows()) {
                     String reference = displayedReference(row, ++displayPosition);
                     XWPFTableRow output = table.createRow();
+                    // createRow can inherit the preceding merged heading's single-cell grid.
+                    while (output.getTableCells().size() < 5) output.addNewTableCell();
+                    for (var outputCell : output.getTableCells()) {
+                        var properties = outputCell.getCTTc().getTcPr();
+                        if (properties != null && properties.isSetGridSpan()) properties.unsetGridSpan();
+                    }
+                    if (combined && row.heading()) {
+                        var heading = output.getCell(0);
+                        cell(heading, row.wording(), 100, true);
+                        keepNext(heading.getParagraphs().get(0));
+                        heading.getCTTc().getTcPr().addNewGridSpan().setVal(BigInteger.valueOf(5));
+                        for (int i = 4; i >= 1; i--) output.removeCell(i);
+                        continue;
+                    }
                     for (int i = 0; i < 5; i++) {
                         String text = i == 0 ? reference : i == 1 ? row.wording() : "";
                         cell(output.getCell(i), text, WIDTHS[i], row.heading() || i == 0);
@@ -173,12 +208,19 @@ final class SpecificationSheetRenderer {
     }
 
     static byte[] xlsx(Map<String, String> data, List<SpecificationSheetContent.Product> products) throws IOException {
+        return xlsx(data, products, false);
+    }
+
+    static byte[] xlsx(Map<String, String> data, List<SpecificationSheetContent.Product> products,
+                       boolean combined) throws IOException {
+        if (combined) products = List.of(SpecificationSheetContent.combined(products));
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             for (var product : products) {
                 Sheet sheet = workbook.createSheet(uniqueSheetName(workbook, product.schedule() + " " + product.name()));
+                int headerIndex = combined ? 2 : 5;
                 sheet.setDisplayGridlines(false);
-                sheet.createFreezePane(0, 6);
-                sheet.setRepeatingRows(CellRangeAddress.valueOf("6:6"));
+                sheet.createFreezePane(0, headerIndex + 1);
+                sheet.setRepeatingRows(new CellRangeAddress(headerIndex, headerIndex, -1, -1));
                 sheet.getPrintSetup().setPaperSize(PrintSetup.A4_PAPERSIZE);
                 sheet.getPrintSetup().setLandscape(false);
                 sheet.setFitToPage(true);
@@ -195,11 +237,13 @@ final class SpecificationSheetRenderer {
 
                 mergedRow(sheet, 0, data.getOrDefault("companyName", "").toUpperCase(Locale.ROOT), companyStyle);
                 mergedRow(sheet, 1, TITLE, titleStyle);
-                mergedRow(sheet, 2, "Schedule No. " + product.schedule(), titleStyle);
-                mergedRow(sheet, 3, product.name(), titleStyle);
-                mergedRow(sheet, 4, "Make: __________    Model No.: __________", titleStyle);
+                if (!combined) {
+                    mergedRow(sheet, 2, "Schedule No. " + product.schedule(), titleStyle);
+                    mergedRow(sheet, 3, product.name(), titleStyle);
+                    mergedRow(sheet, 4, "Make: __________    Model No.: __________", titleStyle);
+                }
 
-                Row header = sheet.createRow(5);
+                Row header = sheet.createRow(headerIndex);
                 header.setHeightInPoints(32);
                 for (int column = 0; column < HEADERS.length; column++) {
                     org.apache.poi.ss.usermodel.Cell cell = header.createCell(column);
@@ -210,6 +254,10 @@ final class SpecificationSheetRenderer {
                 int displayPosition = 0;
                 for (var source : product.rows()) {
                     Row row = sheet.createRow(sheet.getLastRowNum() + 1);
+                    if (combined && source.heading()) {
+                        mergedRow(sheet, row.getRowNum(), source.wording(), headingStyle);
+                        continue;
+                    }
                     org.apache.poi.ss.usermodel.Cell reference = row.createCell(0);
                     reference.setCellValue(displayedReference(source, ++displayPosition));
                     reference.setCellStyle(referenceStyle);

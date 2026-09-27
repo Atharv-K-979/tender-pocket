@@ -20,6 +20,14 @@ const assert = require("node:assert/strict");
             pdfDownloadUrl: "/documents/123/2.pdf", docxDownloadUrl: "/documents/123/2.docx",
             xlsxDownloadUrl: "/documents/123/2.xlsx" }
         ];
+        const combinedUrls = {
+          pdfDownloadUrl: "/documents/123/Combined_Technical_Data_Sheet.pdf",
+          docxDownloadUrl: "/documents/123/Combined_Technical_Data_Sheet.docx",
+          xlsxDownloadUrl: "/documents/123/Combined_Technical_Data_Sheet.xlsx"
+        };
+        const downloads = () => job === 2
+          ? { combined: true, ...combinedUrls, products: products.map(product => ({...product, ...combinedUrls})) }
+          : { combined: false, products };
         const metrics = {model: "gpt-5-nano", apiAttempts: 4, successfulModelResponses: 4,
           tokens: {input: 1000, output: 500, total: 1500},
           retries: {validation: 0, ocr: 1, split: 0, rateLimit: 0},
@@ -36,7 +44,7 @@ const assert = require("node:assert/strict");
             return route.fulfill({ json: { jobId: `job-${job}`, status: active ? "EXTRACTING" : "COMPLETED",
               percent: active ? 30 : 100, message: active ? "Sending PDF batches" : "Previous result",
               totalBatches: 3, completedBatches: active ? 1 : 3,
-              products: active ? [] : products, metrics,
+              ...(active ? {products: []} : downloads()), metrics,
               events: [{ stage: "AI", message: "Batch processing" }] } });
           }
           if (url.pathname.endsWith("upload-tech-spec")) {
@@ -52,7 +60,7 @@ const assert = require("node:assert/strict");
             return route.fulfill({ json: emptyResult
               ? { success: true, generated: false, products: [], metrics,
                   message: "No products found with applicable compliance requirements." }
-              : { success: true, generated: true, products, metrics, message: "Sheets ready" } });
+              : { success: true, generated: true, ...downloads(), metrics, message: "Sheets ready" } });
           }
           return route.fulfill({ contentType: "text/html", body: `<!doctype html><html><head></head>
             <body><input id="techSpecUpload_123" type="file"><script src="/compliance-progress.js"></script>
@@ -72,7 +80,11 @@ const assert = require("node:assert/strict");
           await page.waitForFunction(() => document.querySelector(".cp-warning")?.textContent.includes("503"));
           await page.waitForFunction(() => document.querySelector(".cp-message")?.textContent === "Sheets ready");
           await page.waitForFunction(() => document.querySelector(".cp-upload-value")?.textContent.includes("100%"));
-          assert.equal(await page.locator(".cp-links a").count(), 6);
+          assert.equal(await page.locator(".cp-links a").count(), upload === 0 ? 6 : 3);
+          if (upload === 1) {
+            assert.match(await page.locator(".cp-links").innerText(), /Combined technical specifications/);
+            assert.equal(await page.locator('.cp-links a[href$=".xlsx"]').count(), 1);
+          }
           assert.match(await page.locator(".cp-metrics").innerText(), /₹3\.3081/);
           assert.match(await page.locator(".cp-metrics").innerText(), /Total tokens[\s\S]*1,500/);
           assert.equal(await page.locator("#compliance-progress-panel").count(), 1);
@@ -91,7 +103,7 @@ const assert = require("node:assert/strict");
         fs.mkdirSync("target/compliance-browser/screenshots", { recursive: true });
         await page.screenshot({ path: `target/compliance-browser/screenshots/${viewport.width}-${path.replaceAll("/", "_")}.png` });
         await page.close();
-        console.log(`PASS ${viewport.width}px ${path}: repeat upload, stale job, poll error, 6 download links`);
+        console.log(`PASS ${viewport.width}px ${path}: repeat upload, stale job, poll error, 3 combined download links`);
       }
     }
   } finally { await browser.close(); }

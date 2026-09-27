@@ -47,10 +47,13 @@ class SpecificationUploadContractTest {
                     Map<String, String> data, ConversionProgressListener listener, ComplianceConversionMetrics metrics) {
                 return AISpecificationIntelligenceService.completedEmptyRows();
             }
-            @Override public byte[] generateProductSheetPdf(Map<String, String> data, SpecificationSheetContent.Product p) {
+            @Override public byte[] generateCombinedSheetPdf(Map<String, String> data, List<SpecificationSheetContent.Product> p) {
                 throw new AssertionError("An empty result must not render a file");
             }
-            @Override public byte[] generateProductSheetDocx(Map<String, String> data, SpecificationSheetContent.Product p) {
+            @Override public byte[] generateCombinedSheetDocx(Map<String, String> data, List<SpecificationSheetContent.Product> p) {
+                throw new AssertionError("An empty result must not render a file");
+            }
+            @Override public byte[] generateCombinedSheetXlsx(Map<String, String> data, List<SpecificationSheetContent.Product> p) {
                 throw new AssertionError("An empty result must not render a file");
             }
         });
@@ -83,7 +86,7 @@ class SpecificationUploadContractTest {
 
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"Admin", "Tender Executive", "MIS Executive"})
-    void onlySpecificationFileIsRequiredAndEveryProductGetsRegistered(String role) throws Exception {
+    void onlyThreeCombinedFilesAreGeneratedForAllProducts(String role) throws Exception {
         authenticateAs(role);
         String id = "compliance-contract-test-" + UUID.randomUUID();
         Path output = Path.of("public", "documents", id);
@@ -97,6 +100,7 @@ class SpecificationUploadContractTest {
         ReflectionTestUtils.setField(controller, "tenderRepository", repository);
         ReflectionTestUtils.setField(controller, "activityLogRepository", mock(ActivityLogRepository.class));
         ReflectionTestUtils.setField(controller, "complianceProgressService", progress);
+        var renders = new java.util.concurrent.atomic.AtomicInteger();
         ReflectionTestUtils.setField(controller, "documentGeneratorService", new DocumentGeneratorService() {
             @Override
             public List<String[]> parseSpecificationClauses(byte[] input, String name, Map<String, String> data,
@@ -108,15 +112,18 @@ class SpecificationUploadContractTest {
                         new String[]{"1.1", "Capacity 20 litres", "", "", "", "Pump Beta", "-", "PDF p. 2"});
             }
             @Override
-            public byte[] generateProductSheetPdf(Map<String, String> data, SpecificationSheetContent.Product p) {
+            public byte[] generateCombinedSheetPdf(Map<String, String> data, List<SpecificationSheetContent.Product> p) {
+                assertEquals(2, p.size()); renders.incrementAndGet();
                 return "test-pdf".getBytes(java.nio.charset.StandardCharsets.UTF_8);
             }
             @Override
-            public byte[] generateProductSheetDocx(Map<String, String> data, SpecificationSheetContent.Product p) {
+            public byte[] generateCombinedSheetDocx(Map<String, String> data, List<SpecificationSheetContent.Product> p) {
+                assertEquals(2, p.size()); renders.incrementAndGet();
                 return "test-docx".getBytes(java.nio.charset.StandardCharsets.UTF_8);
             }
             @Override
-            public byte[] generateProductSheetXlsx(Map<String, String> data, SpecificationSheetContent.Product p) {
+            public byte[] generateCombinedSheetXlsx(Map<String, String> data, List<SpecificationSheetContent.Product> p) {
+                assertEquals(2, p.size()); renders.incrementAndGet();
                 return "test-xlsx".getBytes(java.nio.charset.StandardCharsets.UTF_8);
             }
         });
@@ -130,6 +137,10 @@ class SpecificationUploadContractTest {
             Map<?, ?> body = (Map<?, ?>) response.getBody();
             List<Map<String, Object>> products = (List<Map<String, Object>>) body.get("products");
             assertEquals(2, products.size());
+            assertEquals(true, body.get("combined"));
+            assertEquals(3, renders.get());
+            assertEquals(products.get(0).get("pdfDownloadUrl"), products.get(1).get("pdfDownloadUrl"));
+            try (var files = Files.list(output)) { assertEquals(4, files.count(), "Input plus exactly three outputs"); }
             assertEquals(products.get(0).get("pdfDownloadUrl"), body.get("pdfDownloadUrl"));
             assertEquals(products.get(0).get("docxDownloadUrl"), body.get("docxDownloadUrl"));
             assertEquals(products.get(0).get("xlsxDownloadUrl"), body.get("xlsxDownloadUrl"));
@@ -142,6 +153,7 @@ class SpecificationUploadContractTest {
             }
             assertTrue(tender.getDownloadedDocs().contains("/existing/unrelated.pdf"));
             assertEquals(products, progress.snapshot(id).get("products"));
+            assertEquals(true, progress.snapshot(id).get("combined"));
             assertNotNull(body.get("metrics"));
             assertEquals(2, ((Map<?, ?>) ((Map<?, ?>) body.get("metrics")).get("document")).get("products"));
             verify(repository).save(tender);

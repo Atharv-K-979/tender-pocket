@@ -2437,6 +2437,25 @@ public class DocumentGeneratorService {
         return SpecificationSheetRenderer.xlsx(data, List.of(product));
     }
 
+    public byte[] generateCombinedSheetPdf(Map<String, String> data,
+                                           List<SpecificationSheetContent.Product> products) throws Exception {
+        return renderSpecificationPdf(SpecificationSheetRenderer.html(data, products,
+                loadImageBytes("public/images/logo.png", "/static/images/logo.png"),
+                loadImageBytes("public/images/partner.png", "/static/images/partner.png"), true));
+    }
+
+    public byte[] generateCombinedSheetDocx(Map<String, String> data,
+                                            List<SpecificationSheetContent.Product> products) throws Exception {
+        return SpecificationSheetRenderer.docx(data, products,
+                loadImageBytes("public/images/logo.png", "/static/images/logo.png"),
+                loadImageBytes("public/images/partner.png", "/static/images/partner.png"), true);
+    }
+
+    public byte[] generateCombinedSheetXlsx(Map<String, String> data,
+                                            List<SpecificationSheetContent.Product> products) throws Exception {
+        return SpecificationSheetRenderer.xlsx(data, products, true);
+    }
+
     private byte[] renderSpecificationPdf(String html) throws Exception {
         String htmlContent = cleanXmlForOpenHtmlPdf(html);
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();

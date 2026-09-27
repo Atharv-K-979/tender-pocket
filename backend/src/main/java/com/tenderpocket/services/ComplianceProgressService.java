@@ -52,15 +52,22 @@ public class ComplianceProgressService {
     }
 
     public void completeProducts(String tenderId, int clauses, java.util.List<Map<String, Object>> products) {
+        completeProducts(tenderId, clauses, products, false);
+    }
+
+    public void completeProducts(String tenderId, int clauses, java.util.List<Map<String, Object>> products,
+                                 boolean combined) {
         Progress progress = jobs.computeIfAbsent(tenderId, ignored -> newProgress());
         synchronized (progress) {
             progress.generated = true;
+            progress.combined = combined;
             progress.products = java.util.List.copyOf(products);
             progress.metrics.setResultCounts(products.size(), clauses);
             progress.metrics.finish();
             Map<String, Object> first = products.get(0);
             progress.xlsxUrl = (String) first.get("xlsxDownloadUrl");
-            progress.update("COMPLETED", "Technical data sheets are ready for " + products.size() + " products.",
+            progress.update("COMPLETED", (combined ? "Combined technical specifications are ready for "
+                    : "Technical data sheets are ready for ") + products.size() + " products.",
                     100, 0, 0, clauses, (String) first.get("pdfDownloadUrl"), (String) first.get("docxDownloadUrl"));
         }
     }
@@ -69,6 +76,7 @@ public class ComplianceProgressService {
         Progress progress = jobs.computeIfAbsent(tenderId, ignored -> newProgress());
         synchronized (progress) {
             progress.generated = false;
+            progress.combined = false;
             progress.products = java.util.List.of();
             progress.pdfUrl = null;
             progress.docxUrl = null;
@@ -111,6 +119,7 @@ public class ComplianceProgressService {
         private String docxUrl;
         private String xlsxUrl;
         private Boolean generated;
+        private boolean combined;
         private final String jobId = java.util.UUID.randomUUID().toString();
         private java.util.List<Map<String, Object>> products = java.util.List.of();
         private String updatedAt = Instant.now().toString();
@@ -146,6 +155,7 @@ public class ComplianceProgressService {
             result.put("status", status);
             result.put("jobId", jobId);
             result.put("generated", generated);
+            result.put("combined", combined);
             result.put("products", products);
             result.put("message", message);
             result.put("percent", percent);
