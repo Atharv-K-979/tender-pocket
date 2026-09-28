@@ -109,7 +109,7 @@
     if (existing?.dataset.tenderId === tenderId) return;
     existing?.remove();
     const heading = Array.from(document.querySelectorAll("h4")).find(node =>
-      /Technical Specification Review/.test(node.textContent));
+      /Technical Specification (?:Review|Clearance)/.test(node.textContent));
     const card = heading?.parentElement?.parentElement;
     if (!card) return;
     const form = document.createElement("form");

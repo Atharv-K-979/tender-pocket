@@ -1110,7 +1110,12 @@ public class AISpecificationIntelligenceService {
             return "4. Identify products and extract all of their product-related compliance requirements together in this single response. "
                     + "Use actual source product names. PRODUCT_NAME_HINTS are names found locally in source headings: "
                     + "reuse their spelling when applicable, but they are not a complete or mandatory product list. "
-                    + "Keep ratings and size variants separate. Never invent a product or requirement to populate the sheet.\n";
+                    + "Keep ratings, model numbers and size variants separate. When the tender specifies different "
+                    + "models of the same equipment, include the exact source model in each productCategory and reuse "
+                    + "that name consistently across summary lists and detailed tables. "
+                    + "Delivery, Inspection, Warranty, Commercial Terms and Technical Specification of Item are "
+                    + "section labels, NOT products. Assign their applicable requirements to the actual equipment "
+                    + "described by the table's item-description row. Never invent a product or requirement to populate the sheet.\n";
         }
         return "4. Set productCategory/component to exactly one of these names, copied character for character: "
                 + JSON.valueToTree(components)
@@ -1165,6 +1170,16 @@ public class AISpecificationIntelligenceService {
                 + "not the section title. Never put the requirement's number in sectionReference instead.\n"
                 + "10. Compare repeated specification and compliance-form versions. Retain differing wording; "
                 + "do not copy bidder compliance declarations or invent offered models or performance. "
+                + "Read complete table cells, including wrapped lines. Never emit only the trailing makes/brands "
+                + "from an item-description cell while omitting its model and technical parameters. "
+                + "Match repetitions by the actual source model, not a generic equipment name. "
+                + "For supply item tables, retain applicable delivery and inspection conditions under that item, "
+                + "but exclude offer/bid validity periods, which are commercial offer terms rather than product requirements. "
+                + "Apply this to EVERY item-description table, including a table that is alone in its batch. "
+                + "Do not stop after ITEM DESCRIPTION: include the table's delivery period, inspection, delivery "
+                + "destination (FOR), and source-specific compliance remarks as separate requirements for that item. "
+                + "These product-bound obligations qualify even if they are not hardware parameters. Do not omit "
+                + "them because an identical condition occurs for a different model on another page. "
                 + "Read ALL supplied PDF pages, including scanned pages, before answering.\n"
                 + "11. Return a JSON object with rows, readable and clauseDecisions. Return rows=[] with readable=true "
                 + "when every supplied page was read successfully but has no qualifying product compliance requirements, "
@@ -1415,6 +1430,10 @@ public class AISpecificationIntelligenceService {
         for (String[] row : rows) {
             if (row.length > 8 && "heading".equals(row[8])) continue;
             String section = row.length > 10 && row[10] != null ? row[10] : "";
+            if (section.matches("(?is).*\\b(?:offer|bid)\\s+validity\\b.*")
+                    || SpecificationSheetContent.value(row, 5).matches("(?is).*\\b(?:offer|bid)\\s+validity\\b.*")
+                    || row[1].matches("(?is)^(?:[^:]{1,80}:\\s*)?(?:offer|bid)\\s+validity\\b.*"))
+                continue;
             if (section.matches("(?is).*\\blist\\s+of\\s+(?:preferred|preffered|approved)\\s+"
                     + "(?:makes?|brands?)\\b.*\\b(?:materials|works)\\b.*")
                     || section.matches("(?is).*\\b(?:safety\\s+of\\s+workers|worker\\s+safety)\\b.*")) continue;

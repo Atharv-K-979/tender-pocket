@@ -1747,7 +1747,7 @@ public class DocumentGeneratorService {
                 if (metrics != null) metrics.setResultCounts(0, clauses.size());
                 progress.onProgress("VALIDATING", "Validated " + clauses.size() + " extracted requirements.",
                         78, 1, 1, clauses.size());
-                return clauses;
+                return SpecificationProductLabels.normalize(clauses);
             }
 
             return Collections.emptyList();
@@ -1809,9 +1809,8 @@ public class DocumentGeneratorService {
         List<List<String[]>> extracted = extractPdfBatchesConcurrently(batches, data, knownProducts, progress, metrics);
         if (extracted.isEmpty()) return Collections.emptyList();
         // Merge in PDF order, not completion order, so both output formats remain deterministic.
-        for (List<String[]> rows : extracted) {
-            for (String[] row : rows) mergeConversionRow(merged, row);
-        }
+        List<String[]> allRows = extracted.stream().flatMap(List::stream).toList();
+        for (String[] row : SpecificationProductLabels.normalize(allRows)) mergeConversionRow(merged, row);
         List<String[]> consolidated = groupCompactItemSchedule(
                 new ArrayList<>(merged.values()), fullSourceContext.toString());
         int productCount = (int) consolidated.stream().map(row -> row[5]).distinct().count();
@@ -1962,10 +1961,13 @@ public class DocumentGeneratorService {
         if (Thread.currentThread().isInterrupted()) return Collections.emptyList();
         List<String[]> rows = runAiExtraction(batch.sourceContext, batch.bytes, data,
                 knownProducts, progress, metrics);
-        if (AISpecificationIntelligenceService.isCompletedEmpty(rows)) return rows;
+        boolean nativeEmpty = AISpecificationIntelligenceService.isCompletedEmpty(rows);
+        if (nativeEmpty && !hasUnreadablePage(batch.sourceContext)) return rows;
         boolean nativeSucceeded = rows != null && !rows.isEmpty();
         boolean unclearReading = nativeSucceeded && hasUnclearReading(rows);
-        if (nativeSucceeded && !unclearReading) return rows;
+        boolean checkTableCoverage = nativeSucceeded && SpecificationTableCoverage.hinted(rows)
+                && hasUnreadablePage(batch.sourceContext);
+        if (nativeSucceeded && !unclearReading && !checkTableCoverage) return rows;
 
         // The original PDF is always sent first. OCR is deferred until native document understanding
         // fails validation or explicitly reports an unclear reading, and is limited to pages whose text
@@ -1987,15 +1989,38 @@ public class DocumentGeneratorService {
             retryBatch = annotateProductContexts(List.of(recovered), knownProducts).get(0);
         }
         if (ocrImproved && aiSpecificationIntelligenceService.canRetryBatch()) {
-            List<String[]> ocrRows = runAiExtraction(retryBatch.sourceContext, null,
+            List<String> missingFields = SpecificationTableCoverage.missing(
+                    nativeSucceeded ? rows : List.of(), retryBatch.sourceContext);
+            if (nativeSucceeded && !unclearReading && missingFields.isEmpty()) return rows;
+            String recoveryContext = retryBatch.sourceContext;
+            if (!missingFields.isEmpty()) {
+                recoveryContext += "\n[SOURCE_ITEM_TABLE_FIELDS]\n"
+                        + "The following field labels are present in the source item tables but missing from the "
+                        + "first extraction: " + String.join("; ", missingFields)
+                        + ". Read their actual values from the attached PDF, retaining each under the table's "
+                        + "actual equipment/model. Return ALL product requirements from this batch, not just "
+                        + "these fields. Never invent field values.\n[/SOURCE_ITEM_TABLE_FIELDS]";
+            }
+            // OCR can scramble table cells and model numbers. Keep the page images available
+            // so the recovery call can verify the text against the actual document.
+            List<String[]> ocrRows = runAiExtraction(recoveryContext, retryBatch.bytes,
                     data, knownProducts, progress, metrics);
-            if (ocrRows != null && !ocrRows.isEmpty()) return ocrRows;
+            if (ocrRows != null && !ocrRows.isEmpty()) {
+                List<String> stillMissing = SpecificationTableCoverage.missing(ocrRows, retryBatch.sourceContext);
+                if (!stillMissing.isEmpty()) {
+                    String warning = "Review required: source item-table fields not confirmed after OCR recovery: "
+                            + String.join("; ", stillMissing);
+                    if (metrics != null) metrics.addWarning(warning);
+                    progress.onProgress("REVIEW", warning, -1, batchNumber - 1, totalBatches, clausesSoFar);
+                }
+                return ocrRows;
+            }
             if (!nativeSucceeded && AISpecificationIntelligenceService.isCompletedEmpty(ocrRows)) return ocrRows;
         }
 
         // An uncertain but otherwise validated native reading is preferable to silently dropping the
         // requirement when local OCR is unavailable or cannot improve the page.
-        if (nativeSucceeded) return rows;
+        if (nativeSucceeded || nativeEmpty) return rows;
 
         progress.onProgress("BATCH_FAILED", "PDF pages " + batch.firstPhysicalPage + "-"
                 + (batch.firstPhysicalPage + batch.pageCount - 1)
