@@ -26,11 +26,44 @@ final class SpecificationTableCoverage {
                 boolean present = rows.stream().anyMatch(row ->
                         Pattern.compile("PDF p\\.\\s*" + page + "(?!\\d)")
                                 .matcher(SpecificationSheetContent.value(row, 7)).find()
-                        && label.matcher(SpecificationSheetContent.value(row, 10) + " "
-                                + SpecificationSheetContent.value(row, 1)).find());
+                        && (label.matcher(SpecificationSheetContent.value(row, 10) + " "
+                                + SpecificationSheetContent.value(row, 1)).find()
+                            || containsSourceValue(SpecificationSheetContent.value(row, 1), text, label))
+                        && label.matcher(SpecificationSheetContent.value(row, 1)).replaceAll("")
+                                .replaceAll("[\\s:.;-]", "").length() > 1);
                 if (!present) missing.add("PDF p. " + page + ": " + field);
+            }
+            // An item-description cell must carry its model and parameters, not just its brand tail.
+            int end = text.toLowerCase(Locale.ROOT).indexOf("offer validity");
+            if (end >= 0 && text.substring(0, end).matches("(?is).*\\bMODEL\\b.*")) {
+                String description = text.substring(0, end);
+                String extracted = rows.stream().filter(row ->
+                        Pattern.compile("PDF p\\.\\s*" + page + "(?!\\d)")
+                                .matcher(SpecificationSheetContent.value(row, 7)).find())
+                        .map(row -> SpecificationSheetContent.value(row, 1))
+                        .collect(java.util.stream.Collectors.joining(" "))
+                        .toUpperCase(Locale.ROOT).replaceAll("[\\s,;:]+", "");
+                Matcher tokens = Pattern.compile("(?i)(?<![a-z0-9])(?:[a-z]+[-/]?)?\\d[a-z0-9./-]*").matcher(description);
+                Set<String> absent = new LinkedHashSet<>();
+                while (tokens.find()) {
+                    String token = tokens.group().replaceAll("[.,:-]+$", "").toUpperCase(Locale.ROOT);
+                    if (token.length() > 1 && !extracted.contains(token)) absent.add(token);
+                }
+                if (!absent.isEmpty()) missing.add("PDF p. " + page + ": Item Description values " + absent);
             }
         }
         return missing;
+    }
+
+    private static boolean containsSourceValue(String wording, String page, Pattern label) {
+        String reading = wording.toLowerCase(Locale.ROOT).replaceAll("[\\s\\p{Punct}]", "");
+        for (String line : page.split("\\R")) {
+            Matcher marker = label.matcher(line);
+            if (!marker.find()) continue;
+            String value = line.substring(marker.end()).toLowerCase(Locale.ROOT)
+                    .replaceAll("[\\s\\p{Punct}]", "");
+            if (value.length() >= 5 && reading.contains(value)) return true;
+        }
+        return false;
     }
 }

@@ -85,7 +85,8 @@ final class SpecificationSheetRenderer {
                 out.append("<tr").append(row.heading() ? " class=\"heading\""
                                 : row.wording().length() > 1200 ? " class=\"long\"" : "")
                         .append("><td class=\"reference\">").append(escape(reference))
-                        .append("</td><td>").append(emphasize(row.wording()))
+                        .append("</td><td>").append(combined ? emphasize(row.wording()).replace("\n", "<br/>")
+                                : emphasize(row.wording()))
                         .append("</td><td></td><td></td><td></td></tr>");
             }
             out.append("</tbody></table>");
@@ -334,7 +335,13 @@ final class SpecificationSheetRenderer {
     private static XWPFRun paragraph(XWPFParagraph p, String text, boolean bold, int size) {
         p.setSpacingAfter(0); p.setSpacingBefore(0);
         XWPFRun run = p.createRun(); run.setFontFamily("Cambria"); run.setFontSize(size);
-        run.setBold(bold); run.setText(text); return run;
+        run.setBold(bold);
+        String[] lines = text.split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) run.addBreak();
+            run.setText(lines[i]);
+        }
+        return run;
     }
     private static void picture(XWPFTableCell cell, byte[] bytes, String name, int width, int height) throws Exception {
         if (bytes != null) cell.getParagraphs().get(0).createRun().addPicture(new ByteArrayInputStream(bytes),

@@ -26,6 +26,130 @@ class ComplianceSheetConversionTest {
     private final DocumentGeneratorService generator = new DocumentGeneratorService();
 
     @Test
+    void scannedPagesAreIsolatedWithoutChangingTextBatchingOrPageReferences() throws Exception {
+        byte[] bytes;
+        try (var source = new PDDocument(); var out = new ByteArrayOutputStream()) {
+            var image = new java.awt.image.BufferedImage(400, 500, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            var embedded = org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(source, image);
+            for (int page = 1; page <= 6; page++) {
+                var pdfPage = new PDPage(); source.addPage(pdfPage);
+                try (var stream = new PDPageContentStream(source, pdfPage)) {
+                    if (page == 3 || page == 4) stream.drawImage(embedded, 0, 0, 500, 700);
+                    else {
+                        stream.beginText(); stream.setFont(PDType1Font.HELVETICA, 12);
+                        stream.newLineAtOffset(30, 700);
+                        stream.showText("Source requirements, page " + page + ". All numbers and conditions must be retained.");
+                        stream.endText();
+                    }
+                }
+            }
+            source.save(out); bytes = out.toByteArray();
+        }
+        Method create = DocumentGeneratorService.class.getDeclaredMethod("createPdfBatches", byte[].class, int.class);
+        create.setAccessible(true);
+        List<?> batches = (List<?>) create.invoke(generator, bytes, 1);
+        assertEquals(4, batches.size());
+        int[] starts = {1, 3, 4, 5}, counts = {2, 1, 1, 2};
+        for (int i = 0; i < batches.size(); i++) {
+            var batch = batches.get(i);
+            var start = batch.getClass().getDeclaredField("firstPhysicalPage");
+            var count = batch.getClass().getDeclaredField("pageCount");
+            var context = batch.getClass().getDeclaredField("sourceContext");
+            start.setAccessible(true); count.setAccessible(true); context.setAccessible(true);
+            assertEquals(starts[i], start.getInt(batch));
+            assertEquals(counts[i], count.getInt(batch));
+            assertTrue(context.get(batch).toString().contains("pdf=\"" + starts[i] + "\""));
+        }
+    }
+
+    @Test
+    void rotatedScanRecoveryUsesUprightImageWithPhysicalPageContext() throws Exception {
+        byte[] bytes;
+        try (var document = new PDDocument(); var out = new ByteArrayOutputStream()) {
+            var page = new PDPage(); page.setRotation(180); document.addPage(page);
+            var image = new java.awt.image.BufferedImage(400, 500, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            try (var stream = new PDPageContentStream(document, page)) {
+                stream.drawImage(org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory
+                        .createFromImage(document, image), 0, 0, 500, 700);
+            }
+            document.save(out); bytes = out.toByteArray();
+        }
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var direct = new DocumentGeneratorService() {
+            @Override String extractOcrFallbackText(byte[] pdf, int offset) {
+                return "[SOURCE_PAGE pdf=\"1\"]\nITEM SPECIFICATION\nMotor MODEL ZX10\n1.1 A supplied motor shall operate at 230 V "
+                        + "with a protective housing and an alarm.\n[/SOURCE_PAGE]";
+            }
+        };
+        setAi(direct, new AISpecificationIntelligenceService() {
+            @Override List<String[]> processOcrAndSynthesizeClauses(String text, byte[] payload,
+                    Map<String, String> data, List<String> products) {
+                if (calls.incrementAndGet() == 1) {
+                    assertEquals('%', payload[0]);
+                    return List.of();
+                }
+                assertEquals((byte) 0x89, payload[0], "Recovery must carry the upright PNG");
+                assertEquals('P', payload[1]);
+                assertTrue(text.contains("[SOURCE_PAGE pdf=\"1\"]"));
+                assertEquals(List.of("ZX10"), products, "Source model must constrain recovery identities");
+                return java.util.Collections.singletonList(row("1.1", "A supplied motor shall operate at 230 V "
+                        + "with a protective housing and an alarm.", "Motor", "PDF p. 1"));
+            }
+        });
+        assertEquals(1, direct.parseSpecificationClauses(bytes, "rotated.pdf", baseData()).size());
+        assertEquals(2, calls.get());
+    }
+
+    @Test
+    void failedConversionWaitsForStartedWorkersToFinishReportingUsage() throws Exception {
+        var secondFinished = new java.util.concurrent.atomic.AtomicBoolean();
+        var bothStarted = new java.util.concurrent.CountDownLatch(2);
+        var direct = new DocumentGeneratorService() {
+            @Override String extractOcrFallbackText(byte[] pdf, int offset) { return ""; }
+        };
+        setAi(direct, new AISpecificationIntelligenceService() {
+            @Override List<String[]> processOcrAndSynthesizeClauses(String text, byte[] payload,
+                    Map<String, String> data, List<String> products) {
+                bothStarted.countDown();
+                try {
+                    assertTrue(bothStarted.await(10, java.util.concurrent.TimeUnit.SECONDS));
+                    if (text.contains("pdf=\"1\"")) return List.of();
+                    Thread.sleep(150);
+                    secondFinished.set(true);
+                    return java.util.Collections.singletonList(row("1", "Second batch requirement", "Motor", "PDF p. 5"));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Worker was cancelled before its usage could settle", e);
+                }
+            }
+        });
+        assertTrue(direct.parseSpecificationClauses(testPdf(8), "failed.pdf", baseData()).isEmpty());
+        assertTrue(secondFinished.get(), "No final snapshot while another worker is still reporting");
+    }
+
+    @Test
+    void repeatedRequirementsFromDifferentPdfBatchesAreNotMerged() throws Exception {
+        var direct = new DocumentGeneratorService();
+        setAi(direct, new AISpecificationIntelligenceService() {
+            @Override List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
+                    Map<String, String> data, List<String> products) {
+                var marker = java.util.regex.Pattern.compile("pdf=\"(\\d+)\"").matcher(text);
+                assertTrue(marker.find());
+                return java.util.Collections.singletonList(row("3.10",
+                        "Capacity 100 litres. Voltage 230 V. Inspect on delivery.",
+                        "Pump", "PDF p. " + marker.group(1)));
+            }
+        });
+        var extracted = direct.parseSpecificationClauses(testPdf(8), "repeated.pdf", baseData());
+        assertEquals(2, extracted.size());
+        assertEquals("PDF p. 1", extracted.get(0)[7]);
+        assertEquals("PDF p. 5", extracted.get(1)[7]);
+        var product = SpecificationSheetContent.fromSourceRequirements(extracted).get(0);
+        assertEquals(2, product.clauseCount());
+        assertEquals(product.rows().get(0).wording(), product.rows().get(1).wording());
+    }
+
+    @Test
     void nativeItemScheduleGeneratesOneGroupInsteadOfOneFilePerItem() throws Exception {
         byte[] input;
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

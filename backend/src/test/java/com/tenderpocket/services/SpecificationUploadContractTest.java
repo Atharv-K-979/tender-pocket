@@ -109,11 +109,15 @@ class SpecificationUploadContractTest {
                 metrics.setDocumentCounts(2, 1);
                 return List.of(
                         new String[]{"3.10", "Capacity 40 litres", "", "", "", "Pump / Alpha", "-", "PDF p. 1"},
+                        new String[]{"3.10", "Capacity 40 litres", "", "", "", "Pump / Alpha", "-", "PDF p. 2"},
                         new String[]{"1.1", "Capacity 20 litres", "", "", "", "Pump Beta", "-", "PDF p. 2"});
             }
             @Override
             public byte[] generateCombinedSheetPdf(Map<String, String> data, List<SpecificationSheetContent.Product> p) {
                 assertEquals(2, p.size()); renders.incrementAndGet();
+                assertEquals(2, p.get(0).clauseCount(), "Keep both original source occurrences");
+                assertTrue(p.stream().flatMap(product -> product.rows().stream()).noneMatch(
+                        SpecificationSheetContent.Row::heading));
                 return "test-pdf".getBytes(java.nio.charset.StandardCharsets.UTF_8);
             }
             @Override
@@ -137,6 +141,7 @@ class SpecificationUploadContractTest {
             Map<?, ?> body = (Map<?, ?>) response.getBody();
             List<Map<String, Object>> products = (List<Map<String, Object>>) body.get("products");
             assertEquals(2, products.size());
+            assertEquals(3, body.get("clauseCount"));
             assertEquals(true, body.get("combined"));
             assertEquals(3, renders.get());
             assertEquals(products.get(0).get("pdfDownloadUrl"), products.get(1).get("pdfDownloadUrl"));
