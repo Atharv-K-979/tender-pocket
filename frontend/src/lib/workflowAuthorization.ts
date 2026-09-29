@@ -23,20 +23,18 @@ export function canPerform(role: string | null | undefined, action: WorkflowActi
   const canonical = canonicalRole(role);
   if (!canonical) return false;
   if (action === 'viewTenders' || action === 'viewAudit') return true;
-  if (canonical === 'Admin') {
-    // Admin has view rights across tenders/history/approvals, with the sole edit right for TPC pricing
-    return action === 'setTpcPrice' || action === 'viewTpcPrice' || action === 'manageUsers';
-  }
-  if (canonical === 'MIS Team') {
-    // MIS Team has full operational and edit rights across all stages (including all executive tasks)
-    return true;
-  }
+  if (canonical === 'Admin') return true;
   switch (action) {
     case 'uploadSpecs':
     case 'generateBids': return canonical === 'Tender Executive';
     case 'approveSpecs': return canonical === 'Clearance Team';
-    case 'setTpcPrice':
-    case 'viewTpcPrice': return canonical === 'TPC Pricing Team';
+    case 'setTpcPrice': return canonical === 'TPC Pricing Team';
+    case 'viewTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team';
+    case 'setMisPrice':
+    case 'reviewBids':
+    case 'recordPayment':
+    case 'recordSubmission':
+    case 'recordOutcome': return canonical === 'MIS Team';
     default: return false;
   }
 }
