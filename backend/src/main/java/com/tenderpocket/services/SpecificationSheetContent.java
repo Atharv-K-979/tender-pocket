@@ -138,6 +138,7 @@ public final class SpecificationSheetContent {
     }
 
     private static boolean isFormFurniture(String text) {
+        if (text.matches("(?i)^item\\s+specifications?\\s*:?$")) return true;
         return text.matches("(?is)^(?:we shall comply\\b|we understand\\b|note to bidders\\b|form \\d+:"
                 + "|technical compliance clause\\b|technical specifications and quality assurance\\b"
                 + "|compliance(?:\\s*\\(yes/no\\))?$|section [ivx]+$).*");

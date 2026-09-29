@@ -63,8 +63,8 @@ COPY --from=base /app/src ./src
 COPY --from=base /app/template.pdf ./template.pdf
 COPY --from=base /app/docker-entrypoint.sh ./docker-entrypoint.sh
 
-# Ensure execution permission on docker entrypoint script
-RUN chmod +x ./docker-entrypoint.sh
+# Accept Windows build contexts as well as LF-normalized Git checkouts.
+RUN sed -i 's/\r$//' ./docker-entrypoint.sh && chmod +x ./docker-entrypoint.sh
 
 # Make volume data directories
 RUN mkdir -p /app/data

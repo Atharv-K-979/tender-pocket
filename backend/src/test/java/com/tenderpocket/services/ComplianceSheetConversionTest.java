@@ -107,7 +107,7 @@ class ComplianceSheetConversionTest {
     }
 
     @Test
-    void failedNativePdfBatchInvokesOcrThenRetriesAsText() throws Exception {
+    void failedNativePdfBatchInvokesOcrAndRetainsPdfOnRetry() throws Exception {
         java.util.concurrent.atomic.AtomicInteger ocrCalls = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicInteger nativeCalls = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicInteger textCalls = new java.util.concurrent.atomic.AtomicInteger();
@@ -126,7 +126,8 @@ class ComplianceSheetConversionTest {
             @Override
             List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
                     Map<String, String> data, List<String> products) {
-                if (bytes != null) {
+                assertNotNull(bytes, "OCR recovery must retain the PDF for checking wrapped table cells");
+                if (!text.contains("certified temperature controller")) {
                     nativeCalls.incrementAndGet();
                     return List.of();
                 }
@@ -162,11 +163,13 @@ class ComplianceSheetConversionTest {
             @Override
             List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
                     Map<String, String> data, List<String> products) {
-                String[] result = row("2.4", bytes == null
+                assertNotNull(bytes, "Recovery must compare OCR text with the native PDF");
+                boolean recovered = text.contains("24 hours at 43 C.");
+                String[] result = row("2.4", recovered
                         ? "Holdover time shall be 24 hours at 43 C."
                         : "Holdover time shall be 24 hours at unclear temperature.",
                         "Test Product", "PDF p. 1");
-                result[6] = bytes == null ? "-" : "Unclear / Requires Clarification.";
+                result[6] = recovered ? "-" : "Unclear / Requires Clarification.";
                 return java.util.Collections.singletonList(result);
             }
         };
@@ -201,6 +204,61 @@ class ComplianceSheetConversionTest {
         List<String[]> rows = generator.parseSpecificationClauses(testPdf(8), "cover.pdf", baseData());
         assertEquals(1, rows.size());
         assertEquals(2, calls.get());
+    }
+
+    @Test
+    void scannedItemTableChecksCoverageEvenWhenNativeReadingReportsSuccess() throws Exception {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var direct = new DocumentGeneratorService() {
+            @Override String extractOcrFallbackText(byte[] bytes, int offset) {
+                return "[SOURCE_PAGE pdf=\"1\"]\nITEM SPECIFICATION\nITEM DESCRIPTION: Pump ZX10\n"
+                        + "Delivery Period: 60 days from contract\nInspection: inspect at destination\n[/SOURCE_PAGE]";
+            }
+        };
+        setAi(direct, new AISpecificationIntelligenceService() {
+            @Override List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
+                    Map<String, String> data, List<String> products) {
+                assertNotNull(bytes);
+                String[] description = {"1", "Pump ZX10", "", "", "", "Pump ZX10", "-", "PDF p. 1",
+                        "requirement", "", "ITEM DESCRIPTION", ""};
+                if (calls.incrementAndGet() == 1) return java.util.Collections.singletonList(description);
+                assertTrue(text.contains("[SOURCE_ITEM_TABLE_FIELDS]"));
+                assertTrue(text.contains("PDF p. 1: Delivery Period"));
+                return List.of(description,
+                        new String[]{"3", "60 days from contract", "", "", "", "Pump ZX10", "-", "PDF p. 1",
+                                "requirement", "", "Delivery Period", ""},
+                        new String[]{"4", "Inspect at destination", "", "", "", "Pump ZX10", "-", "PDF p. 1",
+                                "requirement", "", "Inspection", ""});
+            }
+        });
+        var rows = direct.parseSpecificationClauses(blankPdf(1), "scanned-table.pdf", baseData());
+        assertEquals(2, calls.get());
+        assertEquals(3, rows.size());
+    }
+
+    @Test
+    void scannedEmptyResultGetsOneOcrCheckBeforeDeclaringNoSpecifications() throws Exception {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var direct = new DocumentGeneratorService() {
+            @Override String extractOcrFallbackText(byte[] bytes, int offset) {
+                return "[SOURCE_PAGE pdf=\"1\"]\nITEM SPECIFICATION\nITEM DESCRIPTION Pump ZX10\n"
+                        + "Delivery Period 60 days\n[/SOURCE_PAGE]";
+            }
+        };
+        setAi(direct, new AISpecificationIntelligenceService() {
+            @Override List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
+                    Map<String, String> data, List<String> products) {
+                if (calls.incrementAndGet() == 1) return completedEmptyRows();
+                assertNotNull(bytes);
+                return java.util.Collections.singletonList(new String[]{
+                        "1", "Pump ZX10, Delivery Period 60 days", "", "", "", "Pump ZX10", "-",
+                        "PDF p. 1", "requirement", "", "ITEM DESCRIPTION", ""});
+            }
+        });
+        var rows = direct.parseSpecificationClauses(blankPdf(1), "scanned-empty.pdf", baseData());
+        assertEquals(2, calls.get());
+        assertEquals(1, rows.size());
+        assertFalse(AISpecificationIntelligenceService.isCompletedEmpty(rows));
     }
 
     @Test
