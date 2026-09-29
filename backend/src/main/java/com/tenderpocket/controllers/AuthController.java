@@ -226,6 +226,7 @@ public class AuthController {
         String username = body.get("username");
         String password = body.get("password");
         String role = body.get("role");
+        String email = body.get("email");
 
         if (username == null || password == null || role == null) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username, password, and role are required"));
@@ -254,6 +255,9 @@ public class AuthController {
         }
 
         User newUser = new User(username, passwordEncoder.encode(password), role);
+        if (email != null && !email.trim().isEmpty()) {
+            newUser.setEmail(email.trim());
+        }
         userRepository.save(newUser);
 
         // Audit Log

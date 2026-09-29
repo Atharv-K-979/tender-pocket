@@ -17,6 +17,12 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+/**
+ * @deprecated Consolidated into {@link EmailNotificationService}.
+ * All daily action digests and due-date notifications are managed exclusively by EmailNotificationService
+ * to guarantee deduplication and individual login routing.
+ */
+@Deprecated
 @Service
 public class AlertEngineService {
 

@@ -18,9 +18,6 @@ public class SyncScheduler {
     @Autowired
     private GeMScraperService geMScraperService;
 
-    @Autowired
-    private AlertEngineService alertEngineService;
-
     // Run synchronization tasks on startup (15s after boot) and every 6 hours
     @Scheduled(initialDelay = 15000, fixedDelay = 21600000)
     public void runStartupSync() {
@@ -52,14 +49,6 @@ public class SyncScheduler {
             } catch (Exception e) {
                 String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
                 System.err.println("[Scheduler] GeM Sync failed: " + errorMsg);
-            }
-
-            // 3. Process SLA and deadline warnings and dispatch alerts
-            try {
-                alertEngineService.checkAndSendAlerts();
-                System.out.println("[Scheduler] Alert engine runs completed successfully.");
-            } catch (Exception e) {
-                System.out.println("[Scheduler] Alert engine skipped or failed: " + e.getMessage());
             }
 
         } catch (Exception e) {

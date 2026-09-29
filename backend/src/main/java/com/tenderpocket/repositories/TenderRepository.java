@@ -8,6 +8,8 @@ import org.springframework.stereotype.Repository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import org.springframework.data.repository.query.Param;
+
 import java.util.List;
 
 @Repository
@@ -42,4 +44,10 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
 
     @Query(value = "SELECT t.mis_executive, sh.to_status, sh.changed_at FROM status_history sh JOIN tenders t ON sh.tender_id = t.id", nativeQuery = true)
     List<Object[]> findStatusHistoryStats();
+
+    @Query("SELECT t FROM Tender t WHERE t.status IN :statuses AND t.dueDate LIKE CONCAT(:datePrefix, '%') AND t.misExecutive IS NOT NULL AND TRIM(t.misExecutive) != ''")
+    List<Tender> findActiveTendersByDueDatePrefixAndExecutiveAssigned(@Param("statuses") List<String> statuses, @Param("datePrefix") String datePrefix);
+
+    @Query("SELECT t FROM Tender t WHERE (t.status = 'Issued' OR t.status = 'New') AND (t.misExecutive IS NULL OR TRIM(t.misExecutive) = '')")
+    List<Tender> findUnreviewedCandidates();
 }

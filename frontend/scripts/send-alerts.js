@@ -1,3 +1,9 @@
+// DEPRECATED: Email notification system has been consolidated into the Spring Boot backend
+// (com.tenderpocket.services.EmailNotificationService).
+// To prevent duplicate email alerts, this legacy script is disabled.
+console.log('NOTICE: scripts/send-alerts.js is deprecated. Daily email notifications are handled by the Spring Boot backend service (EmailNotificationService). Exiting safely.');
+process.exit(0);
+
 const Database = require('better-sqlite3');
 const nodemailer = require('nodemailer');
 const path = require('path');
