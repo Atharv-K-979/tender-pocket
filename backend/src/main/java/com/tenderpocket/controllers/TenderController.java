@@ -857,7 +857,7 @@ public class TenderController {
             newDocs.add(Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf",
                     "local_path", inputDownloadUrl, "created_date", createdDate));
             List<com.tenderpocket.services.SpecificationSheetContent.Product> sheets =
-                    com.tenderpocket.services.SpecificationSheetContent.from(extractedClauses).stream()
+                    com.tenderpocket.services.SpecificationSheetContent.fromSourceRequirements(extractedClauses).stream()
                             .filter(product -> product.clauseCount() > 0).toList();
             if (sheets.isEmpty()) throw new IllegalStateException("No product specifications found");
             List<Map<String, Object>> products = new ArrayList<>();

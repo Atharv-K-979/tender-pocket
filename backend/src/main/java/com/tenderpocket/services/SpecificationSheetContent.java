@@ -30,17 +30,28 @@ public final class SpecificationSheetContent {
         List<Row> rows = new ArrayList<>();
         for (Product product : products) {
             if (product.clauseCount() == 0) continue;
-            rows.add(new Row("", product.name(), true, ""));
+            String heading = SpecificationProductLabels.displayName(product.name(), product.rows().stream()
+                    .filter(row -> !row.heading()).map(Row::wording).toList());
+            rows.add(new Row("", heading, true, ""));
             int serial = 0;
             for (Row row : product.rows()) {
-                rows.add(new Row(row.heading() ? "" : String.valueOf(++serial),
-                        row.wording(), row.heading(), row.sources()));
+                if (row.heading()) continue;
+                rows.add(new Row(String.valueOf(++serial), row.wording(), false, row.sources()));
             }
         }
         return new Product("Combined Technical Specifications", "", List.copyOf(rows), List.of());
     }
 
     public static List<Product> from(List<String[]> input) {
+        return from(input, false);
+    }
+
+    /** Upload conversion keeps source requirement occurrences; legacy bid-pack callers keep their contract. */
+    public static List<Product> fromSourceRequirements(List<String[]> input) {
+        return from(input, true);
+    }
+
+    private static List<Product> from(List<String[]> input, boolean preserveRequirements) {
         LinkedHashMap<String, List<String[]>> groups = new LinkedHashMap<>();
         for (String[] raw : input) {
             String name = value(raw, 5);
@@ -54,7 +65,7 @@ public final class SpecificationSheetContent {
             LinkedHashSet<String> notes = new LinkedHashSet<>();
             String schedule = "";
             for (String[] row : entry.getValue()) {
-                if (isFormFurniture(value(row, 1))) continue;
+                if (preserveRequirements ? "heading".equals(value(row, 8)) : isFormFurniture(value(row, 1))) continue;
                 if (!value(row, 11).isBlank()) {
                     if (!schedule.isBlank() && !schedule.equals(value(row, 11))) {
                         notes.add("Conflicting source schedule references: " + schedule + " / " + value(row, 11));
@@ -73,9 +84,11 @@ public final class SpecificationSheetContent {
                             previous = candidate;
                             break;
                         }
+                        if (preserveRequirements) break; // Only an adjacent continuation of the same clause.
                     }
                     if (previous != null) {
-                        previous[1] = joinContinuation(previous[1], row[1]);
+                        previous[1] = preserveRequirements ? previous[1] + "\n" + row[1]
+                                : joinContinuation(previous[1], row[1]);
                         previous[7] = sources(previous[7], value(row, 7));
                         continue;
                     }
@@ -84,6 +97,16 @@ public final class SpecificationSheetContent {
                             + sourceSuffix(value(row, 7)));
                 }
                 assembled.add(row);
+            }
+            if (preserveRequirements) {
+                List<Row> rows = assembled.stream().map(row ->
+                        new Row(value(row, 0), value(row, 1), false, value(row, 7))).toList();
+                if (!rows.isEmpty()) {
+                    ordinal++;
+                    products.add(new Product(entry.getKey(), schedule.isBlank() ? String.valueOf(ordinal) : schedule,
+                            rows, List.copyOf(notes)));
+                }
+                continue;
             }
             LinkedHashMap<String, Row> unique = new LinkedHashMap<>();
             Map<String, Row> byReference = new LinkedHashMap<>();

@@ -1794,7 +1794,6 @@ public class DocumentGeneratorService {
             return Collections.emptyList();
         }
 
-        LinkedHashMap<String, String[]> merged = new LinkedHashMap<>();
         int totalPages = batches.stream().mapToInt(batch -> batch.pageCount).sum();
         if (metrics != null) metrics.setDocumentCounts(totalPages, batches.size());
         progress.onProgress("BATCHING", "Prepared " + batches.size() + " batches covering "
@@ -1808,19 +1807,18 @@ public class DocumentGeneratorService {
         batches = annotateProductContexts(batches, knownProducts);
         List<List<String[]>> extracted = extractPdfBatchesConcurrently(batches, data, knownProducts, progress, metrics);
         if (extracted.isEmpty()) return Collections.emptyList();
-        // Merge in PDF order, not completion order, so both output formats remain deterministic.
+        // Keep every source occurrence in PDF order; similar wording is not grounds to merge requirements.
         List<String[]> allRows = extracted.stream().flatMap(List::stream).toList();
-        for (String[] row : SpecificationProductLabels.normalize(allRows)) mergeConversionRow(merged, row);
         List<String[]> consolidated = groupCompactItemSchedule(
-                new ArrayList<>(merged.values()), fullSourceContext.toString());
+                SpecificationProductLabels.normalize(allRows), fullSourceContext.toString());
         int productCount = (int) consolidated.stream().map(row -> row[5]).distinct().count();
-        progress.onProgress("VALIDATING", "Extraction complete. Validated " + merged.size()
-                + " unique requirements across " + productCount + " products.",
-                78, batches.size(), batches.size(), merged.size());
-        if (metrics != null) metrics.setResultCounts(productCount, merged.size());
-        if (merged.isEmpty()) progress.onProgress("NO_PRODUCTS",
+        progress.onProgress("VALIDATING", "Extraction complete. Validated " + consolidated.size()
+                + " source requirements across " + productCount + " products.",
+                78, batches.size(), batches.size(), consolidated.size());
+        if (metrics != null) metrics.setResultCounts(productCount, consolidated.size());
+        if (consolidated.isEmpty()) progress.onProgress("NO_PRODUCTS",
                 "No products found with applicable compliance requirements.", 100, batches.size(), batches.size(), 0);
-        return merged.isEmpty() ? AISpecificationIntelligenceService.completedEmptyRows()
+        return consolidated.isEmpty() ? AISpecificationIntelligenceService.completedEmptyRows()
                 : consolidated;
     }
 
@@ -1918,13 +1916,23 @@ public class DocumentGeneratorService {
                     }
                 }));
             }
+            boolean failed = false;
             for (int i = 0; i < batches.size(); i++) {
-                Map.Entry<Integer, List<String[]>> result = completed.take().get();
+                Map.Entry<Integer, List<String[]>> result;
+                try {
+                    result = completed.take().get();
+                } catch (java.util.concurrent.ExecutionException e) {
+                    failed = true;
+                    System.err.println("[DocumentGeneratorService] Batch worker failed: "
+                            + e.getCause().getClass().getSimpleName());
+                    continue;
+                }
                 if (result.getValue() == null || (result.getValue().isEmpty()
                         && !AISpecificationIntelligenceService.isCompletedEmpty(result.getValue()))) {
                     System.err.println("[DocumentGeneratorService] Required PDF batch " + (result.getKey() + 1)
                             + "/" + batches.size() + " failed; refusing a partial compliance sheet.");
-                    return Collections.emptyList();
+                    failed = true;
+                    continue;
                 }
                 results.set(result.getKey(), result.getValue());
                 synchronized (progressLock) {
@@ -1936,13 +1944,10 @@ public class DocumentGeneratorService {
                             counters[0], batches.size(), counters[1]);
                 }
             }
-            return results;
+            // Calls already sent to the provider must settle before final token/timing metrics are emitted.
+            return failed ? Collections.emptyList() : results;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return Collections.emptyList();
-        } catch (java.util.concurrent.ExecutionException e) {
-            System.err.println("[DocumentGeneratorService] Parallel compliance extraction failed: "
-                    + e.getCause().getClass().getSimpleName());
             return Collections.emptyList();
         } finally {
             synchronized (progressLock) {
@@ -1965,8 +1970,8 @@ public class DocumentGeneratorService {
         if (nativeEmpty && !hasUnreadablePage(batch.sourceContext)) return rows;
         boolean nativeSucceeded = rows != null && !rows.isEmpty();
         boolean unclearReading = nativeSucceeded && hasUnclearReading(rows);
-        boolean checkTableCoverage = nativeSucceeded && SpecificationTableCoverage.hinted(rows)
-                && hasUnreadablePage(batch.sourceContext);
+        boolean checkTableCoverage = nativeSucceeded && hasUnreadablePage(batch.sourceContext)
+                && (SpecificationTableCoverage.hinted(rows) || containsScannedPage(batch.bytes));
         if (nativeSucceeded && !unclearReading && !checkTableCoverage) return rows;
 
         // The original PDF is always sent first. OCR is deferred until native document understanding
@@ -1991,7 +1996,10 @@ public class DocumentGeneratorService {
         if (ocrImproved && aiSpecificationIntelligenceService.canRetryBatch()) {
             List<String> missingFields = SpecificationTableCoverage.missing(
                     nativeSucceeded ? rows : List.of(), retryBatch.sourceContext);
-            if (nativeSucceeded && !unclearReading && missingFields.isEmpty()) return rows;
+            List<String> sourceModels = SpecificationProductLabels.sourceModelCodes(retryBatch.sourceContext);
+            boolean constrainModel = sourceModels.size() == 1
+                    && retryBatch.sourceContext.matches("(?is).*\\bITEM\\s+SPECIFICATION\\b.*");
+            if (nativeSucceeded && !unclearReading && missingFields.isEmpty() && sourceModels.isEmpty()) return rows;
             String recoveryContext = retryBatch.sourceContext;
             if (!missingFields.isEmpty()) {
                 recoveryContext += "\n[SOURCE_ITEM_TABLE_FIELDS]\n"
@@ -2001,10 +2009,18 @@ public class DocumentGeneratorService {
                         + "actual equipment/model. Return ALL product requirements from this batch, not just "
                         + "these fields. Never invent field values.\n[/SOURCE_ITEM_TABLE_FIELDS]";
             }
-            // OCR can scramble table cells and model numbers. Keep the page images available
-            // so the recovery call can verify the text against the actual document.
-            List<String[]> ocrRows = runAiExtraction(recoveryContext, retryBatch.bytes,
-                    data, knownProducts, progress, metrics);
+            // A single scanned page is rendered upright for recovery; PDF viewers/providers can
+            // interpret rotation metadata differently. OCR remains context, never replacement evidence.
+            byte[] recoveryDocument = retryBatch.bytes;
+            if (retryBatch.pageCount == 1 && containsScannedPage(retryBatch.bytes)) {
+                byte[] uprightImage = renderFirstPageToPng(retryBatch.bytes);
+                if (uprightImage != null) {
+                    recoveryDocument = uprightImage;
+                    recoveryContext = imageTranscriptionContext(retryBatch.sourceContext, missingFields);
+                }
+            }
+            List<String[]> ocrRows = runAiExtraction(recoveryContext, recoveryDocument,
+                    data, constrainModel ? sourceModels : knownProducts, progress, metrics, constrainModel);
             if (ocrRows != null && !ocrRows.isEmpty()) {
                 List<String> stillMissing = SpecificationTableCoverage.missing(ocrRows, retryBatch.sourceContext);
                 if (!stillMissing.isEmpty()) {
@@ -2027,6 +2043,23 @@ public class DocumentGeneratorService {
                 + " could not be validated within the two-call limit. No partial sheet will be generated.",
                 -1, batchNumber - 1, totalBatches, clausesSoFar);
         return Collections.emptyList();
+    }
+
+    static String imageTranscriptionContext(String sourceContext, List<String> missingFields) {
+        // Do not feed noisy OCR sentences back as authoritative text: they can bias the transcription.
+        StringBuilder context = new StringBuilder();
+        var markers = java.util.regex.Pattern.compile("\\[SOURCE_PAGE[^]]*]").matcher(sourceContext);
+        while (markers.find()) context.append(markers.group()).append("\n[/SOURCE_PAGE]\n");
+        context.append("\nTranscribe the upright page image itself. OCR was used only to identify page references "
+                + "and model hints, not to supply wording. Read each original requirement row in full. ");
+        if (sourceContext.matches("(?is).*\\bITEM\\s+SPECIFICATION\\b.*")) {
+            context.append("This page contains an item specification table. Read the entire ITEM DESCRIPTION cell "
+                    + "and every applicable table row, including the bottom rows. Copy parameter-cell wording "
+                    + "without adding column-label prefixes. Do not include offer validity or signature/declaration forms. ");
+        }
+        if (!missingFields.isEmpty()) context.append("Prior coverage checks need these source fields verified: ")
+                .append(String.join("; ", missingFields)).append(". These are checks, not replacement values.");
+        return context.toString();
     }
 
     private String sourceContextForRange(String context, int first, int count) {
@@ -2061,6 +2094,13 @@ public class DocumentGeneratorService {
                                            List<String> knownProducts,
                                            ConversionProgressListener progress,
                                            ComplianceConversionMetrics metrics) {
+        return runAiExtraction(text, bytes, data, knownProducts, progress, metrics, false);
+    }
+
+    private List<String[]> runAiExtraction(String text, byte[] bytes, Map<String, String> data,
+                                           List<String> knownProducts,
+                                           ConversionProgressListener progress,
+                                           ComplianceConversionMetrics metrics, boolean constrainSourceModels) {
         aiSpecificationIntelligenceService.setProgressReporter(message ->
                 progress.onProgress("AI", message, -1, 0, 0, 0));
         aiSpecificationIntelligenceService.setConversionMetrics(metrics);
@@ -2070,7 +2110,7 @@ public class DocumentGeneratorService {
                         + String.join("\n", knownProducts) + "\n[/PRODUCT_NAME_HINTS]\n" + text;
                 // Product names are discovered in this same native-PDF request, not in a separate AI pass.
                 return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(
-                        hintedText, bytes, data, Collections.emptyList());
+                        hintedText, bytes, data, constrainSourceModels ? knownProducts : Collections.emptyList());
             }
             LinkedHashSet<String> scopedProducts = new LinkedHashSet<>();
             var productMarkers = java.util.regex.Pattern.compile("\\[SOURCE_PRODUCT name=\"(.*)\"]").matcher(text);
@@ -2124,12 +2164,47 @@ public class DocumentGeneratorService {
     private List<PdfBatch> createPdfBatches(byte[] pdfBytes, int firstPhysicalPage, int pagesPerBatch) throws IOException {
         List<PdfBatch> batches = new ArrayList<>();
         try (org.apache.pdfbox.pdmodel.PDDocument source = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
-            for (int start = 0; start < source.getNumberOfPages(); start += pagesPerBatch) {
+            boolean[] scanned = new boolean[source.getNumberOfPages()];
+            for (int page = 0; page < scanned.length; page++) scanned[page] = isScannedPage(source, page);
+            for (int start = 0; start < source.getNumberOfPages();) {
                 int end = Math.min(source.getNumberOfPages(), start + pagesPerBatch);
+                // Keep scanned tables from competing with other pages for model attention.
+                if (scanned[start]) end = start + 1;
+                else for (int page = start + 1; page < end; page++) {
+                    if (scanned[page]) { end = page; break; }
+                }
                 addSizedBatch(source, start, end, firstPhysicalPage + start, batches);
+                start = end;
             }
         }
         return batches;
+    }
+
+    private boolean containsScannedPage(byte[] bytes) {
+        try (PDDocument document = PDDocument.load(bytes)) {
+            for (int page = 0; page < document.getNumberOfPages(); page++)
+                if (isScannedPage(document, page)) return true;
+        } catch (IOException ignored) { }
+        return false;
+    }
+
+    private boolean isScannedPage(PDDocument document, int page) throws IOException {
+        var stripper = new PDFTextStripper();
+        stripper.setStartPage(page + 1); stripper.setEndPage(page + 1);
+        return cleanExtractedText(stripper.getText(document)).length() < MIN_PAGE_TEXT_CHARS
+                && hasLargeImage(document.getPage(page).getResources(), 0);
+    }
+
+    private boolean hasLargeImage(org.apache.pdfbox.pdmodel.PDResources resources, int depth) throws IOException {
+        if (resources == null || depth > 4) return false;
+        for (var name : resources.getXObjectNames()) {
+            var object = resources.getXObject(name);
+            if (object instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject image
+                    && image.getWidth() >= 300 && image.getHeight() >= 300) return true;
+            if (object instanceof org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject form
+                    && hasLargeImage(form.getResources(), depth + 1)) return true;
+        }
+        return false;
     }
 
     private void addSizedBatch(org.apache.pdfbox.pdmodel.PDDocument source, int start, int end,

@@ -12,6 +12,26 @@ import static org.junit.jupiter.api.Assertions.*;
 class SinglePassComplianceTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    @Test void imageRecoveryUsesHighDetailAndMediumEffortWithoutChangingNativePdfDefaults() throws Exception {
+        var ai = new AISpecificationIntelligenceService();
+        String nativePayload = ReflectionTestUtils.invokeMethod(ai, "buildAzureResponsesPayload",
+                "Copy source rows", "%PDF-native".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                AISpecificationIntelligenceService.AzureOutput.COMPLIANCE_ROWS, List.of());
+        assertEquals("low", JSON.readTree(nativePayload).path("reasoning").path("effort").asText());
+        String imagePayload = ReflectionTestUtils.invokeMethod(ai, "buildAzureResponsesPayload",
+                "Copy source rows", new byte[]{(byte)0x89, 'P', 'N', 'G'},
+                AISpecificationIntelligenceService.AzureOutput.COMPLIANCE_ROWS, List.of("ZX10"));
+        var parsed = JSON.readTree(imagePayload);
+        assertEquals("gpt-5-nano", parsed.path("model").asText());
+        assertEquals("medium", parsed.path("reasoning").path("effort").asText());
+        assertEquals("high", parsed.path("input").get(0).path("content").get(1).path("detail").asText());
+        assertEquals("ZX10", parsed.path("text").path("format").path("schema").path("properties")
+                .path("rows").path("items").path("properties").path("productCategory").path("enum").get(0).asText());
+        assertEquals(List.of("requirement", "continuation"), JSON.convertValue(parsed.path("text").path("format")
+                .path("schema").path("properties").path("rows").path("items").path("properties")
+                .path("rowType").path("enum"), List.class), "Page continuations must remain representable");
+    }
+
     @Test void pricesDoNotBecomeClauseNumbersButOriginalReferencesSurvive() {
         var ai = new AISpecificationIntelligenceService();
         Set<String> anchors = ReflectionTestUtils.invokeMethod(ai, "numberedSourceClauses",
