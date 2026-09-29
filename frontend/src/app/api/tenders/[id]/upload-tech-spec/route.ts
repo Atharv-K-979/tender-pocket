@@ -99,12 +99,17 @@ export async function POST(
       local_path: docUrl, created_date: createdDate,
     }];
     if (backendResult.generated === true && Array.isArray(backendResult.products)) {
-      for (const product of backendResult.products) {
+      const documents = backendResult.combined === true
+        ? [{ ...backendResult, productName: 'Combined Technical Specifications' }]
+        : backendResult.products;
+      for (const product of documents) {
         if (!isObject(product)) continue;
         for (const [key, type] of [['pdfDownloadUrl', 'PDF'], ['docxDownloadUrl', 'DOCX'],
           ['xlsxDownloadUrl', 'XLSX']]) {
           const url = product[key] as string;
-          newDocs.push({ name: `Technical Specification - ${String(product.productName || 'Product')} (${type})`,
+          newDocs.push({ name: backendResult.combined === true
+            ? `Combined Technical Specifications (${type})`
+            : `Technical Specification - ${String(product.productName || 'Product')} (${type})`,
             filename: decodeURIComponent(url.slice(url.lastIndexOf('/') + 1)),
             local_path: url, created_date: createdDate });
         }

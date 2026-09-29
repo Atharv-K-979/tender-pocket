@@ -25,6 +25,21 @@ public final class SpecificationSheetContent {
         return row.length > index && row[index] != null ? row[index].trim() : "";
     }
 
+    /** Display numbering is independent of source clause references retained in the input products. */
+    static Product combined(List<Product> products) {
+        List<Row> rows = new ArrayList<>();
+        for (Product product : products) {
+            if (product.clauseCount() == 0) continue;
+            rows.add(new Row("", product.name(), true, ""));
+            int serial = 0;
+            for (Row row : product.rows()) {
+                rows.add(new Row(row.heading() ? "" : String.valueOf(++serial),
+                        row.wording(), row.heading(), row.sources()));
+            }
+        }
+        return new Product("Combined Technical Specifications", "", List.copyOf(rows), List.of());
+    }
+
     public static List<Product> from(List<String[]> input) {
         LinkedHashMap<String, List<String[]>> groups = new LinkedHashMap<>();
         for (String[] raw : input) {

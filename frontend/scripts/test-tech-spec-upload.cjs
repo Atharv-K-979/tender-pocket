@@ -185,6 +185,25 @@ test('a successful empty conversion preserves null links and does not advance ap
   assert(!JSON.parse(state.docs).at(-1).name.includes('Technical Specification'));
 });
 
+test('combined outputs retain every product but register only one PDF DOCX and XLSX', async () => {
+  const urls = {
+    pdfDownloadUrl: '/documents/T-1/Combined_Technical_Data_Sheet.pdf',
+    docxDownloadUrl: '/documents/T-1/Combined_Technical_Data_Sheet.docx',
+    xlsxDownloadUrl: '/documents/T-1/Combined_Technical_Data_Sheet.xlsx',
+  };
+  const { state, route } = await fixture({ result: { ...success, ...urls, combined: true,
+    products: products.map(product => ({ ...product, ...urls })) } });
+  const response = await (await route()).POST(uploadRequest(), params);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.combined, true);
+  assert.equal(body.products.length, 2);
+  const documents = JSON.parse(state.docs);
+  assert.equal(documents.length, 5, 'Unrelated file, input, and exactly three combined outputs');
+  assert.equal(documents.filter(doc => doc.name.startsWith('Combined Technical Specifications')).length, 3);
+  assert.equal(body.products[1].xlsxDownloadUrl, body.xlsxDownloadUrl);
+});
+
 for (const status of [400, 401, 403, 429, 500, 503]) {
   test(`Java HTTP ${status} and its error/metrics are preserved without local success`, async () => {
     const body = { success: false, error: 'Java conversion failed', metrics };

@@ -1148,7 +1148,8 @@ public class AISpecificationIntelligenceService {
                 + "3. Reuse an explicit source clause number as clauseReference. Leave it empty when the tender supplies none; never generate one.\n"
                 + componentRule(components, targetComponent)
                 + "5. Every row must include sourceReference using the [SOURCE_PAGE ...] markers supplied with extracted text. Preserve both PDF and printed page identifiers when available.\n"
-                + "6. requiredEvidence must be empty. Administrative evidence-submission requests are excluded.\n"
+                + "6. requiredEvidence must be empty. Keep source product documentation and certificate requirements "
+                + "in requirement, as required by rules 1 and 2; exclude only unrelated administrative submissions.\n"
                 + "7. reviewerRemarks must be 'Unclear / Requires Clarification.' for unclear wording, describe both sides of a possible contradiction without resolving it, or '-' when neither applies.\n"
                 + "8. Preserve source section headings and structure, not generic checklist categories. "
                 + "rowType is heading, requirement or continuation. sectionReference and sectionTitle describe "
@@ -1186,7 +1187,10 @@ public class AISpecificationIntelligenceService {
                 + "clauseDecisions must classify every supplied source key as included, excluded, or heading. "
                 + "For included, return the original clause reference and source page in rows; "
                 + "for mixed clauses include all product-related sentences. Excluded and heading decisions require no "
-                + "fabricated rows. Prices, currency amounts, pricing-column quantities, page numbers and dates "
+                + "fabricated rows. Include unnumbered specifications, table cells, notes and bullet points too; "
+                + "the source keys are a minimum coverage checklist, not a limit on what to extract. Do not summarize "
+                + "several technical parameters into one vague sentence. Prices, currency amounts, "
+                + "pricing-column quantities, page numbers and dates "
                 + "are NOT clause references. Existing equipment descriptions in maintenance-service schedules are "
                 + "background, not new equipment specifications. Supplied replacement parts with explicit electrical "
                 + "or physical parameters qualify; bare names such as 'Light' or 'Fan' alone do not. "
@@ -1251,10 +1255,16 @@ public class AISpecificationIntelligenceService {
                         fileBytes != null && fileBytes.length > 0);
                 if (validated.size() == requirements.size() && !validated.isEmpty()
                         && normalizeKnownProductNames(validated, components)) {
-                    if (!coversComplianceSourceClauses(clauses, rawOcrText, azureResponse)) {
+                    Set<String> missing = missingIncludedKeys(validated, rawOcrText, azureResponse);
+                    if (!missing.isEmpty() && attempt == 1) {
+                        recoverIncludedRows(validated, missing, fullPrompt, rawOcrText, fileBytes, data, components);
+                    }
+                    if (!coversComplianceSourceClauses(validated, rawOcrText, azureResponse)) {
                         annotateReviewWarning(validated.get(0),
                                 "Some source clause numbers could not be matched automatically. "
-                                + "Review clause coverage against the tender; extracted rows were retained.");
+                                + "Review clause coverage against the tender; extracted rows were retained. "
+                                + "Unrecovered included clauses: "
+                                + missingIncludedKeys(validated, rawOcrText, azureResponse));
                     }
                     reportProgress("Accepted " + validated.size() + " product compliance requirements; "
                             + (clauses.size() - requirements.size()) + " unrelated rows excluded.");
@@ -1267,6 +1277,75 @@ public class AISpecificationIntelligenceService {
             }
         }
         return null;
+    }
+
+    private boolean matchesSourceKey(String[] row, String key) {
+        String[] parts = key.split(":", 2);
+        return parts.length == 2 && row.length > 7 && parts[1].equals(row[0])
+                && ("text".equals(parts[0]) || Pattern.compile("PDF p\\. " + parts[0].substring(1)
+                        + "(?!\\d)").matcher(row[7]).find());
+    }
+
+    private Set<String> missingIncludedKeys(List<String[]> rows, String context, String response) {
+        Set<String> missing = new LinkedHashSet<>();
+        try {
+            JsonNode decisions = JSON.readTree(extractModelText(response)
+                    .replaceAll("(?s)```(?:json)?", "").trim()).path("clauseDecisions");
+            for (String key : sourceClauseAnchors(context).keySet()) {
+                if ("included".equals(decisions.path(key).asText())
+                        && rows.stream().noneMatch(row -> matchesSourceKey(row, key))) missing.add(key);
+            }
+        } catch (Exception ignored) { }
+        return missing;
+    }
+
+    /** Recover positively identified omissions, never replace already validated rows or retry indefinitely. */
+    private void recoverIncludedRows(List<String[]> accepted, Set<String> missing, String prompt, String context,
+                                     byte[] fileBytes, Map<String, String> data, List<String> components) {
+        boolean ownBudget = batchAttempts.get() == null;
+        if (ownBudget) batchAttempts.set(1); // The initial extraction has already used one call.
+        try {
+            if (!reserveBatchAttempt()) return;
+            ComplianceConversionMetrics metrics = conversionMetrics.get();
+            if (metrics != null) metrics.incrementValidationRetries();
+            reportProgress("Recovering omitted source clauses in one bounded call: " + missing);
+            String recoveryPrompt = prompt + "\nCOVERAGE RECOVERY: The first response classified these source keys "
+                    + "as included but omitted their requirement rows: " + JSON.valueToTree(missing)
+                    + ". Re-read those clauses and return ONLY their complete requirement rows with the correct "
+                    + "source product names and page references. Do not invent content or rewrite already extracted rows. "
+                    + "Previously identified products: " + JSON.valueToTree(accepted.stream().map(row -> row[5])
+                            .distinct().toList()) + ". Classify the source keys truthfully in clauseDecisions.";
+            String response = postAzureResponse(recoveryPrompt, fileBytes, AzureOutput.COMPLIANCE_ROWS, components);
+            if (response == null || response.isBlank()) return;
+            List<String[]> parsed = parseLlmJsonResponse(response, data);
+            if (parsed == null || parsed.isEmpty()) return;
+            List<String[]> requirements = complianceRequirementsOnly(parsed);
+            List<String[]> recovered = validateEvidenceRows(requirements, context,
+                    fileBytes != null && fileBytes.length > 0);
+            if (recovered.size() != requirements.size() || !normalizeKnownProductNames(recovered, components)) return;
+            List<String> keys = new ArrayList<>(sourceClauseAnchors(context).keySet());
+            int added = 0;
+            for (String[] row : recovered) {
+                if (missing.stream().noneMatch(key -> matchesSourceKey(row, key))) continue;
+                if (accepted.stream().anyMatch(previous -> Arrays.equals(previous, row))) continue;
+                int rank = sourceRank(row, keys);
+                int index = accepted.size();
+                for (int i = 0; i < accepted.size(); i++) {
+                    int existingRank = sourceRank(accepted.get(i), keys);
+                    if (existingRank != Integer.MAX_VALUE && existingRank > rank) { index = i; break; }
+                }
+                accepted.add(index, row);
+                added++;
+            }
+            reportProgress("Recovered " + added + " omitted requirement rows.");
+        } finally {
+            if (ownBudget) batchAttempts.remove();
+        }
+    }
+
+    private int sourceRank(String[] row, List<String> keys) {
+        for (int i = 0; i < keys.size(); i++) if (matchesSourceKey(row, keys.get(i))) return i;
+        return Integer.MAX_VALUE;
     }
 
     private String validationRetryInstructions(String sourceContext, List<String> components) {
@@ -1393,16 +1472,30 @@ public class AISpecificationIntelligenceService {
     private Map<String, String> sourceClauseAnchors(String context) {
         Map<String, String> anchors = new LinkedHashMap<>();
         String page = "text";
+        String source = context == null ? "" : context;
+        int sourceStart = source.indexOf("\n\nEXTRACTED DOCUMENT TEXT:\n");
+        if (sourceStart >= 0) {
+            source = source.substring(sourceStart + "\n\nEXTRACTED DOCUMENT TEXT:\n".length());
+            int sourceEnd = source.indexOf("\nNUMBERED SOURCE CLAUSES THAT MUST BE ACCOUNTED FOR:");
+            if (sourceEnd < 0) sourceEnd = source.indexOf("\nSOURCE CLAUSE KEYS:");
+            if (sourceEnd >= 0) source = source.substring(0, sourceEnd);
+        }
+        boolean markedPages = source.contains("[SOURCE_PAGE ");
+        boolean inPage = !markedPages;
         // Horizontal whitespace only: \s previously consumed newlines between price/table cells.
-        Pattern numbered = Pattern.compile("^[ \\t]*(\\d{1,3}\\.\\d{1,3}(?:\\.\\d{1,3})*)"
+        Pattern numbered = Pattern.compile("^[ \\t]*(\\d{1,3}(?:\\.\\d{1,3})*)"
                 + "[.)]?(?:[ \\t]+(.*)|[ \\t]*)$");
-        String[] lines = (context == null ? "" : context).split("\\R");
+        String[] lines = source.split("\\R");
         for (int i = 0; i < lines.length; i++) {
             Matcher marker = Pattern.compile("\\[SOURCE_PAGE pdf=\"(\\d+)\"").matcher(lines[i]);
-            if (marker.find()) page = "p" + marker.group(1);
+            if (marker.find()) { page = "p" + marker.group(1); inPage = true; continue; }
+            if (markedPages && lines[i].contains("[/SOURCE_PAGE]")) { inPage = false; continue; }
+            if (!inPage) continue;
             Matcher ref = numbered.matcher(lines[i]);
             if (!ref.matches()) continue;
             String body = ref.group(2) == null ? "" : ref.group(2).trim();
+            // Standalone integer table values are often quantities, not clause numbers.
+            if (body.isBlank() && !ref.group(1).contains(".")) continue;
             if (body.isBlank() && i + 1 < lines.length && !lines[i + 1].startsWith("["))
                 body = lines[i + 1].trim();
             if (!body.matches(".*\\p{L}.*") || body.matches("(?i)^(?:each|nos?\\.?|qty|total|per\\b.*|"

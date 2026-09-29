@@ -451,7 +451,14 @@
 
     const links = root.querySelector(".cp-links");
     links.replaceChildren();
-    if (data.products && data.products.length) {
+    if (data.combined && data.generated !== false) {
+      const name = document.createElement("div");
+      name.textContent = "Combined technical specifications";
+      links.appendChild(name);
+      if (data.pdfDownloadUrl) links.appendChild(downloadLink(data.pdfDownloadUrl, "PDF"));
+      if (data.docxDownloadUrl) links.appendChild(downloadLink(data.docxDownloadUrl, "Word DOCX"));
+      if (data.xlsxDownloadUrl) links.appendChild(downloadLink(data.xlsxDownloadUrl, "Excel XLSX"));
+    } else if (data.products && data.products.length) {
       data.products.forEach(product => {
         const group = document.createElement("div");
         group.className = "cp-product";

@@ -196,8 +196,46 @@ class SinglePassComplianceTest {
                 "[SOURCE_PAGE pdf=\"1\"]\n3.10 Capacity 100 litres.\n3.11 Voltage 230 V.\n[/SOURCE_PAGE]",
                 new byte[]{1}, Map.of(), List.of("Pump"));
         assertEquals(1, accepted.size());
-        assertEquals(1, calls.get());
+        assertEquals(2, calls.get());
         assertTrue(accepted.get(0)[6].contains("Review clause coverage"));
+    }
+
+    @Test void omittedIncludedClauseIsRecoveredWithoutLosingExistingRowsOrRepeatingTheWholeJob() {
+        var calls = new AtomicInteger();
+        var ai = new AISpecificationIntelligenceService() {
+            @Override String postAzureResponse(String prompt, byte[] bytes, AzureOutput output, List<String> products) {
+                if (calls.incrementAndGet() == 1) return """
+                        {"readable":true,"clauseDecisions":{"p1:3.10":"included","p1:3.11":"included","p1:3.12":"included"},
+                         "rows":[{"clauseReference":"3.10","requirement":"Capacity 100 litres.","productCategory":"Pump",
+                                  "sourceReference":"PDF p. 1","rowType":"requirement"},
+                                 {"clauseReference":"3.12","requirement":"Frequency 50 Hz.","productCategory":"Pump",
+                                  "sourceReference":"PDF p. 1","rowType":"requirement"}]}
+                        """;
+                assertTrue(prompt.contains("COVERAGE RECOVERY"));
+                return """
+                        {"readable":true,"clauseDecisions":{},
+                         "rows":[{"clauseReference":"3.11","requirement":"Voltage 230 V.","productCategory":"Pump",
+                                  "sourceReference":"PDF p. 1","rowType":"requirement"}]}
+                        """;
+            }
+        };
+        ai.beginBatch();
+        try {
+            var accepted = ai.processOcrAndSynthesizeClauses(
+                    "[SOURCE_PAGE pdf=\"1\"]\n3.10 Capacity 100 litres.\n3.11 Voltage 230 V.\n"
+                            + "3.12 Frequency 50 Hz.\n[/SOURCE_PAGE]", new byte[]{1}, Map.of(), List.of("Pump"));
+            assertEquals(List.of("3.10", "3.11", "3.12"), accepted.stream().map(row -> row[0]).toList());
+            assertEquals(2, calls.get());
+            assertFalse(ai.canRetryBatch());
+            assertFalse(accepted.get(0)[6].contains("Unrecovered"));
+        } finally { ai.endBatch(); }
+    }
+
+    @Test void integerClausesAreCoveredButPromptInstructionsAndQuantityOnlyLinesAreNot() {
+        Set<String> anchors = ReflectionTestUtils.invokeMethod(new AISpecificationIntelligenceService(),
+                "numberedSourceClauses", "1. Extract all requirements.\n[SOURCE_PAGE pdf=\"2\"]\n"
+                        + "1 Capacity 100 litres.\n2. Voltage 230 V.\n06\nNos\n[/SOURCE_PAGE]\n3. Return JSON.");
+        assertEquals(Set.of("1", "2"), anchors);
     }
 
     @Test void unnumberedWarrantyRequirementIsRetained() {
