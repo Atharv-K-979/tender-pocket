@@ -28,6 +28,7 @@ import {
   Moon
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
+import { canPerform } from '@/lib/workflowAuthorization';
 
 interface Toast {
   message: string;
@@ -1218,8 +1219,8 @@ export default function TenderDetailPage() {
                       </div>
                     ) : null}
 
-                    {/* Executive & MIS Team Controls: 2-Phase Sequence (1. Generate/Upload -> 2. Send to Clearance Team) */}
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.spec_verification_status !== 'Approved' && (
+                    {/* Executive Controls: 2-Phase Sequence (1. Generate/Upload -> 2. Send to Clearance Team) */}
+                    {canPerform(currentUser?.role, 'uploadSpecs') && selectedTender.spec_verification_status !== 'Approved' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                         {(!selectedTender.has_tech_spec && selectedTender.spec_verification_status !== 'Pending' && selectedTender.spec_verification_status !== 'Generated') ? (
                           /* PHASE 1: UPLOAD DOCUMENT TO GENERATE TECHNICAL SPECIFICATION */

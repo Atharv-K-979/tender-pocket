@@ -66,6 +66,7 @@ import {
 } from 'recharts';
 import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
+import { canPerform } from '@/lib/workflowAuthorization';
 
 
 type TabType = 'dashboard' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
@@ -5376,7 +5377,7 @@ export default function Dashboard() {
                   )}
 
                   {/* Executive Controls: 2-Phase Sequence (1. Generate/Upload -> 2. Send to Clearance Team) */}
-                  {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.spec_verification_status !== 'Approved' && (
+                  {canPerform(currentUser?.role, 'uploadSpecs') && selectedTender.spec_verification_status !== 'Approved' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
                       {(!selectedTender.has_tech_spec && selectedTender.spec_verification_status !== 'Pending' && selectedTender.spec_verification_status !== 'Generated') ? (
                         /* PHASE 1: UPLOAD DOCUMENT TO GENERATE TECHNICAL SPECIFICATION */
