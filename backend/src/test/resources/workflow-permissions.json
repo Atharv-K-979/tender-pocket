@@ -1,5 +1,5 @@
 {
-  "Admin": ["viewTenders", "uploadSpecs", "approveSpecs", "setTpcPrice", "viewTpcPrice", "setMisPrice", "generateBids", "reviewBids", "recordPayment", "recordSubmission", "recordOutcome", "manageUsers", "viewAudit"],
+  "Admin": ["viewTenders", "viewTpcPrice", "setMisPrice", "manageUsers", "viewAudit"],
   "Tender Executive": ["viewTenders", "uploadSpecs", "generateBids"],
   "Clearance Team": ["viewTenders", "approveSpecs"],
   "TPC Pricing Team": ["viewTenders", "setTpcPrice", "viewTpcPrice"],

@@ -13,7 +13,7 @@ import static org.mockito.Mockito.*;
 
 class SpecificationUploadContractTest {
     @org.junit.jupiter.api.BeforeEach
-    void authenticate() { authenticateAs("Admin"); }
+    void authenticate() { authenticateAs("Tender Executive"); }
 
     @org.junit.jupiter.api.AfterEach
     void clearAuthentication() {
@@ -58,7 +58,7 @@ class SpecificationUploadContractTest {
             }
         });
         try {
-            var response = controller.uploadTechSpec("Admin", "test", id,
+            var response = controller.uploadTechSpec("Tender Executive", "test", id,
                     new MockMultipartFile("file", "admin.pdf", "application/pdf", new byte[]{1}),
                     null, null, null, null, null);
             assertEquals(200, response.getStatusCode().value());
@@ -85,7 +85,7 @@ class SpecificationUploadContractTest {
     }
 
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"Admin", "Tender Executive", "MIS Executive"})
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"Tender Executive", "MIS Executive"})
     void onlyThreeCombinedFilesAreGeneratedForAllProducts(String role) throws Exception {
         authenticateAs(role);
         String id = "compliance-contract-test-" + UUID.randomUUID();
@@ -180,7 +180,7 @@ class SpecificationUploadContractTest {
         var repository = mock(TenderRepository.class);
         when(repository.findById("test-tender")).thenReturn(Optional.empty());
         ReflectionTestUtils.setField(controller, "tenderRepository", repository);
-        var response = controller.generateBidDocs("Admin", "test", "test-tender", Map.of());
+        var response = controller.generateBidDocs("Tender Executive", "test", "test-tender", Map.of());
         assertEquals(404, response.getStatusCode().value());
     }
 }

@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="downloaded-all-docs">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/scratch/downloaded-all-docs.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

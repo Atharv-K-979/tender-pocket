@@ -105,7 +105,9 @@ class WorkflowPermissionsTest {
         assertEquals(403, new WorkflowController().sendClearanceRequest("missing", "Admin", "admin", Map.of()).getStatusCode().value());
         authenticate("MIS Team");
         assertEquals(403, new AuthController().createUser("Admin", "admin", null, Map.of()).getStatusCode().value());
-        assertEquals(403, new ActivityLogController().getActivityLogs(null).getStatusCode().value());
+        var logController = new ActivityLogController();
+        ReflectionTestUtils.setField(logController, "activityLogRepository", mock(ActivityLogRepository.class));
+        assertEquals(403, logController.getActivityLogs(null).getStatusCode().value());
     }
 
     @Test void genericPatchCannotBypassPricingOrApprovalPermissions() {

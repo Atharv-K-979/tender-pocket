@@ -4,7 +4,7 @@ import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 import { localDocumentUrl } from '@/lib/technicalSpecificationBackend';
 import fs from 'fs';
 import path from 'path';
-import { generateHtmlTemplates, generateTechnicalSpecificationHtml } from '@/lib/documentTemplates';
+import { generateHtmlTemplates, generateTechnicalSpecificationHtml, cleanHtmlForDocx } from '@/lib/documentTemplates';
 import { execSync } from 'child_process';
 
 // @ts-ignore
@@ -334,7 +334,7 @@ export async function POST(
     const docFilePath = path.join(docDir, docFileName);
     const docDownloadPath = localDocumentUrl(id, docFileName);
 
-    const docxBuffer = await HTMLtoDOCX(htmlContent, null, {
+    const docxBuffer = await HTMLtoDOCX(cleanHtmlForDocx(htmlContent), null, {
       table: { row: { cantSplit: true } },
       footer: true,
       pageNumber: true,
@@ -366,7 +366,7 @@ export async function POST(
     const specDocFilePath = path.join(docDir, specDocFileName);
     const specDocDownloadPath = localDocumentUrl(id, specDocFileName);
 
-    const specDocxBuffer = await HTMLtoDOCX(specHtml, null, {
+    const specDocxBuffer = await HTMLtoDOCX(cleanHtmlForDocx(specHtml), null, {
       table: { row: { cantSplit: true } },
       orientation: isLandscape ? 'landscape' : 'portrait',
       margins: {

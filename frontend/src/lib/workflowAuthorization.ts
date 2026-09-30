@@ -23,14 +23,14 @@ export function canPerform(role: string | null | undefined, action: WorkflowActi
   const canonical = canonicalRole(role);
   if (!canonical) return false;
   if (action === 'viewTenders' || action === 'viewAudit') return true;
-  if (canonical === 'Admin') return true;
   switch (action) {
-    case 'uploadSpecs':
-    case 'generateBids': return canonical === 'Tender Executive';
+    case 'uploadSpecs': return canonical === 'Tender Executive';
+    case 'generateBids': return canonical === 'Tender Executive' || canonical === 'MIS Team' || canonical === 'Admin';
     case 'approveSpecs': return canonical === 'Clearance Team';
     case 'setTpcPrice': return canonical === 'TPC Pricing Team';
-    case 'viewTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team';
-    case 'setMisPrice':
+    case 'viewTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team' || canonical === 'Admin';
+    case 'setMisPrice': return canonical === 'MIS Team' || canonical === 'Admin';
+    case 'manageUsers': return canonical === 'Admin';
     case 'reviewBids':
     case 'recordPayment':
     case 'recordSubmission':
@@ -101,7 +101,7 @@ export function forbiddenPatchFields(role: string, body: Record<string, unknown>
     denied.push('current_stage');
   }
   if (canonical === 'Admin') {
-    const adminRestrictedFields = ['notes', 'mis_executive', 'bid_qty', 'quoted_qty', 'working_path', 'assigned_mis_member', 'assigned_mis_member_spec', 'assigned_mis_member_docs', 'assigned_mis_member_emd', 'assigned_mis_member_submission', 'mis_final_price'];
+    const adminRestrictedFields = ['notes', 'mis_executive', 'bid_qty', 'quoted_qty', 'working_path', 'assigned_mis_member', 'assigned_mis_member_spec', 'assigned_mis_member_docs', 'assigned_mis_member_emd', 'assigned_mis_member_submission'];
     for (const f of adminRestrictedFields) {
       if (f in body && body[f] !== old[f]) denied.push(f);
     }

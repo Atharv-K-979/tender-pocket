@@ -23,19 +23,27 @@ export function generateHtmlTemplates(data: any) {
   const isHealthtech = companyKey === 'healthtech';
 
   const logoPath = isHealthtech
-    ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_logo.png')
-    : path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_logo.jpeg');
+    ? (isLandscape
+        ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_landscape_image3.png')
+        : path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_footer.png'))
+    : (isLandscape
+        ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_landscape_image1.jpeg')
+        : path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_logo.jpeg'));
 
   const bannerPath = isHealthtech
-    ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_header_banner.jpeg')
+    ? (isLandscape
+        ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_landscape_image2.jpeg')
+        : path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_header_banner.jpeg'))
     : '';
 
   const partnerPath = isHealthtech
     ? ''
-    : path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_partner.png');
+    : (isLandscape
+        ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_landscape_image2.png')
+        : path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_partner.png'));
 
   const footerPath = isHealthtech
-    ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_footer.png')
+    ? ''
     : path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_footer_line.png');
 
   const stampPath = path.join(process.cwd(), 'public', 'images', 'stamp.png');
@@ -51,10 +59,11 @@ export function generateHtmlTemplates(data: any) {
   // Split company address into two lines at appropriate place
   let addr1 = data.companyAddress || '';
   let addr2 = '';
-  if (addr1.includes('MIDC Satpur,')) {
-    const parts = addr1.split('MIDC Satpur,');
-    addr1 = parts[0] + 'MIDC Satpur,';
-    addr2 = parts[1].trim();
+  if (addr1.includes('MIDC Satpur')) {
+    const parts = addr1.split('MIDC Satpur');
+    addr1 = parts[0].trim();
+    if (addr1.endsWith(',')) addr1 = addr1.slice(0, -1).trim();
+    addr2 = 'MIDC Satpur' + parts[1];
   } else {
     const commas = addr1.split(',');
     if (commas.length > 3) {
@@ -118,37 +127,28 @@ export function generateHtmlTemplates(data: any) {
     <div class="page ${pageClass} ${isLandscape ? 'landscape' : 'portrait'}">
       <div class="letterhead">
         ${isHealthtech ? `
-          <div class="healthtech-header" style="width: 100%; display: flex; flex-direction: column;">
-            ${bannerBase64 ? `<img src="${bannerBase64}" style="width: 100%; max-height: 75px; object-fit: contain; margin-bottom: 4px;" />` : ''}
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1a568c; padding-bottom: 6px;">
-              <div class="logo-container">
-                ${logoBase64 ? `<img src="${logoBase64}" class="logo-img" style="max-height: 60px;" />` : ''}
-              </div>
-              <div class="header-text" style="text-align: right; flex: 1; margin-left: 12px;">
-                <h1 class="company-title" style="color: #1a568c; font-size: 18pt; margin: 0;">${data.companyName.toUpperCase()}</h1>
-                <p class="company-addr" style="margin: 2px 0; font-size: 9pt;">${addr1} ${addr2}</p>
-                <p class="company-info" style="margin: 2px 0; font-size: 9pt;">Email: ${data.companyEmail} | Web: ${data.companyWebsite}</p>
-                <p class="company-info" style="margin: 2px 0; font-size: 9pt;">Contact: ${data.companyContact}</p>
-              </div>
-            </div>
+          <div class="healthtech-header" style="width: 100%; display: flex; flex-direction: column; margin-bottom: 10px;">
+            ${bannerBase64 ? `<img src="${bannerBase64}" style="width: 100%; display: block; height: auto; object-fit: fill; margin-bottom: 2px;" />` : ''}
+            ${logoBase64 ? `<img src="${logoBase64}" style="width: 100%; display: block; height: auto; object-fit: fill;" />` : ''}
           </div>
         ` : `
-          <div class="me-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-            <div class="logo-container">
-              ${logoBase64 ? `<img src="${logoBase64}" class="logo-img" />` : ''}
-            </div>
-            <div class="header-text">
-              <h1 class="company-title">${data.companyName.toUpperCase()}</h1>
-              <p class="company-addr">${addr1}</p>
-              ${addr2 ? `<p class="company-addr">${addr2}</p>` : ''}
-              <p class="company-info">Email ID: ${data.companyEmail} URL: ${data.companyWebsite}</p>
-              <p class="company-info">Contact No.: ${data.companyContact}</p>
-            </div>
-            <div class="partner-container">
-              ${partnerBase64 ? `<img src="${partnerBase64}" class="partner-img" />` : ''}
-            </div>
-          </div>
-          <hr class="header-divider" />
+          <table style="width: 100%; border-collapse: collapse; border: none; margin-bottom: 8px;">
+            <tr>
+              <td style="width: 15%; vertical-align: middle; text-align: left; border: none; padding: 0;">
+                ${logoBase64 ? `<img src="${logoBase64}" class="logo-img" style="max-height: 60px; max-width: 130px; object-fit: contain; display: block;" />` : ''}
+              </td>
+              <td style="vertical-align: middle; text-align: center; border: none; padding: 0 10px;">
+                <h1 class="company-title" style="margin: 0 0 2px 0; font-size: 18pt; font-weight: bold; color: #1a568c;">${data.companyName.toUpperCase()}</h1>
+                <p class="company-addr" style="margin: 1px 0; font-size: 8.5pt; color: #000; line-height: 1.2;">${addr1}</p>
+                ${addr2 ? `<p class="company-addr" style="margin: 1px 0; font-size: 8.5pt; color: #000; line-height: 1.2;">${addr2}</p>` : ''}
+                <p class="company-info" style="margin: 1px 0; font-size: 8.5pt; color: #000; line-height: 1.2;">Email ID: ${data.companyEmail} URL: ${data.companyWebsite}</p>
+                <p class="company-info" style="margin: 1px 0; font-size: 8.5pt; color: #000; line-height: 1.2;">Contact No.: ${data.companyContact}</p>
+              </td>
+              <td style="width: 15%; vertical-align: middle; text-align: right; border: none; padding: 0;">
+                ${partnerBase64 ? `<img src="${partnerBase64}" class="partner-img" style="max-height: 55px; max-width: 130px; object-fit: contain; display: block; margin-left: auto;" />` : ''}
+              </td>
+            </tr>
+          </table>
         `}
       </div>
       <div class="date-row">Date: ${data.date}</div>
@@ -156,11 +156,6 @@ export function generateHtmlTemplates(data: any) {
       <div class="page-content">
         ${content}
       </div>
-      ${footerBase64 ? `
-        <div class="letterhead-footer" style="margin-top: 20px; text-align: center;">
-          <img src="${footerBase64}" style="width: 100%; max-height: 35px; object-fit: contain;" />
-        </div>
-      ` : ''}
     </div>
   `;
 
@@ -847,13 +842,42 @@ export function generateHtmlTemplates(data: any) {
 }
 
 export function generateTechnicalSpecificationHtml(data: any, specs: { sr: number, parameter: string, value: string }[]) {
-  const logoPath = path.join(process.cwd(), 'public', 'images', 'logo.png');
-  const partnerPath = path.join(process.cwd(), 'public', 'images', 'partner.png');
+  const companyKey = (data.companyKey || (data.companyName?.toLowerCase().includes('healthtech') ? 'healthtech' : 'me')).toLowerCase();
+  const orientation = (data.orientation || 'portrait').toLowerCase();
+  const isLandscape = orientation === 'landscape';
+  const isHealthtech = companyKey === 'healthtech';
+
+  const logoPath = isHealthtech
+    ? (isLandscape
+        ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_landscape_image3.png')
+        : path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_footer.png'))
+    : (isLandscape
+        ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_landscape_image1.jpeg')
+        : path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_logo.jpeg'));
+
+  const bannerPath = isHealthtech
+    ? (isLandscape
+        ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_landscape_image2.jpeg')
+        : path.join(process.cwd(), 'public', 'images', 'letterheads', 'healthtech_header_banner.jpeg'))
+    : '';
+
+  const partnerPath = isHealthtech
+    ? ''
+    : (isLandscape
+        ? path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_landscape_image2.png')
+        : path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_partner.png'));
+
+  const footerPath = isHealthtech
+    ? ''
+    : path.join(process.cwd(), 'public', 'images', 'letterheads', 'me_footer_line.png');
+
   const stampPath = path.join(process.cwd(), 'public', 'images', 'stamp.png');
   const sigPath = path.join(process.cwd(), 'public', 'images', 'signature.png');
   
   const logoBase64 = getBase64Image(logoPath);
+  const bannerBase64 = getBase64Image(bannerPath);
   const partnerBase64 = getBase64Image(partnerPath);
+  const footerBase64 = getBase64Image(footerPath);
   const stampBase64 = getBase64Image(stampPath);
   const sigBase64 = getBase64Image(sigPath);
 
@@ -1043,21 +1067,31 @@ export function generateTechnicalSpecificationHtml(data: any, specs: { sr: numbe
     <body>
       <div class="page">
         <div class="letterhead">
-          <div class="logo-container">
-            ${logoBase64 ? `<img src="${logoBase64}" class="logo-img" />` : ''}
-          </div>
-          <div class="header-text">
-            <h1 class="company-title">${data.companyName.toUpperCase()}</h1>
-            <p class="company-addr">${addr1}</p>
-            ${addr2 ? `<p class="company-addr">${addr2}</p>` : ''}
-            <p class="company-info">Email ID: ${data.companyEmail} URL: ${data.companyWebsite}</p>
-            <p class="company-info">Contact No.: ${data.companyContact}</p>
-          </div>
-          <div class="partner-container">
-            ${partnerBase64 ? `<img src="${partnerBase64}" class="partner-img" />` : ''}
-          </div>
+          ${isHealthtech ? `
+            <div class="healthtech-header" style="width: 100%; display: flex; flex-direction: column; margin-bottom: 10px;">
+              ${bannerBase64 ? `<img src="${bannerBase64}" style="width: 100%; display: block; height: auto; object-fit: fill; margin-bottom: 2px;" />` : ''}
+              ${logoBase64 ? `<img src="${logoBase64}" style="width: 100%; display: block; height: auto; object-fit: fill;" />` : ''}
+            </div>
+          ` : `
+          <table style="width: 100%; border-collapse: collapse; border: none; margin-bottom: 8px;">
+            <tr>
+              <td style="width: 15%; vertical-align: middle; text-align: left; border: none; padding: 0;">
+                ${logoBase64 ? `<img src="${logoBase64}" class="logo-img" style="max-height: 60px; max-width: 130px; object-fit: contain; display: block;" />` : ''}
+              </td>
+              <td style="vertical-align: middle; text-align: center; border: none; padding: 0 10px;">
+                <h1 class="company-title" style="margin: 0 0 2px 0; font-size: 18pt; font-weight: bold; color: #1a568c;">${data.companyName.toUpperCase()}</h1>
+                <p class="company-addr" style="margin: 1px 0; font-size: 8.5pt; color: #000; line-height: 1.2;">${addr1}</p>
+                ${addr2 ? `<p class="company-addr" style="margin: 1px 0; font-size: 8.5pt; color: #000; line-height: 1.2;">${addr2}</p>` : ''}
+                <p class="company-info" style="margin: 1px 0; font-size: 8.5pt; color: #000; line-height: 1.2;">Email ID: ${data.companyEmail} URL: ${data.companyWebsite}</p>
+                <p class="company-info" style="margin: 1px 0; font-size: 8.5pt; color: #000; line-height: 1.2;">Contact No.: ${data.companyContact}</p>
+              </td>
+              <td style="width: 15%; vertical-align: middle; text-align: right; border: none; padding: 0;">
+                ${partnerBase64 ? `<img src="${partnerBase64}" class="partner-img" style="max-height: 55px; max-width: 130px; object-fit: contain; display: block; margin-left: auto;" />` : ''}
+              </td>
+            </tr>
+          </table>
+          `}
         </div>
-        <hr class="header-divider" />
         <div class="date-row">Date: ${data.date}</div>
         <h2 class="document-title">TECHNICAL SPECIFICATION DATA SHEET</h2>
         
@@ -1079,3 +1113,23 @@ export function generateTechnicalSpecificationHtml(data: any, specs: { sr: numbe
     </html>
   `;
 }
+
+/**
+ * Sanitizes HTML content for html-to-docx by stripping width="..." attributes
+ * and width: CSS rules from inline style attributes.
+ * This prevents html-to-docx's internal buildTableCellWidth from triggering an XML
+ * attribute validation error (Invalid XML name: @w).
+ */
+export function cleanHtmlForDocx(html: string): string {
+  if (!html) return '';
+  let cleaned = html.replace(/\bwidth="[^"]*"/gi, '');
+  cleaned = cleaned.replace(/style="([^"]*)"/gi, (match, styleContent) => {
+    const cleanedStyle = styleContent
+      .split(';')
+      .filter((rule: string) => !rule.trim().toLowerCase().startsWith('width'))
+      .join(';');
+    return cleanedStyle.trim() ? `style="${cleanedStyle}"` : '';
+  });
+  return cleaned;
+}
+

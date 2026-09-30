@@ -41,14 +41,15 @@ public final class WorkflowPermissions {
     public static boolean allowed(String role, Action action) {
         String canonical = canonicalRole(role);
         if (canonical.isEmpty() || action == null) return false;
-        if (canonical.equals("Admin") || action == Action.VIEW_TENDERS) return true;
+        if (action == Action.VIEW_TENDERS) return true;
         return switch (action) {
             case UPLOAD_SPEC, GENERATE_BIDS -> canonical.equals("Tender Executive");
             case APPROVE_SPEC -> canonical.equals("Clearance Team");
             case SET_TPC_PRICE -> canonical.equals("TPC Pricing Team");
-            case VIEW_TPC_PRICE -> canonical.equals("TPC Pricing Team") || canonical.equals("MIS Team");
-            case SET_MIS_PRICE, REVIEW_BIDS, RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME ->
-                    canonical.equals("MIS Team");
+            case VIEW_TPC_PRICE -> canonical.equals("TPC Pricing Team") || canonical.equals("MIS Team") || canonical.equals("Admin");
+            case SET_MIS_PRICE -> canonical.equals("MIS Team") || canonical.equals("Admin");
+            case MANAGE_USERS, VIEW_AUDIT -> canonical.equals("Admin");
+            case REVIEW_BIDS, RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME -> canonical.equals("MIS Team");
             default -> false;
         };
     }

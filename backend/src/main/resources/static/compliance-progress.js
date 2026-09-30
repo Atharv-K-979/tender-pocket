@@ -101,10 +101,8 @@
     try { user = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch (_) {}
     const route = location.pathname.match(/^\/tenders\/([^/]+)\/?$/);
     const existing = document.getElementById("compliance-admin-upload");
-    if (user?.role !== "Admin" || !route) {
-      existing?.remove();
-      return;
-    }
+    existing?.remove();
+    return;
     const tenderId = decodeURIComponent(route[1]);
     if (existing?.dataset.tenderId === tenderId) return;
     existing?.remove();

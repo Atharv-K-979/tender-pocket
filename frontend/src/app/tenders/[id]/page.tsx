@@ -1485,7 +1485,7 @@ export default function TenderDetailPage() {
                     /* For TPC Team, MIS Team, Admin */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {/* Section A: TPC Transfer Price (Total Production Cost) */}
-                      {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin' || (currentUser?.role === 'MIS Team' && selectedTender.tpc_purchase_price)) && (
+                      {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || Boolean(selectedTender.tpc_purchase_price)) && (
                         <div style={{ background: selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.06)' : 'rgba(147, 51, 234, 0.05)', padding: '14px 16px', borderRadius: '8px', border: `1px solid ${selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.2)' : 'rgba(147, 51, 234, 0.2)'}` }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: selectedTender.tpc_purchase_price ? '0' : '10px' }}>
                             <div>
@@ -1503,8 +1503,8 @@ export default function TenderDetailPage() {
                             )}
                           </div>
 
-                          {/* If TPC Team, Admin or MIS Team and no price or wanting to update */}
-                          {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team') && (
+                          {/* If TPC Team */}
+                          {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team') && (
                             <div style={{ marginTop: selectedTender.tpc_purchase_price ? '10px' : '0' }}>
                               <div style={{ display: 'flex', gap: '8px' }}>
                                 <input
@@ -1557,11 +1557,11 @@ export default function TenderDetailPage() {
                       {/* If MIS Team or Admin and TPC price not yet entered */}
                       {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && !selectedTender.tpc_purchase_price && (
                         <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '12px', color: '#d97706' }}>
-                          ⏳ <strong>Awaiting TPC Transfer Price:</strong> The TPC Team has not yet submitted the total production cost. Once submitted, MIS Team can configure the Provided Price for the Tender Executive.
+                          ⏳ <strong>Awaiting TPC Transfer Price:</strong> The TPC Team has not yet submitted the total production cost. Once submitted, MIS Team & Admin can configure the Provided Price for the Tender Executive.
                         </div>
                       )}
 
-                      {/* Section B: Provided Price Configuration (Editable by MIS Team, View-Only for Admin) */}
+                      {/* Section B: Provided Price Configuration */}
                       {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
                         <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -1579,7 +1579,7 @@ export default function TenderDetailPage() {
                               </span>
                             ) : null}
                           </div>
-                          {currentUser?.role === 'MIS Team' ? (
+                          {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') ? (
                             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                               <input
                                 type="number"
@@ -1732,13 +1732,13 @@ export default function TenderDetailPage() {
                         📁 Working folder: <code>{selectedTender.working_path}</code>
                       </span>
                     )}
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && (
+                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
                       <button 
-                        className="btn btn-secondary" 
-                        style={{ fontSize: '11px', padding: '4px 10px', alignSelf: 'flex-start', marginTop: '4px' }}
+                        className="btn btn-primary" 
+                        style={{ fontSize: '11px', padding: '6px 12px', alignSelf: 'flex-start', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}
                         onClick={openBidDocForm}
                       >
-                        🔄 Re-Generate / Edit Details
+                        🔄 Re-Generate Bid Documents
                       </button>
                     )}
                   </div>
