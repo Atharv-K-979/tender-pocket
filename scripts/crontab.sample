@@ -1,0 +1,14 @@
+# ==============================================================================
+# Tender Pocket — PostgreSQL Backup & Restore Cron Job Configuration
+# ==============================================================================
+# Dedicated S3 Bucket: POSTGRES_BACKUP_S3_BUCKET (e.g. tender-pocket-postgres-backups)
+# Environment variables should be defined in /etc/environment or loaded in script.
+
+# 1. Daily Incremental Backup — Executes nightly at 02:00 AM (off-peak hours)
+0 2 * * * /home/atharv/Internship26/tender-pocket/scripts/postgres-backup-daily.py >> /home/atharv/Internship26/tender-pocket/logs/backup-daily.log 2>&1
+
+# 2. Monthly Consolidation Backup — Executes on the 30th day of every month at 03:30 AM
+30 3 30 * * /home/atharv/Internship26/tender-pocket/scripts/postgres-backup-monthly.py >> /home/atharv/Internship26/tender-pocket/logs/backup-monthly.log 2>&1
+
+# 3. Monthly Isolated Restore Test — Executes on the 1st of every month at 05:00 AM
+0 5 1 * * /home/atharv/Internship26/tender-pocket/scripts/postgres-restore-test.py >> /home/atharv/Internship26/tender-pocket/logs/restore-test.log 2>&1
