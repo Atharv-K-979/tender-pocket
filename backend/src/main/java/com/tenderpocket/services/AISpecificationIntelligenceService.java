@@ -190,10 +190,11 @@ public class AISpecificationIntelligenceService {
         List<String> components = knownProducts == null || knownProducts.isEmpty()
                 ? mergeComponents(declared, suggested) : new ArrayList<>(knownProducts);
 
-        System.out.println("[AISpecificationIntelligence] Document split into " + chunks.size()
+        System.out.println("⚡ [AI LOG] Document split into " + chunks.size()
                 + " chunk(s); " + declared.size() + " declared by heading, " + suggested.size()
                 + " named by the model, " + components.size() + " item(s) to extract"
                 + (components.isEmpty() ? "." : ": " + String.join(", ", components)));
+        System.out.flush();
 
         if (components.isEmpty())
             return isConfirmedEmptyProducts(suggested) ? completedEmptyRows() : Collections.emptyList();
