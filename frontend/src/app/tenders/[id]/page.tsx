@@ -48,6 +48,16 @@ export default function TenderDetailPage() {
   const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
   const isAdmin = currentUser?.role === 'Admin';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
+  const [techSpecProgress, setTechSpecProgress] = useState<{
+    status?: string;
+    stage?: string;
+    message?: string;
+    percent?: number;
+    completedBatches?: number;
+    totalBatches?: number;
+    clausesExtracted?: number;
+    clauses?: number;
+  } | null>(null);
   const techSpecUploadInFlight = useRef(false);
 
   // Data States
@@ -468,6 +478,29 @@ export default function TenderDetailPage() {
     const tenderId = selectedTender.id;
     techSpecUploadInFlight.current = true;
     setUploadingTechSpec(true);
+    setTechSpecProgress({
+      status: 'UPLOADING',
+      message: 'Uploading document & initializing AI extraction...',
+      percent: 5,
+      completedBatches: 0,
+      totalBatches: 0,
+      clauses: 0
+    });
+
+    let pollInterval: NodeJS.Timeout | null = setInterval(async () => {
+      try {
+        const res = await fetchWithAuth(`/api/tenders/${tenderId}/tech-spec-progress`);
+        if (res.ok) {
+          const prog = await res.json();
+          if (prog && prog.status) {
+            setTechSpecProgress(prog);
+          }
+        }
+      } catch (e) {
+        console.error('Progress poll error:', e);
+      }
+    }, 1000);
+
     try {
       const formData = new FormData();
       formData.append('file', fileToUpload);
@@ -475,18 +508,28 @@ export default function TenderDetailPage() {
         method: 'POST', body: formData,
       });
       const data = await response.json();
+
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+
       if (!response.ok || data.success !== true) {
         showToast(data.error || 'Failed to upload technical specification.', 'error');
+        setTechSpecProgress(null);
         return;
       }
       if (data.generated === false) {
         showToast(data.message || 'No technical specifications were found.', 'success');
+        setTechSpecProgress(null);
         return;
       }
       if (data.generated !== true) {
         showToast('The server did not confirm specification generation.', 'error');
+        setTechSpecProgress(null);
         return;
       }
+      setTechSpecProgress(prev => ({ ...prev, status: 'COMPLETED', percent: 100, message: 'Technical specification generated successfully!' }));
       showToast(data.message || 'Technical specification sheets generated successfully.', 'success');
       try {
         const refreshed = await fetchWithAuth(`/api/tenders/${tenderId}`);
@@ -502,8 +545,14 @@ export default function TenderDetailPage() {
     } catch {
       showToast('Error uploading technical specification.', 'error');
     } finally {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
       techSpecUploadInFlight.current = false;
-      setUploadingTechSpec(false);
+      setTimeout(() => {
+        setUploadingTechSpec(false);
+        setTechSpecProgress(null);
+      }, 1200);
     }
   };
 
@@ -2783,6 +2832,151 @@ export default function TenderDetailPage() {
                 </button>
               </footer>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tech Spec Generation Progress Modal Overlay */}
+      {uploadingTechSpec && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.8)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--bg-app, #1e293b)',
+            borderRadius: '16px',
+            border: '1px solid rgba(99, 102, 241, 0.3)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+            width: '100%',
+            maxWidth: '520px',
+            padding: '28px',
+            color: 'var(--text-primary, #f8fafc)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '14px',
+                background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '24px',
+                boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+              }}>
+                ⚡
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary, #f8fafc)' }}>
+                  Generating Technical Specification
+                </h3>
+                <p style={{ margin: '3px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary, #94a3b8)' }}>
+                  AI extraction & parameter verification in progress...
+                </p>
+              </div>
+            </div>
+
+            {/* Progress Bar Container */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', fontWeight: 600 }}>
+                <span style={{
+                  color: '#818cf8',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  fontSize: '11px',
+                  fontWeight: 700
+                }}>
+                  {techSpecProgress?.status || 'PROCESSING'}
+                </span>
+                <span style={{ color: 'var(--primary, #6366f1)', fontWeight: 700 }}>
+                  {techSpecProgress?.percent !== undefined ? `${techSpecProgress.percent}%` : '5%'}
+                </span>
+              </div>
+              
+              <div style={{
+                width: '100%',
+                height: '10px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                borderRadius: '999px',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.max(5, Math.min(100, techSpecProgress?.percent || 5))}%`,
+                  background: 'linear-gradient(90deg, #6366f1 0%, #ec4899 100%)',
+                  borderRadius: '999px',
+                  transition: 'width 0.4s ease-in-out'
+                }} />
+              </div>
+            </div>
+
+            {/* Live Activity & Batch Info Card */}
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.25)',
+              borderRadius: '12px',
+              padding: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#e2e8f0', fontWeight: 500 }}>
+                <div className="spinner-border spinner-border-sm" role="status" style={{ width: '16px', height: '16px', borderWidth: '2px', color: '#818cf8', flexShrink: 0 }} />
+                <span>{techSpecProgress?.message || 'Processing document pages with AI models...'}</span>
+              </div>
+
+              {(techSpecProgress?.totalBatches || 0) > 0 || (techSpecProgress?.clauses || 0) > 0 ? (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '8px',
+                  paddingTop: '8px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                  fontSize: '12px'
+                }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 10px', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Page Batches</div>
+                    <div style={{ fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+                      {techSpecProgress?.completedBatches || 0} / {techSpecProgress?.totalBatches || '-'}
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 10px', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Clauses Extracted</div>
+                    <div style={{ fontWeight: 700, color: '#10b981', marginTop: '2px' }}>
+                      {techSpecProgress?.clauses || 0} parameters
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Explanation Note */}
+            <div style={{
+              fontSize: '11.5px',
+              color: 'var(--text-muted, #94a3b8)',
+              textAlign: 'center',
+              lineHeight: '1.5',
+              background: 'rgba(99, 102, 241, 0.06)',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              border: '1px dashed rgba(99, 102, 241, 0.2)'
+            }}>
+              ⏱️ <strong>Processing Note:</strong> Multi-page PDF specifications take 2–5 minutes for full page batching, AI parsing, clause extraction, and document generation. Please keep this tab open.
+            </div>
           </div>
         </div>
       )}
