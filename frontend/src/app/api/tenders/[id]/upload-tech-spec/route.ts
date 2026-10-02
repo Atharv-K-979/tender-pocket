@@ -43,6 +43,12 @@ export async function POST(
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    console.log(`\n========================================================================`);
+    console.log(`⚡ [FRONTEND LOG] Upload & Generate Tech Spec Triggered for Tender: ${id}`);
+    console.log(`⚡ [FRONTEND LOG] File Name: ${file.name} | Size: ${buffer.length} bytes | User: ${username} (${userRole})`);
+    console.log(`⚡ [FRONTEND LOG] Forwarding to Spring Boot AI Engine...`);
+    console.log(`========================================================================\n`);
     if (buffer.length === 0) {
       return NextResponse.json({ success: false, error: 'Uploaded file is empty' }, { status: 400 });
     }
