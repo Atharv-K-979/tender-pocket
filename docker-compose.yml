@@ -89,6 +89,7 @@ services:
       PORT: 8085
       NODE_ENV: production
       BACKEND_URL: ${BACKEND_URL:-http://tender-pocket-backend:8090}
+      JWT_SECRET: ${JWT_SECRET}
     networks:
       - tender_pocket_net
 
