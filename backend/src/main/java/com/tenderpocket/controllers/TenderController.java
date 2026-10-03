@@ -180,8 +180,8 @@ public class TenderController {
             @RequestParam(value = "mis_executive", required = false) String misExecutive) {
 
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
-        userRole = WorkflowPermissions.role();
-        username = WorkflowPermissions.username();
+        userRole = resolveUserRole(userRole);
+        username = resolveUsername(username);
         List<Tender> list = tenderRepository.findAll();
         List<Tender> filtered = new ArrayList<>();
 
