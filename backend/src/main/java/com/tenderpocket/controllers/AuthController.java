@@ -43,19 +43,19 @@ public class AuthController {
     @Autowired
     private JwtUtil jwtUtil;
 
-    @Value("${app.auth.admin-password:${ADMIN_DEFAULT_PASSWORD:Marken@123$}}")
+    @Value("${app.auth.admin-password:${ADMIN_DEFAULT_PASSWORD:}}")
     private String adminDefaultPassword;
 
-    @Value("${app.auth.misteam-password:${MISTEAM_DEFAULT_PASSWORD:misteam}}")
+    @Value("${app.auth.misteam-password:${MISTEAM_DEFAULT_PASSWORD:}}")
     private String misteamDefaultPassword;
 
-    @Value("${app.auth.executive-password:${EXECUTIVE_DEFAULT_PASSWORD:executive123}}")
+    @Value("${app.auth.executive-password:${EXECUTIVE_DEFAULT_PASSWORD:}}")
     private String executiveDefaultPassword;
 
-    @Value("${app.auth.clearance-password:${CLEARANCE_DEFAULT_PASSWORD:clearance123}}")
+    @Value("${app.auth.clearance-password:${CLEARANCE_DEFAULT_PASSWORD:}}")
     private String clearanceDefaultPassword;
 
-    @Value("${app.auth.tpc-password:${TPC_DEFAULT_PASSWORD:tpc123}}")
+    @Value("${app.auth.tpc-password:${TPC_DEFAULT_PASSWORD:}}")
     private String tpcDefaultPassword;
 
     private final ObjectMapper mapper = new ObjectMapper();

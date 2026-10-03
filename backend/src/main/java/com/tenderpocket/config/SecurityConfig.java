@@ -16,6 +16,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -61,7 +62,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/login", "/api/auth/register", "/api/tenders/trigger-due-alerts", "/api/update/**").permitAll()
+                .requestMatchers("/api/auth/login", "/api/auth/register", "/api/health", "/api/tenders/trigger-due-alerts", "/api/update/**").permitAll()
                 .requestMatchers("/", "/index.html", "/static/**", "/favicon.ico", "/documents/**", "/images/**", "/*.html", "/*.js", "/*.css", "/*.png", "/*.ico", "/*.json", "/*.svg").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()
@@ -72,10 +73,21 @@ public class SecurityConfig {
         return http.build();
     }
 
+    @org.springframework.beans.factory.annotation.Value("${app.cors.allowed-origins:}")
+    private String allowedOrigins;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.addAllowedOriginPattern("*");
+        if (allowedOrigins != null && !allowedOrigins.isBlank()) {
+            List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+            configuration.setAllowedOriginPatterns(origins);
+        } else {
+            configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:3000", "http://localhost:8085"));
+        }
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "x-user-role", "x-user-username"));
         configuration.setExposedHeaders(Collections.singletonList("Authorization"));

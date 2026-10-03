@@ -67,6 +67,12 @@ public class TenderController {
     @Autowired
     private com.tenderpocket.services.EmailNotificationService emailNotificationService;
 
+    @Value("${aws.s3.enabled:false}")
+    private boolean awsS3Enabled;
+
+    @Autowired(required = false)
+    private com.tenderpocket.services.ObjectStorageService objectStorageService;
+
     @Value("${gemini.api.key}")
     private String geminiApiKey;
 
@@ -1172,11 +1178,19 @@ public class TenderController {
     }
 
     @GetMapping("/documents/{id}/{fileName:.+}")
-    public ResponseEntity<org.springframework.core.io.Resource> downloadDocumentFile(
+    public ResponseEntity<?> downloadDocumentFile(
             @PathVariable("id") String id,
             @PathVariable("fileName") String fileName) {
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         try {
+            if (awsS3Enabled && objectStorageService != null) {
+                String objectKey = "tenders/" + id + "/" + fileName;
+                String presignedUrl = objectStorageService.generateDownloadUrl(objectKey);
+                return ResponseEntity.status(HttpStatus.FOUND)
+                        .location(java.net.URI.create(presignedUrl))
+                        .build();
+            }
+
             java.nio.file.Path filePath = java.nio.file.Paths.get("public/documents", id, fileName).toAbsolutePath().normalize();
             java.io.File file = filePath.toFile();
             if (!file.exists()) {
