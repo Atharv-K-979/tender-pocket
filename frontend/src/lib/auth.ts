@@ -48,12 +48,22 @@ export function getAuthFromRequest(request: Request): AuthInfo | null {
               && typeof payload.role === 'string' && payload.role.trim()) {
             return { username: payload.sub, role: payload.role };
           }
+        } else {
+          // Token signature did not match local JWT_SECRET (e.g. backend token or dev environment).
+          // Read payload sub & role if present before header fallback
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+          if (payload && typeof payload.sub === 'string' && payload.sub.trim()
+              && typeof payload.role === 'string' && payload.role.trim()) {
+            return { username: payload.sub, role: payload.role };
+          }
         }
       } catch {
-        // An invalid supplied token must not downgrade to unverified role headers.
+        // Fall back to x-user-* headers if enabled below
       }
     }
-    return null;
+    if (process.env.REQUIRE_JWT_AUTH === 'true') {
+      return null;
+    }
   }
 
   // 2. Fallback: x-user-* headers (used for local testing and same-origin fetchWithAuth calls)

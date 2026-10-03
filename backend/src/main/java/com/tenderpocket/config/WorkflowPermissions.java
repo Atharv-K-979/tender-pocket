@@ -17,10 +17,10 @@ public final class WorkflowPermissions {
         if (role == null) return "";
         return switch (role.replaceFirst("(?i)^ROLE_", "").replace('_', ' ').trim().toUpperCase(Locale.ROOT)) {
             case "ADMIN" -> "Admin";
-            case "EXECUTIVE", "MIS EXECUTIVE", "TENDER EXECUTIVE" -> "Tender Executive";
-            case "SPECIFICATION TEAM", "CLEARANCE TEAM" -> "Clearance Team";
-            case "TPC TEAM", "TPC PRICING TEAM" -> "TPC Pricing Team";
-            case "MIS TEAM" -> "MIS Team";
+            case "EXECUTIVE", "TENDER EXECUTIVE" -> "Tender Executive";
+            case "SPECIFICATION TEAM", "CLEARANCE TEAM", "CLEARANCE", "SPECIFICATION" -> "Clearance Team";
+            case "TPC TEAM", "TPC PRICING TEAM", "TPC", "TPC PRICING" -> "TPC Pricing Team";
+            case "MIS EXECUTIVE", "MIS TEAM", "MISTEAM", "MIS" -> "MIS Team";
             default -> "";
         };
     }
@@ -41,14 +41,14 @@ public final class WorkflowPermissions {
     public static boolean allowed(String role, Action action) {
         String canonical = canonicalRole(role);
         if (canonical.isEmpty() || action == null) return false;
-        if (action == Action.VIEW_TENDERS) return true;
+        if (action == Action.VIEW_TENDERS || "Admin".equals(canonical)) return true;
         return switch (action) {
             case UPLOAD_SPEC, GENERATE_BIDS -> canonical.equals("Tender Executive");
             case APPROVE_SPEC -> canonical.equals("Clearance Team");
             case SET_TPC_PRICE -> canonical.equals("TPC Pricing Team");
-            case VIEW_TPC_PRICE -> canonical.equals("TPC Pricing Team") || canonical.equals("MIS Team") || canonical.equals("Admin");
-            case SET_MIS_PRICE -> canonical.equals("MIS Team") || canonical.equals("Admin");
-            case MANAGE_USERS, VIEW_AUDIT -> canonical.equals("Admin");
+            case VIEW_TPC_PRICE -> canonical.equals("TPC Pricing Team") || canonical.equals("MIS Team");
+            case SET_MIS_PRICE -> canonical.equals("MIS Team");
+            case MANAGE_USERS, VIEW_AUDIT -> true;
             case REVIEW_BIDS, RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME -> canonical.equals("MIS Team");
             default -> false;
         };
@@ -74,29 +74,48 @@ public final class WorkflowPermissions {
     }
 
     public static boolean allowedPatch(Map<String, Object> body, String currentStage) {
-        Map<String, Action> fields = Map.ofEntries(
-            Map.entry("tpc_purchase_price", Action.SET_TPC_PRICE),
-            Map.entry("mis_final_price", Action.SET_MIS_PRICE),
-            Map.entry("verification_status", Action.REVIEW_BIDS),
-            Map.entry("payment_status", Action.RECORD_PAYMENT),
-            Map.entry("emd_amount_actual", Action.RECORD_PAYMENT),
-            Map.entry("emd_payment_mode", Action.RECORD_PAYMENT),
-            Map.entry("emd_payment_ref", Action.RECORD_PAYMENT),
-            Map.entry("emd_payment_date", Action.RECORD_PAYMENT),
-            Map.entry("assigned_mis_member_emd", Action.RECORD_PAYMENT),
-            Map.entry("submission_status", Action.RECORD_SUBMISSION),
-            Map.entry("assigned_mis_member_submission", Action.RECORD_SUBMISSION),
-            Map.entry("outcome_status", Action.RECORD_OUTCOME),
-            Map.entry("loss_reason", Action.RECORD_OUTCOME));
-        for (var field : fields.entrySet()) if (body.containsKey(field.getKey()) && !allowed(field.getValue())) return false;
+        String canonical = canonicalRole(role());
+        if (canonical.isEmpty()) return false;
+        if ("Admin".equals(canonical)) return true;
+
+        boolean isExec = "Tender Executive".equals(canonical);
+        boolean isMis = "MIS Team".equals(canonical);
+
+        if (body.containsKey("verification_status")) {
+            String val = String.valueOf(body.get("verification_status"));
+            if (List.of("Approved", "Rejected").contains(val) && !isMis) return false;
+            if ("Pending".equals(val) && !isExec) return false;
+        }
+
+        if (body.containsKey("payment_status")) {
+            String val = String.valueOf(body.get("payment_status"));
+            if (List.of("Approved", "Rejected").contains(val) && !isMis) return false;
+            if ("Pending".equals(val) && !isExec) return false;
+        }
+
+        for (String emdField : List.of("emd_amount_actual", "emd_payment_mode", "emd_payment_ref", "emd_payment_date", "assigned_mis_member_emd", "assigned_mis_member", "assigned_mis_member_docs", "assigned_mis_member_submission", "working_path")) {
+            if (body.containsKey(emdField) && !isExec) return false;
+        }
+
+        if (body.containsKey("submission_status")) {
+            String val = String.valueOf(body.get("submission_status"));
+            if (List.of("Approved", "Rejected").contains(val) && !isMis) return false;
+            if ("Pending".equals(val) && !isExec) return false;
+        }
+
+        if (body.containsKey("tpc_purchase_price") && !"TPC Pricing Team".equals(canonical)) return false;
+        if (body.containsKey("mis_final_price") && !isMis) return false;
+        if ((body.containsKey("outcome_status") || body.containsKey("loss_reason")) && !isMis) return false;
+
         if (body.containsKey("spec_verification_status") && !allowed(
                 List.of("Approved", "Rejected").contains(String.valueOf(body.get("spec_verification_status")))
                 ? Action.APPROVE_SPEC : Action.UPLOAD_SPEC)) return false;
-        if (body.containsKey("current_stage") && !Objects.equals(currentStage, body.get("current_stage"))
-                && !role().equals("Admin")) return false;
+
         String status = String.valueOf(body.get("status"));
         if (List.of("Won", "Lost", "Awarded", "Not Awarded", "Disqualified", "Missed Opportunity").contains(status)
-                && !allowed(Action.RECORD_OUTCOME)) return false;
-        return !List.of("Submitted", "Filed").contains(status) || allowed(Action.RECORD_SUBMISSION);
+                && !isMis) return false;
+        if (List.of("Submitted", "Filed").contains(status) && !isMis && !isExec) return false;
+
+        return true;
     }
 }

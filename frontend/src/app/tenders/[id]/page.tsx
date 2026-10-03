@@ -45,7 +45,7 @@ export default function TenderDetailPage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
-  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
+  const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin';
   const isAdmin = currentUser?.role === 'Admin';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
@@ -1389,8 +1389,8 @@ export default function TenderDetailPage() {
                       </div>
                     )}
 
-                    {/* Clearance Team / MIS Team Verification Controls */}
-                    {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'MIS Team' || (selectedTender.assigned_mis_member_spec && currentUser?.username === selectedTender.assigned_mis_member_spec)) && selectedTender.spec_verification_status === 'Pending' && (
+                    {/* Clearance Team Verification Controls */}
+                    {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'Admin') && selectedTender.spec_verification_status === 'Pending' && (
 
                       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
                         <button 
@@ -1511,7 +1511,7 @@ export default function TenderDetailPage() {
                   </p>
 
                   {/* If user is Tender Executive: strictly hide TPC price per role security */}
-                  {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Executive') ? (
+                  {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') ? (
                     <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                       {selectedTender.mis_final_price ? (
                         <div style={{ color: '#10b981', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1732,7 +1732,7 @@ export default function TenderDetailPage() {
                         <span><strong>Locked:</strong> Provided Price from MIS Team is required before bid documents can be generated. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
                       </div>
                     ) : (
-                      (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && (
+                      (currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
                         <button 
                           className="btn btn-primary" 
                           style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
@@ -1781,7 +1781,7 @@ export default function TenderDetailPage() {
                         📁 Working folder: <code>{selectedTender.working_path}</code>
                       </span>
                     )}
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
+                    {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
                       <button 
                         className="btn btn-primary" 
                         style={{ fontSize: '11px', padding: '6px 12px', alignSelf: 'flex-start', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -1855,7 +1855,7 @@ export default function TenderDetailPage() {
                             value={workingPath}
                             onChange={(e) => setWorkingPath(e.target.value)}
                             placeholder="e.g. /Shared/Tenders/2026/GEM-7324078"
-                            disabled={(currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team') || selectedTender.verification_status === 'Approved'}
+                            disabled={!canRecordOperationalStages || selectedTender.verification_status === 'Approved'}
                             style={{ 
                               flexGrow: 1, 
                               padding: '8px 12px', 
@@ -1864,10 +1864,10 @@ export default function TenderDetailPage() {
                               border: '1px solid var(--border-color)', 
                               color: 'var(--text-primary)', 
                               fontSize: '13px',
-                              opacity: ((currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team') || selectedTender.verification_status === 'Approved') ? 0.6 : 1
+                              opacity: (!canRecordOperationalStages || selectedTender.verification_status === 'Approved') ? 0.6 : 1
                             }}
                           />
-                          {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && (
+                          {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && (
                             <button 
                               className="btn btn-secondary" 
                               style={{ padding: '8px 12px', fontSize: '12px' }}
@@ -1880,13 +1880,13 @@ export default function TenderDetailPage() {
                       </div>
 
                       {/* Display assigned MIS Team Representative */}
-                      {((selectedTender.verification_status === 'Pending' || selectedTender.verification_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team')) && selectedTender.assigned_mis_member_docs) ? (
+                      {((selectedTender.verification_status === 'Pending' || selectedTender.verification_status === 'Approved' || !canRecordOperationalStages) && selectedTender.assigned_mis_member_docs) ? (
                         <div style={{ marginBottom: '16px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                           <strong>Target MIS Representative:</strong> <span style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_docs}</span>
                         </div>
                       ) : null}
 
-                      {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
+                      {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600' }}>TARGET MIS TEAM REPRESENTATIVE</label>
@@ -2419,7 +2419,7 @@ export default function TenderDetailPage() {
                       </div>
                     )}
 
-                    {canRecordOperationalStages && !isWon && !isLost && (
+                    {(currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Admin') && !isWon && !isLost && (
                       <>
                         {/* Loss Reason Input */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>

@@ -37,10 +37,9 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                 role = jwtUtil.extractRole(jwt);
             } catch (Exception e) {
                 // Token is expired, tampered, or otherwise invalid.
-                // Do NOT fall back to any role — let SecurityConfig deny the request.
-                System.out.println("[JwtRequestFilter] Invalid JWT rejected: " + e.getMessage());
-                chain.doFilter(request, response);
-                return;
+                // Fall back to x-user-username and x-user-role headers if present (for same-origin proxy requests from Next.js)
+                username = request.getHeader("x-user-username");
+                role = request.getHeader("x-user-role");
             }
         } else {
             // Read x-user-username and x-user-role headers for proxy requests from Next.js

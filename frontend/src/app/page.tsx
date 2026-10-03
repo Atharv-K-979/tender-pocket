@@ -85,7 +85,7 @@ export default function Dashboard() {
 
   // User Authentication & Session States
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
-  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
+  const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
     status?: string;
@@ -5082,7 +5082,7 @@ export default function Dashboard() {
                     <BookOpen size={18} style={{ color: 'var(--primary)' }} />
                     Document Repository & Bid Generator
                   </h3>
-                  {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive') && (
+                  {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
                     <button 
                       className="btn btn-primary" 
                       style={{ padding: '6px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -5547,7 +5547,7 @@ export default function Dashboard() {
                   )}
 
                   {/* Clearance Team Action Controls */}
-                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'MIS Team' || (selectedTender.assigned_mis_member_spec && currentUser?.username === selectedTender.assigned_mis_member_spec)) && selectedTender.spec_verification_status === 'Pending' && (
+                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'Admin') && selectedTender.spec_verification_status === 'Pending' && (
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
                       <button 
                         className="btn btn-primary" 
@@ -5829,7 +5829,7 @@ export default function Dashboard() {
                             <span><strong>Locked:</strong> Provided Price from MIS Team must be set before generating bid documents. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
                           </div>
                         ) : (
-                          (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && (
+                          (currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
                             <button 
                               className="btn btn-primary" 
                               style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
@@ -5878,7 +5878,7 @@ export default function Dashboard() {
                             📁 Working folder: <code>{selectedTender.working_path}</code>
                           </span>
                         )}
-                        {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
+                        {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
                           <button 
                             className="btn btn-primary" 
                             style={{ fontSize: '11px', padding: '6px 12px', alignSelf: 'flex-start', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -5924,7 +5924,7 @@ export default function Dashboard() {
                           value={workingPath}
                           onChange={(e) => setWorkingPath(e.target.value)}
                           placeholder="e.g. /Shared/Tenders/2026/GEM-7324078"
-                          disabled={selectedTender.verification_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team')}
+                          disabled={selectedTender.verification_status === 'Approved' || !canRecordOperationalStages}
                           style={{ 
                             flexGrow: 1, 
                             padding: '8px 12px', 
@@ -5933,10 +5933,10 @@ export default function Dashboard() {
                             border: '1px solid var(--border-color)', 
                             color: 'var(--text-primary)', 
                             fontSize: '13px',
-                            opacity: (selectedTender.verification_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team')) ? 0.6 : 1
+                            opacity: (selectedTender.verification_status === 'Approved' || !canRecordOperationalStages) ? 0.6 : 1
                           }}
                         />
-                        {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && (
+                        {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && (
                           <button 
                             className="btn btn-secondary" 
                             style={{ padding: '8px 12px', fontSize: '12px' }}
@@ -5968,7 +5968,7 @@ export default function Dashboard() {
                       </select>
                     </div>
 
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
+                    {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
                       <button 
                         className="btn btn-primary" 
                         style={{ width: '100%', padding: '8px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px' }}
@@ -5983,7 +5983,7 @@ export default function Dashboard() {
                       </button>
                     )}
 
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status === 'Pending' && (
+                    {canRecordOperationalStages && selectedTender.verification_status === 'Pending' && (
                       <div style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#d97706', marginBottom: '12px' }}>
                         ⏳ <strong>Awaiting MIS Review:</strong> Bid documents package has been submitted. EMD Payment will unlock once the MIS Team approves.
                       </div>
@@ -6458,7 +6458,7 @@ export default function Dashboard() {
                       )}
 
                       {/* Pending Outcome Controls (only if neither won nor lost) */}
-                      {canRecordOperationalStages && !isWon && !isLost && (
+                      {(currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Admin') && !isWon && !isLost && (
                         <>
                           {/* Loss Reason Input Box */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>

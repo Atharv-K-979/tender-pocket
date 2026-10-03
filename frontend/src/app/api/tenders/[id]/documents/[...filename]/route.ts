@@ -24,66 +24,77 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return Response.json({ success: false, error: 'Invalid document path.' }, { status: 400 });
     }
 
-    // If file does not exist on local disk, attempt on-demand download/recovery
+    // If file does not exist on local disk in frontend, check backend directory or attempt on-demand download/recovery
     if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
-      console.log(`[Document Download API] ${filenameStr} missing for Tender ${safeId}. Attempting on-demand retrieval...`);
-      
-      const targetDir = path.dirname(targetPath);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
+      const backendPath = path.resolve(process.cwd(), '..', 'backend', 'public', 'documents', safeId, ...filenameSegments);
+      if (fs.existsSync(backendPath) && fs.statSync(backendPath).isFile()) {
+        targetPath = backendPath;
+      } else {
+        console.log(`[Document Download API] ${filenameStr} missing for Tender ${safeId}. Attempting on-demand retrieval...`);
+        
+        const targetDir = path.dirname(targetPath);
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
 
-      const lowerName = filenameStr.toLowerCase();
+        const lowerName = filenameStr.toLowerCase();
 
-      // 1. On-demand live GeM PDF download (handles both Bid and RA documents)
-      if (lowerName.endsWith('.pdf')) {
-        const gemUrlsToTry = [
-          `https://bidplus.gem.gov.in/showradocumentPdf/${safeId}`,
-          `https://bidplus.gem.gov.in/showbidDocument/${safeId}`,
-          `https://bidplus.gem.gov.in/showradocument/${safeId}`
-        ];
+        // 1. On-demand live GeM PDF download (handles both Bid and RA documents)
+        if (lowerName.endsWith('.pdf')) {
+          const gemUrlsToTry = [
+            `https://bidplus.gem.gov.in/showradocumentPdf/${safeId}`,
+            `https://bidplus.gem.gov.in/showbidDocument/${safeId}`,
+            `https://bidplus.gem.gov.in/showradocument/${safeId}`
+          ];
 
-        for (const gemUrl of gemUrlsToTry) {
-          if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 500) break;
-          try {
-            console.log(`[Document Download API] Fetching from GeM: ${gemUrl}`);
-            const res = await axios.get(gemUrl, {
-              responseType: 'arraybuffer',
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-              },
-              timeout: 15000
-            });
-            if (res.status === 200 && res.data && res.data.length > 500) {
-              fs.writeFileSync(targetPath, res.data);
-              console.log(`[Document Download API] Saved ${filenameStr} (${res.data.length} bytes) to ${targetPath}`);
-              break;
+          for (const gemUrl of gemUrlsToTry) {
+            if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 500) break;
+            try {
+              console.log(`[Document Download API] Fetching from GeM: ${gemUrl}`);
+              const res = await axios.get(gemUrl, {
+                responseType: 'arraybuffer',
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                timeout: 15000
+              });
+              if (res.status === 200 && res.data && res.data.length > 500) {
+                fs.writeFileSync(targetPath, res.data);
+                console.log(`[Document Download API] Saved ${filenameStr} (${res.data.length} bytes) to ${targetPath}`);
+                break;
+              }
+            } catch (gemErr: any) {
+              console.warn(`[Document Download API] GeM fetch failed for ${gemUrl}: ${gemErr.message}`);
             }
-          } catch (gemErr: any) {
-            console.warn(`[Document Download API] GeM fetch failed for ${gemUrl}: ${gemErr.message}`);
           }
         }
-      }
 
-      // 2. Fallback: try downloadAndSaveTenderDocuments via Tender247 scraper
-      if (!fs.existsSync(targetPath)) {
-        try {
-          console.log(`[Document Download API] Invoking downloadAndSaveTenderDocuments for tender ${safeId}...`);
-          await downloadAndSaveTenderDocuments(safeId);
-        } catch (scraperErr: any) {
-          console.warn(`[Document Download API] Scraper download failed: ${scraperErr.message}`);
+        // 2. Fallback: try downloadAndSaveTenderDocuments via Tender247 scraper
+        if (!fs.existsSync(targetPath)) {
+          try {
+            console.log(`[Document Download API] Invoking downloadAndSaveTenderDocuments for tender ${safeId}...`);
+            await downloadAndSaveTenderDocuments(safeId);
+          } catch (scraperErr: any) {
+            console.warn(`[Document Download API] Scraper download failed: ${scraperErr.message}`);
+          }
         }
-      }
 
-      // 3. Case-insensitive or fuzzy match within safeId directory
-      if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
-        const tenderDocDir = path.resolve(docsDir, safeId);
-        if (fs.existsSync(tenderDocDir)) {
-          const files = fs.readdirSync(tenderDocDir);
+        // 3. Case-insensitive or fuzzy match within safeId directory (frontend & backend)
+        if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+          const searchDirs = [
+            path.resolve(docsDir, safeId),
+            path.resolve(process.cwd(), '..', 'backend', 'public', 'documents', safeId)
+          ];
           const baseNameOnly = path.basename(filenameStr).toLowerCase();
-          const matched = files.find(f => f.toLowerCase() === baseNameOnly);
-          if (matched) {
-            targetPath = path.resolve(tenderDocDir, matched);
+          for (const d of searchDirs) {
+            if (fs.existsSync(d)) {
+              const files = fs.readdirSync(d);
+              const matched = files.find(f => f.toLowerCase() === baseNameOnly);
+              if (matched) {
+                targetPath = path.resolve(d, matched);
+                break;
+              }
+            }
           }
         }
       }
