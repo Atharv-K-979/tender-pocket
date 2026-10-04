@@ -177,7 +177,11 @@ public class TenderController {
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "location", required = false) String location,
             @RequestParam(value = "sector", required = false) String sector,
-            @RequestParam(value = "mis_executive", required = false) String misExecutive) {
+            @RequestParam(value = "mis_executive", required = false) String misExecutive,
+            @RequestParam(value = "minCost", required = false) Double minCost,
+            @RequestParam(value = "maxCost", required = false) Double maxCost,
+            @RequestParam(value = "sortBy", required = false, defaultValue = "scraped_at") String sortBy,
+            @RequestParam(value = "order", required = false, defaultValue = "desc") String order) {
 
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         userRole = resolveUserRole(userRole);
@@ -186,6 +190,8 @@ public class TenderController {
         List<Tender> filtered = new ArrayList<>();
 
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+        boolean isTpcRole = "TPC Pricing Team".equalsIgnoreCase(userRole) || "TPC Team".equalsIgnoreCase(userRole);
+        boolean canViewTpcPrice = WorkflowPermissions.allowed(userRole, VIEW_TPC_PRICE);
 
         for (Tender t : list) {
             // Apply role restriction
@@ -197,6 +203,12 @@ public class TenderController {
                         || "clearance".equalsIgnoreCase(t.getAssignedMisMemberSpec())
                         || "Clearance Team".equalsIgnoreCase(t.getAssignedMisMemberSpec())
                         || "SPEC_CLEARANCE".equalsIgnoreCase(t.getCurrentStage());
+                if (!match) continue;
+            }
+            if (isTpcRole) {
+                boolean match = "TPC_PRICING".equalsIgnoreCase(t.getCurrentStage())
+                        || "REJECTED_TPC".equalsIgnoreCase(t.getCurrentStage())
+                        || (t.getTpcPurchasePrice() != null && t.getTpcPurchasePrice() > 0);
                 if (!match) continue;
             }
             if (misExecutive != null && !misExecutive.isEmpty() && !misExecutive.equalsIgnoreCase(t.getMisExecutive())) {
@@ -220,7 +232,20 @@ public class TenderController {
 
             // Filter by status or urgency
             if (status != null && !status.isEmpty()) {
-                if ("Pending".equalsIgnoreCase(status) || "Approved".equalsIgnoreCase(status) || "Rejected".equalsIgnoreCase(status)) {
+                if (isTpcRole) {
+                    if ("Pending".equalsIgnoreCase(status)) {
+                        boolean isPending = "TPC_PRICING".equalsIgnoreCase(t.getCurrentStage())
+                                && (t.getTpcPurchasePrice() == null || t.getTpcPurchasePrice() == 0)
+                                && !"Rejected".equalsIgnoreCase(t.getStatus());
+                        if (!isPending) continue;
+                    } else if ("Approved".equalsIgnoreCase(status)) {
+                        boolean isApproved = t.getTpcPurchasePrice() != null && t.getTpcPurchasePrice() > 0;
+                        if (!isApproved) continue;
+                    } else if ("Rejected".equalsIgnoreCase(status)) {
+                        boolean isRejected = "Rejected".equalsIgnoreCase(t.getStatus()) || "REJECTED_TPC".equalsIgnoreCase(t.getCurrentStage());
+                        if (!isRejected) continue;
+                    }
+                } else if ("Pending".equalsIgnoreCase(status) || "Approved".equalsIgnoreCase(status) || "Rejected".equalsIgnoreCase(status)) {
                     if (!status.equalsIgnoreCase(t.getSpecVerificationStatus())) {
                         continue;
                     }
@@ -266,14 +291,47 @@ public class TenderController {
                 continue;
             }
 
-            filtered.add(t);
+            // Filter by minCost & maxCost
+            if (minCost != null && (t.getEstimatedCost() == null || t.getEstimatedCost() < minCost)) {
+                continue;
+            }
+            if (maxCost != null && (t.getEstimatedCost() == null || t.getEstimatedCost() > maxCost)) {
+                continue;
+            }
+
+            // Create safe response copy to prevent mutating managed JPA entity
+            Tender responseItem = createResponseCopy(t);
+
+            // Apply pricing confidentiality
+            if (!canViewTpcPrice) {
+                responseItem.setTpcPurchasePrice(null);
+                responseItem.setAiDetailsSummary(null);
+                responseItem.setAiHistorySummary(null);
+            }
+
+            filtered.add(responseItem);
         }
 
-        // Sort by scraped_at DESC by default
+        // Dynamic Sorting
+        String safeSortBy = List.of("scraped_at", "due_date", "estimated_cost").contains(sortBy) ? sortBy : "scraped_at";
+        boolean isAsc = "asc".equalsIgnoreCase(order);
+
         filtered.sort((a, b) -> {
-            String sa = a.getScrapedAt() != null ? a.getScrapedAt() : "";
-            String sb = b.getScrapedAt() != null ? b.getScrapedAt() : "";
-            return sb.compareTo(sa);
+            int cmp = 0;
+            if ("due_date".equalsIgnoreCase(safeSortBy)) {
+                String da = a.getDueDate() != null ? a.getDueDate() : "";
+                String db = b.getDueDate() != null ? b.getDueDate() : "";
+                cmp = da.compareTo(db);
+            } else if ("estimated_cost".equalsIgnoreCase(safeSortBy)) {
+                Double ca = a.getEstimatedCost() != null ? a.getEstimatedCost() : 0.0;
+                Double cb = b.getEstimatedCost() != null ? b.getEstimatedCost() : 0.0;
+                cmp = ca.compareTo(cb);
+            } else {
+                String sa = a.getScrapedAt() != null ? a.getScrapedAt() : "";
+                String sb = b.getScrapedAt() != null ? b.getScrapedAt() : "";
+                cmp = sa.compareTo(sb);
+            }
+            return isAsc ? cmp : -cmp;
         });
 
         // Get filter options
@@ -295,17 +353,63 @@ public class TenderController {
         ));
     }
 
+    private Tender createResponseCopy(Tender source) {
+        if (source == null) return null;
+        Tender copy = new Tender();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        return copy;
+    }
+
     @GetMapping("/{id}")
-    public ResponseEntity<?> getTenderById(@PathVariable("id") String id) {
+    public ResponseEntity<?> getTenderById(
+            @PathVariable("id") String id,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username) {
+
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
+        userRole = resolveUserRole(userRole);
+        username = resolveUsername(username);
+
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
         }
 
-        Tender tender = opt.get();
+        Tender dbTender = opt.get();
+
+        // Check role-based tender access
+        if ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) {
+            if (!username.equalsIgnoreCase(dbTender.getMisExecutive())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false, "error", "Access denied: Tender not assigned to you"));
+            }
+        } else if ("Clearance Team".equalsIgnoreCase(userRole) || "Specification Team".equalsIgnoreCase(userRole)) {
+            boolean match = username.equalsIgnoreCase(dbTender.getAssignedMisMemberSpec())
+                    || "clearance".equalsIgnoreCase(dbTender.getAssignedMisMemberSpec())
+                    || "Clearance Team".equalsIgnoreCase(dbTender.getAssignedMisMemberSpec())
+                    || "SPEC_CLEARANCE".equalsIgnoreCase(dbTender.getCurrentStage());
+            if (!match) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false, "error", "Access denied: Tender not assigned to Clearance Team"));
+            }
+        } else if ("TPC Pricing Team".equalsIgnoreCase(userRole) || "TPC Team".equalsIgnoreCase(userRole)) {
+            boolean match = "TPC_PRICING".equalsIgnoreCase(dbTender.getCurrentStage())
+                    || "REJECTED_TPC".equalsIgnoreCase(dbTender.getCurrentStage())
+                    || (dbTender.getTpcPurchasePrice() != null && dbTender.getTpcPurchasePrice() > 0);
+            if (!match) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false, "error", "Access denied: Tender not available for TPC pricing"));
+            }
+        }
+
+        Tender tender = createResponseCopy(dbTender);
+
         String todayIST = LocalDate.now().toString();
         tender.setStatus(resolveStatus(tender, todayIST));
+
+        // Pricing Confidentiality
+        if (!WorkflowPermissions.allowed(userRole, VIEW_TPC_PRICE)) {
+            tender.setTpcPurchasePrice(null);
+            tender.setAiDetailsSummary(null);
+            tender.setAiHistorySummary(null);
+        }
 
         // Generate Standard Summaries
         String detailsSummary = generateDetailsSummary(tender);
