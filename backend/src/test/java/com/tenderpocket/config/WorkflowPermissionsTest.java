@@ -110,6 +110,20 @@ class WorkflowPermissionsTest {
         assertEquals(403, logController.getActivityLogs(null).getStatusCode().value());
     }
 
+    @Test void unauthenticatedRequestWithForgedHeadersIsRejected() throws Exception {
+        SecurityContextHolder.clearContext();
+        var filter = new JwtRequestFilter();
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.addHeader("x-user-role", "Admin");
+        request.addHeader("x-user-username", "admin");
+        request.addHeader("Authorization", "Bearer invalid.jwt.token");
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        var chain = mock(jakarta.servlet.FilterChain.class);
+
+        filter.doFilter(request, response, chain);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
     @Test void genericPatchCannotBypassPricingOrApprovalPermissions() {
         authenticate("Tender Executive");
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("tpc_purchase_price", 100), "SPEC_CLEARANCE"));

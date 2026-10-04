@@ -69,6 +69,10 @@ public class AnalyticsController {
         int specRejectedCount = 0;
         int specTotalCount = tenders.size();
 
+        int tpcPendingCount = 0;
+        int tpcApprovedCount = 0;
+        int tpcRejectedCount = 0;
+
         LocalDate today = LocalDate.now();
         LocalDate threeDaysLater = today.plusDays(3);
 
@@ -81,6 +85,14 @@ public class AnalyticsController {
             if ("Pending".equalsIgnoreCase(t.getSpecVerificationStatus())) specPendingCount++;
             else if ("Approved".equalsIgnoreCase(t.getSpecVerificationStatus())) specApprovedCount++;
             else if ("Rejected".equalsIgnoreCase(t.getSpecVerificationStatus())) specRejectedCount++;
+
+            if ("Rejected".equalsIgnoreCase(t.getStatus()) || "REJECTED_TPC".equalsIgnoreCase(t.getCurrentStage())) {
+                tpcRejectedCount++;
+            } else if ("TPC_PRICING".equalsIgnoreCase(t.getCurrentStage()) && (t.getTpcPurchasePrice() == null || t.getTpcPurchasePrice() == 0)) {
+                tpcPendingCount++;
+            } else if (t.getTpcPurchasePrice() != null && t.getTpcPurchasePrice() > 0) {
+                tpcApprovedCount++;
+            }
 
             if ("New".equals(status)) { issuedCount++; valNew += val; }
             else if ("Participating".equals(status)) { participatingCount++; valPart += val; }
@@ -112,13 +124,34 @@ public class AnalyticsController {
         }
 
         int totalTenders = tenders.size();
+        int tpcTotalCount = totalTenders;
 
-        // Query database value brackets, sectors, and authorities using native queries
+        // Query database value brackets, sectors, authorities, and deadlines using native queries
         List<Map<String, Object>> sectorList = new ArrayList<>();
         List<Map<String, Object>> authorityList = new ArrayList<>();
         List<Map<String, Object>> bracketsList = new ArrayList<>();
+        List<Map<String, Object>> deadlineList = new ArrayList<>();
 
         try {
+            // Deadlines Query
+            String deadlineSql = "SELECT due_date, COUNT(*) as count FROM tenders " +
+                    "WHERE due_date >= ? AND due_date <= ? " +
+                    ("MIS Executive".equalsIgnoreCase(userRole) ? "WHERE mis_executive = ? " : "") +
+                    "GROUP BY due_date ORDER BY due_date ASC";
+            Query q0 = entityManager.createNativeQuery("SELECT due_date, COUNT(*) as count FROM tenders " +
+                    "WHERE due_date >= ? AND due_date <= ? " +
+                    ("MIS Executive".equalsIgnoreCase(userRole) ? "AND mis_executive = ? " : "") +
+                    "GROUP BY due_date ORDER BY due_date ASC");
+            q0.setParameter(1, todayIST);
+            q0.setParameter(2, LocalDate.now().plusDays(30).toString());
+            if ("MIS Executive".equalsIgnoreCase(userRole)) {
+                q0.setParameter(3, username);
+            }
+            List<Object[]> r0 = q0.getResultList();
+            for (Object[] row : r0) {
+                deadlineList.add(Map.of("due_date", row[0], "count", row[1]));
+            }
+
             // Sectors Query
             String sectorSql = "SELECT COALESCE(sector, 'Unknown') as sector, COUNT(*) as count, SUM(COALESCE(estimated_cost, 0.0)) as total_val " +
                     "FROM tenders " +
@@ -209,12 +242,16 @@ public class AnalyticsController {
         metrics.put("specPendingCount", specPendingCount);
         metrics.put("specApprovedCount", specApprovedCount);
         metrics.put("specRejectedCount", specRejectedCount);
+        metrics.put("tpcTotalCount", tpcTotalCount);
+        metrics.put("tpcPendingCount", tpcPendingCount);
+        metrics.put("tpcApprovedCount", tpcApprovedCount);
+        metrics.put("tpcRejectedCount", tpcRejectedCount);
         metrics.put("status", statusRows);
 
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "metrics", metrics,
-                "deadlines", Collections.emptyList(), // Standard chart placeholder
+                "deadlines", deadlineList,
                 "sectors", sectorList,
                 "authorities", authorityList,
                 "valueBrackets", bracketsList

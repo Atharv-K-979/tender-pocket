@@ -30,22 +30,19 @@ public class JwtRequestFilter extends OncePerRequestFilter {
         String username = null;
         String role = null;
 
-        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")
+                && !authorizationHeader.equals("Bearer null")
+                && !authorizationHeader.equals("Bearer undefined")) {
             String jwt = authorizationHeader.substring(7);
             try {
                 username = jwtUtil.extractUsername(jwt);
                 role = jwtUtil.extractRole(jwt);
             } catch (Exception e) {
-                // Token is expired, tampered, or otherwise invalid.
-                // Do NOT fall back to any role — let SecurityConfig deny the request.
+                // Cryptographic validation failed: do NOT authenticate request and do NOT fall back to client headers
                 System.out.println("[JwtRequestFilter] Invalid JWT rejected: " + e.getMessage());
                 chain.doFilter(request, response);
                 return;
             }
-        } else {
-            // Read x-user-username and x-user-role headers for proxy requests from Next.js
-            username = request.getHeader("x-user-username");
-            role = request.getHeader("x-user-role");
         }
 
         if (username != null && !username.isEmpty() && SecurityContextHolder.getContext().getAuthentication() == null) {
