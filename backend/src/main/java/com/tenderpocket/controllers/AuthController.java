@@ -251,7 +251,18 @@ public class AuthController {
         }
 
         if (userRepository.existsById(username)) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username already exists"));
+            User existing = userRepository.findById(username).get();
+            if (password != null && !password.isEmpty()) {
+                existing.setPasswordHash(passwordEncoder.encode(password));
+            }
+            if (role != null && !role.isEmpty()) {
+                existing.setRole(role);
+            }
+            if (email != null && !email.trim().isEmpty()) {
+                existing.setEmail(email.trim());
+            }
+            userRepository.save(existing);
+            return ResponseEntity.ok(Map.of("success", true, "message", "User updated successfully", "user", Map.of("username", existing.getUsername(), "role", existing.getRole())));
         }
 
         User newUser = new User(username, passwordEncoder.encode(password), role);

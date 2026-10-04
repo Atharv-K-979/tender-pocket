@@ -8,3 +8,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return proxyToBackend(request, '/api/auth/users');
 }
+
+export async function DELETE(request: Request) {
+  const { search } = new URL(request.url);
+  return proxyToBackend(request, `/api/auth/users${search}`);
+}
