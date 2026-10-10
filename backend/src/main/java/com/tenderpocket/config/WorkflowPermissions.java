@@ -108,7 +108,7 @@ public final class WorkflowPermissions {
             if ("Pending".equals(val) && !isExec) return false;
         }
 
-        for (String emdField : List.of("emd_amount_actual", "emd_payment_mode", "emd_payment_ref", "emd_payment_date", "assigned_mis_member_emd", "assigned_mis_member", "assigned_mis_member_docs", "assigned_mis_member_submission", "working_path")) {
+        for (String emdField : List.of("emd_amount_actual", "emd_payment_mode", "emd_payment_ref", "emd_payment_date", "assigned_mis_member_emd", "assigned_mis_member", "assigned_mis_member_docs", "assigned_mis_member_submission", "working_path", "downloaded_docs", "downloadedDocs")) {
             if (body.containsKey(emdField) && !isExec && !isAdmin) return false;
         }
 
@@ -126,6 +126,16 @@ public final class WorkflowPermissions {
             String val = String.valueOf(body.get("spec_verification_status"));
             if (List.of("Approved", "Rejected").contains(val) && !isClearance) return false;
             if ("Pending".equals(val) && !isExec) return false;
+        }
+
+        if (body.containsKey("current_stage")) {
+            String newStage = String.valueOf(body.get("current_stage"));
+            if (List.of("WON", "LOST", "WIN_LOSS_PENDING").contains(newStage) && !isMis) return false;
+            if ("DOC_VERIFICATION".equals(newStage) && !isExec && !isMis) return false;
+            if ("TPC_PRICING".equals(newStage) && !isClearance && !isExec) return false;
+            if ("MIS_PRICING".equals(newStage) && !isTpc) return false;
+            if ("PAYMENT_APPROVAL".equals(newStage) && !isMis && !isExec) return false;
+            if (List.of("WON", "LOST").contains(newStage) && !"WIN_LOSS_PENDING".equals(currentStage) && !"SUBMISSION_PENDING".equals(currentStage)) return false;
         }
 
         String status = String.valueOf(body.get("status"));

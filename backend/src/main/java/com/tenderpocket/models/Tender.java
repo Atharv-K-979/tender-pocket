@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import jakarta.persistence.Index;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
 @Table(name = "tenders", indexes = {
@@ -310,7 +311,10 @@ public class Tender {
     public String getDocumentUrl() { return documentUrl; }
     public void setDocumentUrl(String documentUrl) { this.documentUrl = documentUrl; }
 
+    @JsonProperty("downloadedDocs")
     public String getDownloadedDocs() { return downloadedDocs; }
+    @JsonProperty("downloaded_docs")
+    public String getDownloadedDocsSnakeCase() { return downloadedDocs; }
     public void setDownloadedDocs(String downloadedDocs) { this.downloadedDocs = downloadedDocs; }
 
     public String getOriginalUrl() { return originalUrl; }

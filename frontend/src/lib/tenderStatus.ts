@@ -110,9 +110,10 @@ export function areBidDocsGenerated(tender: any): boolean {
   if (['Submitted', 'Filed', 'Won', 'Lost', 'Awarded', 'Not Awarded'].includes(tender.status)) return true;
   if (['DOC_VERIFICATION', 'EMD_REQ_READY', 'EMD_PENDING', 'READY_TO_SUBMIT', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING', 'WON', 'LOST'].includes(tender.current_stage)) return true;
 
-  if (!tender.downloaded_docs) return false;
+  const docsRaw = tender.downloaded_docs || tender.downloadedDocs;
+  if (!docsRaw) return false;
   try {
-    const docs = typeof tender.downloaded_docs === 'string' ? JSON.parse(tender.downloaded_docs) : tender.downloaded_docs;
+    const docs = typeof docsRaw === 'string' ? JSON.parse(docsRaw) : docsRaw;
     if (Array.isArray(docs)) {
       return docs.some((d: any) => 
         (d.name && (d.name.includes('Generated Bid Documents') || d.name.includes('Bid Documents') || d.name.includes('Bid_Documents'))) ||
@@ -121,8 +122,8 @@ export function areBidDocsGenerated(tender: any): boolean {
       );
     }
   } catch {
-    if (typeof tender.downloaded_docs === 'string') {
-      return tender.downloaded_docs.includes('Bid_Documents_') || tender.downloaded_docs.includes('Generated Bid Documents');
+    if (typeof docsRaw === 'string') {
+      return docsRaw.includes('Bid_Documents_') || docsRaw.includes('Generated Bid Documents');
     }
   }
   return false;

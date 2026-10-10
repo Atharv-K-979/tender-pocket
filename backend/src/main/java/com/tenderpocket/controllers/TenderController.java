@@ -553,6 +553,12 @@ public class TenderController {
             logDetails.add("working path updated to '" + val + "'");
         }
 
+        if (body.containsKey("downloaded_docs") || body.containsKey("downloadedDocs")) {
+            String val = (String) (body.containsKey("downloaded_docs") ? body.get("downloaded_docs") : body.get("downloadedDocs"));
+            tender.setDownloadedDocs(val);
+            logDetails.add("downloaded docs updated");
+        }
+
         if (body.containsKey("assigned_mis_member") || body.containsKey("assignedMisMember")) {
             String val = (String) (body.containsKey("assigned_mis_member") ? body.get("assigned_mis_member") : body.get("assignedMisMember"));
             tender.setAssignedMisMember(val);

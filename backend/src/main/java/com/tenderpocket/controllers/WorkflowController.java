@@ -428,6 +428,12 @@ public class WorkflowController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
                     "error", "Specification clearance and finalized MIS pricing are required before document verification."));
         }
+        String downloadedDocsVal = body.get("downloadedDocs");
+        if (downloadedDocsVal == null) downloadedDocsVal = body.get("downloaded_docs");
+        if (downloadedDocsVal != null && !downloadedDocsVal.trim().isEmpty()) {
+            tender.setDownloadedDocs(downloadedDocsVal);
+        }
+
         tender.setAssignedMisExecutive(assignedMis);
         tender.setWorkingPath(workingPath);
         tender.setCurrentStage("DOC_VERIFICATION");

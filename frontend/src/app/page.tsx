@@ -5414,9 +5414,10 @@ export default function Dashboard() {
                 
                 {(() => {
                   let docList: any[] = [];
-                  if (selectedTender.downloaded_docs) {
+                  const rawDocs = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
+                  if (rawDocs) {
                     try {
-                      docList = JSON.parse(selectedTender.downloaded_docs);
+                      docList = typeof rawDocs === 'string' ? JSON.parse(rawDocs) : rawDocs;
                     } catch {
                       docList = [];
                     }

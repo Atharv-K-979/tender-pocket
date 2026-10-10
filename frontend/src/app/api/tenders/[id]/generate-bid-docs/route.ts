@@ -560,7 +560,7 @@ export async function POST(
     }
 
     // Attempt notifying Spring Boot backend if available
-    if (backendUrl && backendUrl !== 'http://localhost:8080') {
+    if (backendUrl) {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
@@ -568,17 +568,35 @@ export async function POST(
         const authH = request.headers.get('authorization');
         if (authH) headers['authorization'] = authH;
 
+        const docsJsonStr = JSON.stringify(currentDocs);
+
         fetch(`${backendUrl}/api/tenders/${id}/doc-verification-request`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
             assignedMisExecutive: assignedMis,
             workingPath: docDownloadPath,
+            downloadedDocs: docsJsonStr,
+            downloaded_docs: docsJsonStr,
             comment: 'Bid document package generated. Submitted for MIS verification & approval.'
           }),
           signal: controller.signal,
           cache: 'no-store'
         }).catch(() => {});
+
+        fetch(`${backendUrl}/api/tenders/${id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({
+            downloadedDocs: docsJsonStr,
+            downloaded_docs: docsJsonStr,
+            current_stage: 'DOC_VERIFICATION',
+            verification_status: 'Pending'
+          }),
+          signal: controller.signal,
+          cache: 'no-store'
+        }).catch(() => {});
+
         clearTimeout(timeout);
       } catch (_) {}
     }
