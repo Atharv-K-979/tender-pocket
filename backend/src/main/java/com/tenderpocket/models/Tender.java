@@ -308,7 +308,10 @@ public class Tender {
     public String getOpeningDate() { return openingDate; }
     public void setOpeningDate(String openingDate) { this.openingDate = openingDate; }
 
+    @JsonProperty("documentUrl")
     public String getDocumentUrl() { return documentUrl; }
+    @JsonProperty("document_url")
+    public String getDocumentUrlSnakeCase() { return documentUrl; }
     public void setDocumentUrl(String documentUrl) { this.documentUrl = documentUrl; }
 
     @JsonProperty("downloadedDocs")
@@ -317,7 +320,10 @@ public class Tender {
     public String getDownloadedDocsSnakeCase() { return downloadedDocs; }
     public void setDownloadedDocs(String downloadedDocs) { this.downloadedDocs = downloadedDocs; }
 
+    @JsonProperty("originalUrl")
     public String getOriginalUrl() { return originalUrl; }
+    @JsonProperty("original_url")
+    public String getOriginalUrlSnakeCase() { return originalUrl; }
     public void setOriginalUrl(String originalUrl) { this.originalUrl = originalUrl; }
 
     public String getStatus() { return status; }

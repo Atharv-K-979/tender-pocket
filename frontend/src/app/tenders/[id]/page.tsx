@@ -1072,7 +1072,7 @@ export default function TenderDetailPage() {
                 </h3>
                 
                 {(() => {
-                  let docList = [];
+                  let docList: any[] = [];
                   const rawDocs = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
                   if (rawDocs) {
                     try {
@@ -1081,8 +1081,27 @@ export default function TenderDetailPage() {
                       docList = [];
                     }
                   }
+                  if (!Array.isArray(docList)) docList = [];
+
+                  // Ensure Original Tender Document PDF is always present if document_url / original_url is available
+                  const origUrl = selectedTender.document_url || selectedTender.documentUrl || selectedTender.original_url || selectedTender.originalUrl;
+                  if (origUrl) {
+                    const hasOriginal = docList.some((d: any) => 
+                      d.local_path === origUrl || 
+                      (d.name && (d.name.toLowerCase().includes('original') || d.name.toLowerCase().includes('gem bid'))) || 
+                      (d.filename && (d.filename.toLowerCase().includes('gem_bid') || d.filename.toLowerCase().includes('tender_document')))
+                    );
+                    if (!hasOriginal) {
+                      docList.unshift({
+                        name: 'Original GeM Bid Document (PDF)',
+                        filename: 'GeM_Bid_Document.pdf',
+                        local_path: origUrl,
+                        created_date: 'Official Download'
+                      });
+                    }
+                  }
                   
-                  if (!Array.isArray(docList) || docList.length === 0) {
+                  if (docList.length === 0) {
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px 0', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
                         <Inbox size={28} style={{ marginBottom: '8px', opacity: 0.5 }} />

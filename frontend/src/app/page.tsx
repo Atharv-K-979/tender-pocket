@@ -5423,13 +5423,26 @@ export default function Dashboard() {
                     }
                   }
                   
-                  if (!Array.isArray(docList) || docList.length === 0) {
-                    if (selectedTender.document_url) {
-                      docList = [{ name: 'Original Tender Document PDF', filename: 'Tender_Document.pdf', local_path: selectedTender.document_url, created_date: 'Official Download' }];
+                  if (!Array.isArray(docList)) docList = [];
+
+                  const origUrl = selectedTender.document_url || selectedTender.documentUrl || selectedTender.original_url || selectedTender.originalUrl;
+                  if (origUrl) {
+                    const hasOriginal = docList.some((d: any) => 
+                      d.local_path === origUrl || 
+                      (d.name && (d.name.toLowerCase().includes('original') || d.name.toLowerCase().includes('gem bid'))) || 
+                      (d.filename && (d.filename.toLowerCase().includes('gem_bid') || d.filename.toLowerCase().includes('tender_document')))
+                    );
+                    if (!hasOriginal) {
+                      docList.unshift({
+                        name: 'Original GeM Bid Document (PDF)',
+                        filename: 'GeM_Bid_Document.pdf',
+                        local_path: origUrl,
+                        created_date: 'Official Download'
+                      });
                     }
                   }
 
-                  if (!Array.isArray(docList) || docList.length === 0) {
+                  if (docList.length === 0) {
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px 0', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
                         <Inbox size={28} style={{ marginBottom: '8px', opacity: 0.5 }} />
