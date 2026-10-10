@@ -76,23 +76,37 @@ public final class WorkflowPermissions {
     public static boolean allowedPatch(Map<String, Object> body, String currentStage) {
         Map<String, Action> fields = Map.ofEntries(
             Map.entry("tpc_purchase_price", Action.SET_TPC_PRICE),
+            Map.entry("tpcPurchasePrice", Action.SET_TPC_PRICE),
             Map.entry("mis_final_price", Action.SET_MIS_PRICE),
+            Map.entry("misFinalPrice", Action.SET_MIS_PRICE),
             Map.entry("verification_status", Action.REVIEW_BIDS),
+            Map.entry("verificationStatus", Action.REVIEW_BIDS),
             Map.entry("payment_status", Action.RECORD_PAYMENT),
+            Map.entry("paymentStatus", Action.RECORD_PAYMENT),
             Map.entry("emd_amount_actual", Action.RECORD_PAYMENT),
+            Map.entry("emdAmountActual", Action.RECORD_PAYMENT),
             Map.entry("emd_payment_mode", Action.RECORD_PAYMENT),
+            Map.entry("emdPaymentMode", Action.RECORD_PAYMENT),
             Map.entry("emd_payment_ref", Action.RECORD_PAYMENT),
+            Map.entry("emdPaymentRef", Action.RECORD_PAYMENT),
             Map.entry("emd_payment_date", Action.RECORD_PAYMENT),
+            Map.entry("emdPaymentDate", Action.RECORD_PAYMENT),
             Map.entry("assigned_mis_member_emd", Action.RECORD_PAYMENT),
+            Map.entry("assignedMisMemberEmd", Action.RECORD_PAYMENT),
             Map.entry("submission_status", Action.RECORD_SUBMISSION),
+            Map.entry("submissionStatus", Action.RECORD_SUBMISSION),
             Map.entry("assigned_mis_member_submission", Action.RECORD_SUBMISSION),
+            Map.entry("assignedMisMemberSubmission", Action.RECORD_SUBMISSION),
             Map.entry("outcome_status", Action.RECORD_OUTCOME),
-            Map.entry("loss_reason", Action.RECORD_OUTCOME));
+            Map.entry("outcomeStatus", Action.RECORD_OUTCOME),
+            Map.entry("loss_reason", Action.RECORD_OUTCOME),
+            Map.entry("lossReason", Action.RECORD_OUTCOME));
         for (var field : fields.entrySet()) if (body.containsKey(field.getKey()) && !allowed(field.getValue())) return false;
-        if (body.containsKey("spec_verification_status") && !allowed(
-                List.of("Approved", "Rejected").contains(String.valueOf(body.get("spec_verification_status")))
+        if ((body.containsKey("spec_verification_status") || body.containsKey("specVerificationStatus")) && !allowed(
+                List.of("Approved", "Rejected").contains(String.valueOf(body.getOrDefault("spec_verification_status", body.get("specVerificationStatus"))))
                 ? Action.APPROVE_SPEC : Action.UPLOAD_SPEC)) return false;
-        if (body.containsKey("current_stage") && !Objects.equals(currentStage, body.get("current_stage"))
+        if ((body.containsKey("current_stage") || body.containsKey("currentStage"))
+                && !Objects.equals(currentStage, body.getOrDefault("current_stage", body.get("currentStage")))
                 && !role().equals("Admin")) return false;
         String status = String.valueOf(body.get("status"));
         if (List.of("Won", "Lost", "Awarded", "Not Awarded", "Disqualified", "Missed Opportunity").contains(status)

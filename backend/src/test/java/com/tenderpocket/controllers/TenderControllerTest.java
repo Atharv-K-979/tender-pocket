@@ -393,4 +393,56 @@ public class TenderControllerTest {
         assertTrue((Boolean) body.get("success"));
         assertNotNull(body.get("stats"));
     }
+
+    @Test
+    void testDownloadDocumentNonExistentFileReturns404() {
+        authenticate("admin", "Admin");
+
+        ResponseEntity<?> response = tenderController.downloadDocumentFile("T1", "non_existent_file.pdf");
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+    }
+
+    @Test
+    void testDocumentAuthorizationAllCanonicalRoles() {
+        String[] roles = {"Admin", "Tender Executive", "Clearance Team", "TPC Pricing Team", "MIS Team"};
+        for (String role : roles) {
+            authenticate("user_" + role, role);
+            ResponseEntity<?> response = tenderController.downloadDocumentFile("T1", "non_existent_file.pdf");
+            // Should reach file lookup and return 404 (not 403 Forbidden), proving role authorization is allowed for document viewing
+            assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode(), "Role " + role + " should have document view authorization");
+        }
+    }
+
+    @Test
+    void testDocumentMetadataDiscoveryWithDiskFiles() throws Exception {
+        authenticate("admin", "Admin");
+
+        // Create temporary test document directory for T1
+        java.io.File dir = new java.io.File("public/documents/T1");
+        dir.mkdirs();
+        java.io.File testPdf = new java.io.File(dir, "Bid_Document_T1.pdf");
+        java.io.File testDocx = new java.io.File(dir, "Technical_Specification_Sheet_T1.docx");
+        java.io.File testXlsx = new java.io.File(dir, "Combined_Technical_Data_Sheet.xlsx");
+        
+        testPdf.createNewFile();
+        testDocx.createNewFile();
+        testXlsx.createNewFile();
+
+        try {
+            ResponseEntity<?> response = tenderController.getTenderById("T1", "Admin", "admin");
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+
+            Map<?, ?> body = (Map<?, ?>) response.getBody();
+            Tender resultTender = (Tender) body.get("tender");
+            assertNotNull(resultTender.getDownloadedDocs());
+            assertTrue(resultTender.getDownloadedDocs().contains("Bid_Document_T1.pdf"));
+            assertTrue(resultTender.getDownloadedDocs().contains("Technical_Specification_Sheet_T1.docx"));
+            assertTrue(resultTender.getDownloadedDocs().contains("Combined_Technical_Data_Sheet.xlsx"));
+        } finally {
+            testPdf.delete();
+            testDocx.delete();
+            testXlsx.delete();
+            dir.delete();
+        }
+    }
 }

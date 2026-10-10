@@ -700,9 +700,9 @@ export default function TenderDetailPage() {
 
         
 
-        setDetailsSummary(data.summaries.detailsSummary);
+        setDetailsSummary(data.summaries?.detailsSummary || tender.ai_details_summary || '');
 
-        setStatusHistorySummary(data.summaries.statusHistorySummary);
+        setStatusHistorySummary(data.summaries?.statusHistorySummary || tender.ai_history_summary || '');
 
         setTenderHistory(data.history || []);
 
@@ -2063,6 +2063,20 @@ export default function TenderDetailPage() {
                   }
 
                   
+
+                  if (!Array.isArray(docList) || docList.length === 0) {
+
+                    if (selectedTender.document_url) {
+
+                      docList = [{ name: 'Original Tender Document PDF', filename: 'Tender_Document.pdf', local_path: selectedTender.document_url, created_date: 'Official Download' }];
+
+                    }
+
+                  }
+
+
+
+
 
                   if (!Array.isArray(docList) || docList.length === 0) {
 

@@ -22,15 +22,16 @@ export function canonicalRole(role: string | null | undefined): string {
 export function canPerform(role: string | null | undefined, action: WorkflowAction): boolean {
   const canonical = canonicalRole(role);
   if (!canonical) return false;
-  if (action === 'viewTenders' || action === 'viewAudit') return true;
+  if (action === 'viewTenders') return true;
   switch (action) {
     case 'uploadSpecs': return canonical === 'Tender Executive';
-    case 'generateBids': return canonical === 'Tender Executive' || canonical === 'MIS Team' || canonical === 'Admin';
+    case 'generateBids': return canonical === 'Tender Executive';
     case 'approveSpecs': return canonical === 'Clearance Team';
     case 'setTpcPrice': return canonical === 'TPC Pricing Team';
     case 'viewTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team' || canonical === 'Admin';
     case 'setMisPrice': return canonical === 'MIS Team' || canonical === 'Admin';
-    case 'manageUsers': return canonical === 'Admin';
+    case 'manageUsers':
+    case 'viewAudit': return canonical === 'Admin';
     case 'reviewBids':
     case 'recordPayment':
     case 'recordSubmission':
@@ -82,22 +83,30 @@ export function forbiddenPatchFields(role: string, body: Record<string, unknown>
   const denied: string[] = [];
   const canonical = canonicalRole(role);
   const fields: Record<string, WorkflowAction> = {
-    tpc_purchase_price: 'setTpcPrice', mis_final_price: 'setMisPrice',
-    verification_status: 'reviewBids', payment_status: 'recordPayment',
-    emd_amount_actual: 'recordPayment', emd_payment_mode: 'recordPayment',
-    emd_payment_ref: 'recordPayment', emd_payment_date: 'recordPayment',
-    assigned_mis_member_emd: 'recordPayment', submission_status: 'recordSubmission',
-    assigned_mis_member_submission: 'recordSubmission', outcome_status: 'recordOutcome', loss_reason: 'recordOutcome',
+    tpc_purchase_price: 'setTpcPrice', tpcPurchasePrice: 'setTpcPrice',
+    mis_final_price: 'setMisPrice', misFinalPrice: 'setMisPrice',
+    verification_status: 'reviewBids', verificationStatus: 'reviewBids',
+    payment_status: 'recordPayment', paymentStatus: 'recordPayment',
+    emd_amount_actual: 'recordPayment', emdAmountActual: 'recordPayment',
+    emd_payment_mode: 'recordPayment', emdPaymentMode: 'recordPayment',
+    emd_payment_ref: 'recordPayment', emdPaymentRef: 'recordPayment',
+    emd_payment_date: 'recordPayment', emdPaymentDate: 'recordPayment',
+    assigned_mis_member_emd: 'recordPayment', assignedMisMemberEmd: 'recordPayment',
+    submission_status: 'recordSubmission', submissionStatus: 'recordSubmission',
+    assigned_mis_member_submission: 'recordSubmission', assignedMisMemberSubmission: 'recordSubmission',
+    outcome_status: 'recordOutcome', outcomeStatus: 'recordOutcome',
+    loss_reason: 'recordOutcome', lossReason: 'recordOutcome',
   };
   for (const [field, action] of Object.entries(fields)) {
     if (field in body && !canPerform(role, action)) denied.push(field);
   }
-  if ('spec_verification_status' in body) {
-    const action = ['Approved', 'Rejected'].includes(String(body.spec_verification_status))
+  if ('spec_verification_status' in body || 'specVerificationStatus' in body) {
+    const val = String(body.spec_verification_status ?? body.specVerificationStatus);
+    const action = ['Approved', 'Rejected'].includes(val)
       ? 'approveSpecs' : 'uploadSpecs';
     if (!canPerform(role, action)) denied.push('spec_verification_status');
   }
-  if ('current_stage' in body && body.current_stage !== old.current_stage) {
+  if (('current_stage' in body && body.current_stage !== old.current_stage) || ('currentStage' in body && body.currentStage !== old.currentStage)) {
     denied.push('current_stage');
   }
   if (canonical === 'Admin') {
