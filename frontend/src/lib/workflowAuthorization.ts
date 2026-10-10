@@ -87,6 +87,7 @@ export function forbiddenPatchFields(role: string, body: Record<string, unknown>
   const denied: string[] = [];
   const canonical = canonicalRole(role);
   if (!canonical) return Object.keys(body);
+
   if (canonical === 'Admin') {
     const adminRestrictedFields = ['notes', 'mis_executive', 'bid_qty', 'quoted_qty', 'working_path', 'assigned_mis_member', 'assigned_mis_member_spec', 'assigned_mis_member_docs', 'assigned_mis_member_emd', 'assigned_mis_member_submission'];
     for (const f of adminRestrictedFields) {
@@ -99,46 +100,76 @@ export function forbiddenPatchFields(role: string, body: Record<string, unknown>
   const isMis = canonical === 'MIS Team';
 
   // EMD details entry fields & submission assignments (editable ONLY by Tender Executive)
-  const emdFields = ['emd_amount_actual', 'emd_payment_mode', 'emd_payment_ref', 'emd_payment_date', 'assigned_mis_member_emd', 'assigned_mis_member_submission', 'assigned_mis_member_docs', 'assigned_mis_member', 'working_path'];
+  const emdFields = ['emd_amount_actual', 'emdAmountActual', 'emd_payment_mode', 'emdPaymentMode', 'emd_payment_ref', 'emdPaymentRef', 'emd_payment_date', 'emdPaymentDate', 'assigned_mis_member_emd', 'assignedMisMemberEmd', 'assigned_mis_member_submission', 'assignedMisMemberSubmission', 'assigned_mis_member_docs', 'assigned_mis_member', 'working_path'];
   for (const f of emdFields) {
     if (f in body && !isExec) denied.push(f);
   }
 
   // Pricing fields
-  if ('tpc_purchase_price' in body && canonical !== 'TPC Pricing Team') denied.push('tpc_purchase_price');
-  if ('mis_final_price' in body && !isMis) denied.push('mis_final_price');
+  if (('tpc_purchase_price' in body || 'tpcPurchasePrice' in body) && canonical !== 'TPC Pricing Team') {
+    if ('tpc_purchase_price' in body) denied.push('tpc_purchase_price');
+    if ('tpcPurchasePrice' in body) denied.push('tpcPurchasePrice');
+  }
+  if (('mis_final_price' in body || 'misFinalPrice' in body) && !isMis) {
+    if ('mis_final_price' in body) denied.push('mis_final_price');
+    if ('misFinalPrice' in body) denied.push('misFinalPrice');
+  }
 
   // Stage status reviews vs submissions
-  if ('verification_status' in body) {
-    const val = String(body.verification_status);
-    if (['Approved', 'Rejected'].includes(val) && !isMis) denied.push('verification_status');
-    if (val === 'Pending' && !isExec) denied.push('verification_status');
+  if ('verification_status' in body || 'verificationStatus' in body) {
+    const val = String(body.verification_status ?? body.verificationStatus);
+    if (['Approved', 'Rejected'].includes(val) && !isMis) {
+      if ('verification_status' in body) denied.push('verification_status');
+      if ('verificationStatus' in body) denied.push('verificationStatus');
+    }
+    if (val === 'Pending' && !isExec) {
+      if ('verification_status' in body) denied.push('verification_status');
+      if ('verificationStatus' in body) denied.push('verificationStatus');
+    }
   }
 
-  if ('payment_status' in body) {
-    const val = String(body.payment_status);
-    if (['Approved', 'Rejected'].includes(val) && !isMis) denied.push('payment_status');
-    if (val === 'Pending' && !isExec) denied.push('payment_status');
+  if ('payment_status' in body || 'paymentStatus' in body) {
+    const val = String(body.payment_status ?? body.paymentStatus);
+    if (['Approved', 'Rejected'].includes(val) && !isMis) {
+      if ('payment_status' in body) denied.push('payment_status');
+      if ('paymentStatus' in body) denied.push('paymentStatus');
+    }
+    if (val === 'Pending' && !isExec) {
+      if ('payment_status' in body) denied.push('payment_status');
+      if ('paymentStatus' in body) denied.push('paymentStatus');
+    }
   }
 
-  if ('submission_status' in body) {
-    const val = String(body.submission_status);
-    if (['Approved', 'Rejected'].includes(val) && !isMis) denied.push('submission_status');
-    if (val === 'Pending' && !isExec) denied.push('submission_status');
+  if ('submission_status' in body || 'submissionStatus' in body) {
+    const val = String(body.submission_status ?? body.submissionStatus);
+    if (['Approved', 'Rejected'].includes(val) && !isMis) {
+      if ('submission_status' in body) denied.push('submission_status');
+      if ('submissionStatus' in body) denied.push('submissionStatus');
+    }
+    if (val === 'Pending' && !isExec) {
+      if ('submission_status' in body) denied.push('submission_status');
+      if ('submissionStatus' in body) denied.push('submissionStatus');
+    }
   }
 
-  if (('outcome_status' in body || 'loss_reason' in body) && !isMis) {
+  if (('outcome_status' in body || 'outcomeStatus' in body || 'loss_reason' in body || 'lossReason' in body) && !isMis) {
     if ('outcome_status' in body) denied.push('outcome_status');
+    if ('outcomeStatus' in body) denied.push('outcomeStatus');
     if ('loss_reason' in body) denied.push('loss_reason');
+    if ('lossReason' in body) denied.push('lossReason');
   }
 
-  if ('spec_verification_status' in body) {
-    const action = ['Approved', 'Rejected'].includes(String(body.spec_verification_status))
+  if ('spec_verification_status' in body || 'specVerificationStatus' in body) {
+    const val = String(body.spec_verification_status ?? body.specVerificationStatus);
+    const action = ['Approved', 'Rejected'].includes(val)
       ? 'approveSpecs' : 'uploadSpecs';
-    if (!canPerform(role, action)) denied.push('spec_verification_status');
+    if (!canPerform(role, action)) {
+      if ('spec_verification_status' in body) denied.push('spec_verification_status');
+      if ('specVerificationStatus' in body) denied.push('specVerificationStatus');
+    }
   }
 
-  if ('current_stage' in body && body.current_stage !== old.current_stage) {
+  if (('current_stage' in body && body.current_stage !== old.current_stage) || ('currentStage' in body && body.currentStage !== old.currentStage)) {
     const isAllowedStageChange = isExec
       || (canPerform(role, 'approveSpecs') && (old.current_stage === 'SPEC_CLEARANCE' || body.current_stage === 'TPC_PRICING' || body.current_stage === 'SPEC_CLEARANCE'))
       || (canPerform(role, 'setTpcPrice') && (old.current_stage === 'TPC_PRICING' || body.current_stage === 'MIS_PRICING'))

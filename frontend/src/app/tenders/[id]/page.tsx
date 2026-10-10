@@ -392,8 +392,8 @@ export default function TenderDetailPage() {
           setMisFinalPriceInput(tender.mis_final_price !== undefined && tender.mis_final_price !== null ? tender.mis_final_price : '');
         }
         
-        setDetailsSummary(data.summaries.detailsSummary);
-        setStatusHistorySummary(data.summaries.statusHistorySummary);
+        setDetailsSummary(data.summaries?.detailsSummary || tender.ai_details_summary || '');
+        setStatusHistorySummary(data.summaries?.statusHistorySummary || tender.ai_history_summary || '');
         setTenderHistory(data.history || []);
       } else {
         if (!isBackground) showToast('Tender not found', 'error');
@@ -1081,6 +1081,12 @@ export default function TenderDetailPage() {
                     }
                   }
                   
+                  if (!Array.isArray(docList) || docList.length === 0) {
+                    if (selectedTender.document_url) {
+                      docList = [{ name: 'Original Tender Document PDF', filename: 'Tender_Document.pdf', local_path: selectedTender.document_url, created_date: 'Official Download' }];
+                    }
+                  }
+
                   if (!Array.isArray(docList) || docList.length === 0) {
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px 0', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>

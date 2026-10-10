@@ -194,6 +194,7 @@ public class TenderController {
         boolean canViewTpcPrice = WorkflowPermissions.allowed(userRole, VIEW_TPC_PRICE);
 
         for (Tender t : list) {
+            ensureDocumentMetadata(t);
             // Apply role restriction
             if (("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) && !username.equalsIgnoreCase(t.getMisExecutive())) {
                 continue;
@@ -353,6 +354,94 @@ public class TenderController {
         ));
     }
 
+    private void ensureDocumentMetadata(Tender tender) {
+        if (tender == null || tender.getId() == null) return;
+        String tenderId = tender.getId();
+        File dir = new File("public/documents/" + tenderId);
+        boolean needsUpdate = false;
+
+        List<Map<String, String>> existingList = new ArrayList<>();
+        ObjectMapper objectMapper = new ObjectMapper();
+        String existingDocs = tender.getDownloadedDocs();
+
+        if (existingDocs != null && !existingDocs.trim().isEmpty()) {
+            try {
+                List<Map<String, String>> parsed = objectMapper.readValue(existingDocs, new TypeReference<List<Map<String, String>>>() {});
+                if (parsed != null) {
+                    existingList = new ArrayList<>(parsed);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // Scan physical storage for existing files
+        if (dir.exists() && dir.isDirectory()) {
+            File[] files = dir.listFiles();
+            if (files != null && files.length > 0) {
+                Set<String> existingFilenames = new HashSet<>();
+                for (Map<String, String> item : existingList) {
+                    if (item.get("filename") != null) {
+                        existingFilenames.add(item.get("filename").toLowerCase());
+                    }
+                }
+
+                for (File f : files) {
+                    if (f.isFile() && !f.getName().startsWith(".")) {
+                        String name = f.getName();
+                        if (!existingFilenames.contains(name.toLowerCase())) {
+                            String friendlyName = name;
+                            if (name.startsWith("Bid_Document_") || name.startsWith("Bid_Documents_")) {
+                                friendlyName = name.endsWith(".docx") ? "Generated Bid Documents (Word DOCX)" : "Bid Document (PDF)";
+                            } else if (name.startsWith("Technical_Specification_Sheet_")) {
+                                friendlyName = name.endsWith(".docx") ? "Technical Specification Sheet (Word DOCX)" : "Technical Specification Sheet (PDF)";
+                            } else if (name.startsWith("Combined_Technical_Data_Sheet")) {
+                                friendlyName = "Combined Technical Specifications (" + (name.endsWith(".docx") ? "DOCX" : name.endsWith(".xlsx") ? "XLSX" : "PDF") + ")";
+                            } else if (name.equalsIgnoreCase("specification.pdf")) {
+                                friendlyName = "Uploaded Input (specification.pdf)";
+                            }
+
+                            String localPath = "/documents/" + tenderId + "/" + name;
+                            existingList.add(Map.of(
+                                    "name", friendlyName,
+                                    "filename", name,
+                                    "local_path", localPath,
+                                    "created_date", tender.getEntryDate() != null ? tender.getEntryDate() : LocalDate.now().toString()
+                            ));
+                            existingFilenames.add(name.toLowerCase());
+                            needsUpdate = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (needsUpdate || (tender.getDocumentUrl() == null || tender.getDocumentUrl().trim().isEmpty())) {
+            if (!existingList.isEmpty()) {
+                try {
+                    String newJson = objectMapper.writeValueAsString(existingList);
+                    if (!Objects.equals(tender.getDownloadedDocs(), newJson)) {
+                        tender.setDownloadedDocs(newJson);
+                        needsUpdate = true;
+                    }
+                    if (tender.getDocumentUrl() == null || tender.getDocumentUrl().trim().isEmpty()) {
+                        String firstPath = existingList.get(0).get("local_path");
+                        if (firstPath != null) {
+                            tender.setDocumentUrl(firstPath);
+                            needsUpdate = true;
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        if (needsUpdate) {
+            try {
+                tenderRepository.save(tender);
+            } catch (Exception e) {
+                System.err.println("[TenderController] Auto-sync tender document metadata error: " + e.getMessage());
+            }
+        }
+    }
+
     private Tender createResponseCopy(Tender source) {
         if (source == null) return null;
         Tender copy = new Tender();
@@ -376,6 +465,7 @@ public class TenderController {
         }
 
         Tender dbTender = opt.get();
+        ensureDocumentMetadata(dbTender);
 
         // Check role-based tender access
         if ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) {

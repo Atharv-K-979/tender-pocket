@@ -22,6 +22,7 @@ import {
   Users,
   Filter
 } from 'lucide-react';
+import { canPerform } from '@/lib/workflowAuthorization';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1560,7 +1561,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                     <div style={{ fontWeight: '700', wordBreak: 'break-all', fontSize: '11px', color: 'var(--text-primary)' }}>{modal.approval.workingPath}</div>
                   </div>
                 )}
-                {modal.approval.tpcPurchasePrice != null && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Executive' && (
+                {modal.approval.tpcPurchasePrice != null && canPerform(currentUser?.role, 'viewTpcPrice') && (
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Transfer Price (Production Cost)</span>
                     <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatCurrency(modal.approval.tpcPurchasePrice)}</div>

@@ -3,10 +3,16 @@ import path from 'node:path';
 import axios from 'axios';
 import { downloadAndSaveTenderDocuments } from '@/lib/scraper';
 
+import { getAuthFromRequest } from '@/lib/auth';
+
 export const runtime = 'nodejs';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; filename: string | string[] }> }) {
   try {
+    const auth = getAuthFromRequest(request);
+    if (!auth) {
+      return Response.json({ success: false, error: 'Unauthorized' }, { status: 403 });
+    }
     const rawParams = await params;
     const safeId = path.basename(rawParams.id);
     

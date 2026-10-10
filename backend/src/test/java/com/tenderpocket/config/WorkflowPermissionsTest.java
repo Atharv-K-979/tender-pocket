@@ -127,9 +127,15 @@ class WorkflowPermissionsTest {
     @Test void genericPatchCannotBypassPricingOrApprovalPermissions() {
         authenticate("Tender Executive");
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("tpc_purchase_price", 100), "SPEC_CLEARANCE"));
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("tpcPurchasePrice", 100), "SPEC_CLEARANCE"));
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("spec_verification_status", "Approved"), "SPEC_CLEARANCE"));
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("specVerificationStatus", "Approved"), "SPEC_CLEARANCE"));
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("payment_status", "Approved"), "SPEC_CLEARANCE"));
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("paymentStatus", "Approved"), "SPEC_CLEARANCE"));
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("verification_status", "Approved"), "SPEC_CLEARANCE"));
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("verificationStatus", "Approved"), "SPEC_CLEARANCE"));
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("current_stage", "WON"), "SPEC_CLEARANCE"));
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("currentStage", "WON"), "SPEC_CLEARANCE"));
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("status", "Won"), "SPEC_CLEARANCE"));
         assertTrue(WorkflowPermissions.allowedPatch(Map.of("notes", "Operational note"), "SPEC_CLEARANCE"));
     }
