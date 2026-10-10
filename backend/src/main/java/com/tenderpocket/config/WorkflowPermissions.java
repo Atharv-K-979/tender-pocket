@@ -17,10 +17,10 @@ public final class WorkflowPermissions {
         if (role == null) return "";
         return switch (role.replaceFirst("(?i)^ROLE_", "").replace('_', ' ').trim().toUpperCase(Locale.ROOT)) {
             case "ADMIN" -> "Admin";
-            case "EXECUTIVE", "TENDER EXECUTIVE" -> "Tender Executive";
+            case "EXECUTIVE", "TENDER EXECUTIVE", "MIS EXECUTIVE" -> "Tender Executive";
             case "SPECIFICATION TEAM", "CLEARANCE TEAM", "CLEARANCE", "SPECIFICATION" -> "Clearance Team";
             case "TPC TEAM", "TPC PRICING TEAM", "TPC", "TPC PRICING" -> "TPC Pricing Team";
-            case "MIS EXECUTIVE", "MIS TEAM", "MISTEAM", "MIS" -> "MIS Team";
+            case "MIS TEAM", "MISTEAM", "MIS" -> "MIS Team";
             default -> "";
         };
     }
@@ -41,14 +41,20 @@ public final class WorkflowPermissions {
     public static boolean allowed(String role, Action action) {
         String canonical = canonicalRole(role);
         if (canonical.isEmpty() || action == null) return false;
-        if (action == Action.VIEW_TENDERS || "Admin".equals(canonical)) return true;
+        if (action == Action.VIEW_TENDERS) return true;
+        if ("Admin".equals(canonical)) {
+            return switch (action) {
+                case VIEW_TPC_PRICE, SET_MIS_PRICE, MANAGE_USERS, VIEW_AUDIT -> true;
+                default -> false;
+            };
+        }
         return switch (action) {
             case UPLOAD_SPEC, GENERATE_BIDS -> canonical.equals("Tender Executive");
             case APPROVE_SPEC -> canonical.equals("Clearance Team");
             case SET_TPC_PRICE -> canonical.equals("TPC Pricing Team");
             case VIEW_TPC_PRICE -> canonical.equals("TPC Pricing Team") || canonical.equals("MIS Team");
             case SET_MIS_PRICE -> canonical.equals("MIS Team");
-            case MANAGE_USERS, VIEW_AUDIT -> true;
+            case MANAGE_USERS, VIEW_AUDIT -> false;
             case REVIEW_BIDS, RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME -> canonical.equals("MIS Team");
             default -> false;
         };
@@ -80,6 +86,9 @@ public final class WorkflowPermissions {
 
         boolean isExec = "Tender Executive".equals(canonical);
         boolean isMis = "MIS Team".equals(canonical);
+
+        // Only Admin may change the workflow stage directly.
+        if (body.containsKey("current_stage")) return false;
 
         if (body.containsKey("verification_status")) {
             String val = String.valueOf(body.get("verification_status"));

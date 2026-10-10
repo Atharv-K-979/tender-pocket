@@ -1953,11 +1953,25 @@ public class DocumentGeneratorService {
             Thread.currentThread().interrupt();
             return Collections.emptyList();
         } finally {
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS)) {
+                    synchronized (progressLock) {
+                        reportingOpen[0] = false;
+                    }
+                    executor.shutdownNow();
+                    executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+                }
+            } catch (InterruptedException e) {
+                synchronized (progressLock) {
+                    reportingOpen[0] = false;
+                }
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
             synchronized (progressLock) {
                 reportingOpen[0] = false;
             }
-            for (java.util.concurrent.Future<?> future : futures) future.cancel(true);
-            executor.shutdownNow();
         }
     }
 
@@ -2041,14 +2055,9 @@ public class DocumentGeneratorService {
         // requirement when local OCR is unavailable or cannot improve the page.
         if (nativeSucceeded || nativeEmpty) return rows;
 
-        List<String[]> fallbackRows = extractLocalSpecificationClauses(batch.sourceContext, data, knownProducts);
-        if (fallbackRows != null && !fallbackRows.isEmpty()) {
-            System.out.println("[DocumentGeneratorService] Local text fallback extracted " + fallbackRows.size() + " specification clauses for batch " + batchNumber);
-            return fallbackRows;
-        }
-
-        System.out.println("[DocumentGeneratorService] Batch " + batchNumber + " completed with zero clauses via local text fallback.");
-        return AISpecificationIntelligenceService.completedEmptyRows();
+        System.out.println("[DocumentGeneratorService] Batch " + batchNumber
+                + " failed: AI did not return validated clauses or explicitly confirm an empty result.");
+        return Collections.emptyList();
     }
 
     private List<String[]> extractLocalSpecificationClauses(String text, Map<String, String> data, List<String> knownProducts) {
