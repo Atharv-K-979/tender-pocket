@@ -1856,7 +1856,7 @@ export default function TenderDetailPage() {
                         </div>
                       ) : null}
 
-                      {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
+                      {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600' }}>TARGET MIS TEAM REPRESENTATIVE</label>

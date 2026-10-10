@@ -96,8 +96,6 @@ public final class WorkflowPermissions {
             }
         }
 
-        if (body.containsKey("current_stage") && !isAdmin) return false;
-
         if (body.containsKey("verification_status")) {
             String val = String.valueOf(body.get("verification_status"));
             if (List.of("Approved", "Rejected").contains(val) && !isMis) return false;
