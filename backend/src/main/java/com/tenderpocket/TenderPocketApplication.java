@@ -45,7 +45,18 @@ public class TenderPocketApplication {
                         // Ignore if running on SQLite or column is already TEXT
                     }
                 }
-                System.out.println("[Database Migration] Verified and altered PostgreSQL tender table columns to TEXT.");
+                String[] dateFixStatements = {
+                    "UPDATE tender_approval_requests SET created_at = replace(replace(created_at, 'T', ' '), 'Z', '') WHERE created_at LIKE '%T%'",
+                    "UPDATE tender_approval_requests SET updated_at = replace(replace(updated_at, 'T', ' '), 'Z', '') WHERE updated_at LIKE '%T%'",
+                    "UPDATE tender_workflow_comments SET created_at = replace(replace(created_at, 'T', ' '), 'Z', '') WHERE created_at LIKE '%T%'",
+                    "UPDATE activity_log SET timestamp = replace(replace(timestamp, 'T', ' '), 'Z', '') WHERE timestamp LIKE '%T%'"
+                };
+                for (String sql : dateFixStatements) {
+                    try {
+                        stmt.executeUpdate(sql);
+                    } catch (Exception ignored) {}
+                }
+                System.out.println("[Database Migration] Verified and altered PostgreSQL tender table columns to TEXT and normalized SQLite timestamps.");
             } catch (Exception e) {
                 System.out.println("[Database Migration] Migration runner finished: " + e.getMessage());
             }

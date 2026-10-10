@@ -85,8 +85,18 @@ export default function Dashboard() {
 
   // User Authentication & Session States
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
-  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
+  const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
+  const [techSpecProgress, setTechSpecProgress] = useState<{
+    status?: string;
+    stage?: string;
+    message?: string;
+    percent?: number;
+    completedBatches?: number;
+    totalBatches?: number;
+    clausesExtracted?: number;
+    clauses?: number;
+  } | null>(null);
   const techSpecUploadInFlight = useRef(false);
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
@@ -1147,6 +1157,29 @@ export default function Dashboard() {
     const tenderId = selectedTender.id;
     techSpecUploadInFlight.current = true;
     setUploadingTechSpec(true);
+    setTechSpecProgress({
+      status: 'UPLOADING',
+      message: 'Uploading document & initializing AI extraction...',
+      percent: 5,
+      completedBatches: 0,
+      totalBatches: 0,
+      clauses: 0
+    });
+
+    let pollInterval: NodeJS.Timeout | null = setInterval(async () => {
+      try {
+        const res = await fetchWithAuth(`/api/tenders/${tenderId}/tech-spec-progress`);
+        if (res.ok) {
+          const prog = await res.json();
+          if (prog && prog.status) {
+            setTechSpecProgress(prog);
+          }
+        }
+      } catch (e) {
+        console.error('Progress poll error:', e);
+      }
+    }, 1000);
+
     try {
       const formData = new FormData();
       formData.append('file', fileToUpload);
@@ -1156,18 +1189,28 @@ export default function Dashboard() {
         body: formData
       });
       const data = await response.json();
+
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+
       if (!response.ok || data.success !== true) {
         showToast(data.error || 'Failed to upload technical specification.', 'error');
+        setTechSpecProgress(null);
         return;
       }
       if (data.generated === false) {
         showToast(data.message || 'No technical specifications were found.', 'success');
+        setTechSpecProgress(null);
         return;
       }
       if (data.generated !== true) {
         showToast('The server did not confirm specification generation.', 'error');
+        setTechSpecProgress(null);
         return;
       }
+      setTechSpecProgress(prev => ({ ...prev, status: 'COMPLETED', percent: 100, message: 'Technical specification generated successfully!' }));
       showToast(data.message || 'Technical specification sheets generated successfully.', 'success');
       // The upload route already persisted Generated. Refresh rather than issuing a second
       // workflow PATCH or submitting a clearance request merely because upload succeeded.
@@ -1187,8 +1230,14 @@ export default function Dashboard() {
       console.error(e);
       showToast('Error uploading technical specification.', 'error');
     } finally {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
       techSpecUploadInFlight.current = false;
-      setUploadingTechSpec(false);
+      setTimeout(() => {
+        setUploadingTechSpec(false);
+        setTechSpecProgress(null);
+      }, 1200);
     }
   };
 
@@ -5033,7 +5082,7 @@ export default function Dashboard() {
                     <BookOpen size={18} style={{ color: 'var(--primary)' }} />
                     Document Repository & Bid Generator
                   </h3>
-                  {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive') && (
+                  {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
                     <button 
                       className="btn btn-primary" 
                       style={{ padding: '6px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -5498,7 +5547,7 @@ export default function Dashboard() {
                   )}
 
                   {/* Clearance Team Action Controls */}
-                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'MIS Team' || (selectedTender.assigned_mis_member_spec && currentUser?.username === selectedTender.assigned_mis_member_spec)) && selectedTender.spec_verification_status === 'Pending' && (
+                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'Admin') && selectedTender.spec_verification_status === 'Pending' && (
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
                       <button 
                         className="btn btn-primary" 
@@ -5780,7 +5829,7 @@ export default function Dashboard() {
                             <span><strong>Locked:</strong> Provided Price from MIS Team must be set before generating bid documents. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
                           </div>
                         ) : (
-                          (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && (
+                          (currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
                             <button 
                               className="btn btn-primary" 
                               style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
@@ -5829,7 +5878,7 @@ export default function Dashboard() {
                             📁 Working folder: <code>{selectedTender.working_path}</code>
                           </span>
                         )}
-                        {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
+                        {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
                           <button 
                             className="btn btn-primary" 
                             style={{ fontSize: '11px', padding: '6px 12px', alignSelf: 'flex-start', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -5875,7 +5924,7 @@ export default function Dashboard() {
                           value={workingPath}
                           onChange={(e) => setWorkingPath(e.target.value)}
                           placeholder="e.g. /Shared/Tenders/2026/GEM-7324078"
-                          disabled={selectedTender.verification_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team')}
+                          disabled={selectedTender.verification_status === 'Approved' || !canRecordOperationalStages}
                           style={{ 
                             flexGrow: 1, 
                             padding: '8px 12px', 
@@ -5884,10 +5933,10 @@ export default function Dashboard() {
                             border: '1px solid var(--border-color)', 
                             color: 'var(--text-primary)', 
                             fontSize: '13px',
-                            opacity: (selectedTender.verification_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Executive' && currentUser?.role !== 'MIS Team')) ? 0.6 : 1
+                            opacity: (selectedTender.verification_status === 'Approved' || !canRecordOperationalStages) ? 0.6 : 1
                           }}
                         />
-                        {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && (
+                        {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && (
                           <button 
                             className="btn btn-secondary" 
                             style={{ padding: '8px 12px', fontSize: '12px' }}
@@ -5919,7 +5968,7 @@ export default function Dashboard() {
                       </select>
                     </div>
 
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
+                    {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
                       <button 
                         className="btn btn-primary" 
                         style={{ width: '100%', padding: '8px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px' }}
@@ -5934,7 +5983,7 @@ export default function Dashboard() {
                       </button>
                     )}
 
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'MIS Team') && selectedTender.verification_status === 'Pending' && (
+                    {canRecordOperationalStages && selectedTender.verification_status === 'Pending' && (
                       <div style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#d97706', marginBottom: '12px' }}>
                         ⏳ <strong>Awaiting MIS Review:</strong> Bid documents package has been submitted. EMD Payment will unlock once the MIS Team approves.
                       </div>
@@ -6409,7 +6458,7 @@ export default function Dashboard() {
                       )}
 
                       {/* Pending Outcome Controls (only if neither won nor lost) */}
-                      {canRecordOperationalStages && !isWon && !isLost && (
+                      {(currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Admin') && !isWon && !isLost && (
                         <>
                           {/* Loss Reason Input Box */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
@@ -6854,6 +6903,151 @@ export default function Dashboard() {
         )}
         <span>{toast.message}</span>
       </div>
+
+      {/* Tech Spec Generation Progress Modal Overlay */}
+      {uploadingTechSpec && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.8)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--bg-app, #1e293b)',
+            borderRadius: '16px',
+            border: '1px solid rgba(99, 102, 241, 0.3)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+            width: '100%',
+            maxWidth: '520px',
+            padding: '28px',
+            color: 'var(--text-primary, #f8fafc)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '14px',
+                background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '24px',
+                boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+              }}>
+                ⚡
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary, #f8fafc)' }}>
+                  Generating Technical Specification
+                </h3>
+                <p style={{ margin: '3px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary, #94a3b8)' }}>
+                  AI extraction & parameter verification in progress...
+                </p>
+              </div>
+            </div>
+
+            {/* Progress Bar Container */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', fontWeight: 600 }}>
+                <span style={{
+                  color: '#818cf8',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  fontSize: '11px',
+                  fontWeight: 700
+                }}>
+                  {techSpecProgress?.status || 'PROCESSING'}
+                </span>
+                <span style={{ color: 'var(--primary, #6366f1)', fontWeight: 700 }}>
+                  {techSpecProgress?.percent !== undefined ? `${techSpecProgress.percent}%` : '5%'}
+                </span>
+              </div>
+
+              <div style={{
+                width: '100%',
+                height: '10px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                borderRadius: '999px',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.max(5, Math.min(100, techSpecProgress?.percent || 5))}%`,
+                  background: 'linear-gradient(90deg, #6366f1 0%, #ec4899 100%)',
+                  borderRadius: '999px',
+                  transition: 'width 0.4s ease-in-out'
+                }} />
+              </div>
+            </div>
+
+            {/* Live Activity & Batch Info Card */}
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.25)',
+              borderRadius: '12px',
+              padding: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#e2e8f0', fontWeight: 500 }}>
+                <div className="spinner-border spinner-border-sm" role="status" style={{ width: '16px', height: '16px', borderWidth: '2px', color: '#818cf8', flexShrink: 0 }} />
+                <span>{techSpecProgress?.message || 'Processing document pages with AI models...'}</span>
+              </div>
+
+              {(techSpecProgress?.totalBatches || 0) > 0 || (techSpecProgress?.clauses || 0) > 0 ? (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '8px',
+                  paddingTop: '8px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                  fontSize: '12px'
+                }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 10px', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Page Batches</div>
+                    <div style={{ fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+                      {techSpecProgress?.completedBatches || 0} / {techSpecProgress?.totalBatches || '-'}
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 10px', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Clauses Extracted</div>
+                    <div style={{ fontWeight: 700, color: '#10b981', marginTop: '2px' }}>
+                      {techSpecProgress?.clauses || 0} parameters
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Explanation Note */}
+            <div style={{
+              fontSize: '11.5px',
+              color: 'var(--text-muted, #94a3b8)',
+              textAlign: 'center',
+              lineHeight: '1.5',
+              background: 'rgba(99, 102, 241, 0.06)',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              border: '1px dashed rgba(99, 102, 241, 0.2)'
+            }}>
+              ⏱️ <strong>Processing Note:</strong> Multi-page PDF specifications take 2–5 minutes for full page batching, AI parsing, clause extraction, and document generation. Please keep this tab open.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Active Session Indicator - Positioned clear of sidebar and logout button */}
       {currentUser && (

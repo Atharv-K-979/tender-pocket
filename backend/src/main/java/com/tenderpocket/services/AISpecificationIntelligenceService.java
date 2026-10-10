@@ -36,7 +36,7 @@ public class AISpecificationIntelligenceService {
     private String azureOpenAiDeployment = "gpt-5-nano";
 
     private static final String DEFAULT_AZURE_OPENAI_ENDPOINT =
-            "https://turingtasksshardul123.services.ai.azure.com/api/projects/proj-default/openai/v1";
+            "https://tenderpocket.services.ai.azure.com/api/projects/proj-default/openai/v1";
     private static final String SPECIFICATION_MODEL = "gpt-5-nano";
 
     private final ThreadLocal<java.util.function.Consumer<String>> progressReporter = new ThreadLocal<>();
@@ -190,10 +190,11 @@ public class AISpecificationIntelligenceService {
         List<String> components = knownProducts == null || knownProducts.isEmpty()
                 ? mergeComponents(declared, suggested) : new ArrayList<>(knownProducts);
 
-        System.out.println("[AISpecificationIntelligence] Document split into " + chunks.size()
+        System.out.println("⚡ [AI LOG] Document split into " + chunks.size()
                 + " chunk(s); " + declared.size() + " declared by heading, " + suggested.size()
                 + " named by the model, " + components.size() + " item(s) to extract"
                 + (components.isEmpty() ? "." : ": " + String.join(", ", components)));
+        System.out.flush();
 
         if (components.isEmpty())
             return isConfirmedEmptyProducts(suggested) ? completedEmptyRows() : Collections.emptyList();
@@ -666,7 +667,7 @@ public class AISpecificationIntelligenceService {
                 + "set readable=false for unreadable pages, not for readable administrative or blank pages.\n\n"
                 + "DOCUMENT TEXT:\n" + text;
 
-        String azureResponse = postAzureResponse(prompt, pdf, AzureOutput.PRODUCTS);
+        String azureResponse = postAiResponse(prompt, pdf, AzureOutput.PRODUCTS, Collections.emptyList());
         if (azureResponse != null) {
             try {
                 JsonNode envelope = JSON.readTree(azureResponse);
@@ -978,14 +979,75 @@ public class AISpecificationIntelligenceService {
                 return null;
             } catch (Exception e) {
                 recordApiAttempt(requestStarted, false, null);
-                System.err.println("[AISpecificationIntelligence] Azure OpenAI request failed: "
-                        + e.getClass().getSimpleName() + ".");
-                reportProgress("Azure OpenAI " + deployment + " failed: "
-                        + e.getClass().getSimpleName() + ".");
+                if (e instanceof java.net.UnknownHostException || e instanceof java.net.ConnectException || e instanceof java.net.SocketTimeoutException) {
+                    System.err.println("[AISpecificationIntelligence] Azure OpenAI endpoint unreachable (" + e.getClass().getSimpleName() + ": " + e.getMessage() + "). Falling back to Gemini / local clause extraction.");
+                    reportProgress("Azure OpenAI endpoint unreachable (" + e.getClass().getSimpleName() + "). Trying Gemini AI fallback.");
+                } else {
+                    System.err.println("[AISpecificationIntelligence] Azure OpenAI request failed: "
+                            + e.getClass().getSimpleName() + ".");
+                    reportProgress("Azure OpenAI " + deployment + " failed: "
+                            + e.getClass().getSimpleName() + ".");
+                }
                 return null;
             } finally {
                 if (conn != null) conn.disconnect();
             }
+        }
+        return null;
+    }
+
+    String postAiResponse(String prompt, byte[] fileBytes, AzureOutput output, List<String> knownProducts) {
+        String azureResponse = postAzureResponse(prompt, fileBytes, output, knownProducts);
+        if (azureResponse != null && !azureResponse.isBlank()) {
+            return azureResponse;
+        }
+        reportProgress("Azure OpenAI endpoint unavailable or returned empty; attempting Gemini AI fallback.");
+        System.out.println("[AISpecificationIntelligence] Azure OpenAI returned no response. Attempting Gemini AI fallback...");
+        return postGeminiResponse(prompt, fileBytes, output, knownProducts);
+    }
+
+    String postGeminiResponse(String prompt, byte[] fileBytes, AzureOutput output, List<String> knownProducts) {
+        List<String> keys = getAllApiKeys();
+        if (keys.isEmpty()) {
+            System.out.println("[AISpecificationIntelligence] No Gemini API key found for fallback.");
+            return null;
+        }
+
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode payload = JSON.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode contents = payload.putArray("contents");
+            com.fasterxml.jackson.databind.node.ObjectNode content = contents.addObject();
+            content.put("role", "user");
+            com.fasterxml.jackson.databind.node.ArrayNode parts = content.putArray("parts");
+
+            parts.addObject().put("text", prompt);
+
+            if (fileBytes != null && fileBytes.length > 0) {
+                com.fasterxml.jackson.databind.node.ObjectNode inlineData = parts.addObject().putObject("inlineData");
+                inlineData.put("mimeType", "application/pdf");
+                inlineData.put("data", java.util.Base64.getEncoder().encodeToString(fileBytes));
+            }
+
+            com.fasterxml.jackson.databind.node.ObjectNode config = payload.putObject("generationConfig");
+            config.put("temperature", 0.1);
+            config.put("maxOutputTokens", 8192);
+            config.put("responseMimeType", "application/json");
+
+            String jsonPayload = payload.toString();
+
+            String[] modelsToTry = {"gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"};
+            for (String modelName : modelsToTry) {
+                if (Thread.currentThread().isInterrupted()) return null;
+                reportProgress("Trying Gemini fallback model " + modelName + ".");
+                System.out.println("[AISpecificationIntelligence] Attempting Gemini fallback model: " + modelName);
+                String response = postOnce(modelName, keys.get(0), jsonPayload);
+                if (response != null && !response.isBlank()) {
+                    reportProgress("Gemini model " + modelName + " returned a response.");
+                    return response;
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[AISpecificationIntelligence] Gemini fallback failed: " + e.getMessage());
         }
         return null;
     }
@@ -1283,7 +1345,7 @@ public class AISpecificationIntelligenceService {
                         + getAzureOpenAiDeployment() + ".");
             }
 
-            String azureResponse = postAzureResponse(attemptPrompt, fileBytes,
+            String azureResponse = postAiResponse(attemptPrompt, fileBytes,
                     AzureOutput.COMPLIANCE_ROWS, components);
             if (azureResponse == null || azureResponse.isBlank()) return null;
 
@@ -1365,7 +1427,7 @@ public class AISpecificationIntelligenceService {
                     + "source product names and page references. Do not invent content or rewrite already extracted rows. "
                     + "Previously identified products: " + JSON.valueToTree(accepted.stream().map(row -> row[5])
                             .distinct().toList()) + ". Classify the source keys truthfully in clauseDecisions.";
-            String response = postAzureResponse(recoveryPrompt, fileBytes, AzureOutput.COMPLIANCE_ROWS, components);
+            String response = postAiResponse(recoveryPrompt, fileBytes, AzureOutput.COMPLIANCE_ROWS, components);
             if (response == null || response.isBlank()) return;
             List<String[]> parsed = parseLlmJsonResponse(response, data);
             if (parsed == null || parsed.isEmpty()) return;

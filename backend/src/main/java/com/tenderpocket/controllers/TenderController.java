@@ -884,6 +884,13 @@ public class TenderController {
             byte[] uploadedBytes = file.getBytes();
             String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "specification.pdf";
 
+            System.out.println("================================================================================");
+            System.out.println("⚡ [TECH SPEC LOG] Upload Received for Tender ID: " + id);
+            System.out.println("⚡ [TECH SPEC LOG] File Name: " + originalFilename + " (" + uploadedBytes.length + " bytes)");
+            System.out.println("⚡ [TECH SPEC LOG] AI Model Targeted: Azure OpenAI (gpt-5-nano)");
+            System.out.println("================================================================================");
+            System.out.flush();
+
             // 1. Save uploaded input file as specification.pdf
             String inputFilePath = docDir + "/specification.pdf";
             String inputDownloadUrl = "/documents/" + id + "/specification.pdf";
