@@ -7330,7 +7330,21 @@ export default function Dashboard() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#e2e8f0', fontWeight: 500 }}>
                 <div className="spinner-border spinner-border-sm" role="status" style={{ width: '16px', height: '16px', borderWidth: '2px', color: '#818cf8', flexShrink: 0 }} />
-                <span>{techSpecProgress?.message || 'Processing document pages with AI models...'}</span>
+                <span>{(() => {
+                  const msg = techSpecProgress?.message;
+                  if (!msg) return 'Processing document pages with AI models...';
+                  if (msg.includes('Recovering unreadable content') || msg.includes('OCR fallback')) {
+                    const batchMatch = msg.match(/batch\s*(\d+)/i);
+                    const batchStr = batchMatch ? ` (Batch ${batchMatch[1]})` : '';
+                    return `Extracting parameters from scanned document pages${batchStr}...`;
+                  }
+                  if (msg.includes('Rechecking an unclear reading')) {
+                    const batchMatch = msg.match(/batch\s*(\d+)/i);
+                    const batchStr = batchMatch ? ` (Batch ${batchMatch[1]})` : '';
+                    return `Enhancing extraction accuracy for document pages${batchStr}...`;
+                  }
+                  return msg;
+                })()}</span>
               </div>
 
               {(techSpecProgress?.totalBatches || 0) > 0 || (techSpecProgress?.clauses || 0) > 0 ? (

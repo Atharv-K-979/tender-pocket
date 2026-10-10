@@ -1998,8 +1998,8 @@ public class DocumentGeneratorService {
         if (!batch.ocrAttempted && hasUnreadablePage(batch.sourceContext)
                 && aiSpecificationIntelligenceService.canRetryBatch()) {
             if (metrics != null) metrics.incrementOcrRetries();
-            progress.onProgress("OCR", (unclearReading ? "Rechecking an unclear reading in batch "
-                    : "Recovering unreadable content after batch ") + batchNumber + " with OCR fallback.",
+            progress.onProgress("OCR", (unclearReading ? "Enhancing reading accuracy for batch "
+                    : "Extracting parameters from scanned page batch ") + batchNumber + " of " + totalBatches + "...",
                     -1, batchNumber - 1, totalBatches, clausesSoFar);
             String rawOcrContext = extractOcrFallbackText(batch.bytes, batch.firstPhysicalPage - 1);
             ocrImproved = documentTextLength(rawOcrContext) > documentTextLength(batch.sourceContext);
