@@ -109,7 +109,7 @@ public final class WorkflowPermissions {
         }
 
         for (String emdField : List.of("emd_amount_actual", "emd_payment_mode", "emd_payment_ref", "emd_payment_date", "assigned_mis_member_emd", "assigned_mis_member", "assigned_mis_member_docs", "assigned_mis_member_submission", "working_path", "downloaded_docs", "downloadedDocs")) {
-            if (body.containsKey(emdField) && !isExec && !isAdmin) return false;
+            if (body.containsKey(emdField) && !isExec) return false;
         }
 
         if (body.containsKey("submission_status")) {

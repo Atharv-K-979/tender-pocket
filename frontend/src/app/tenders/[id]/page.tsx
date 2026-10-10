@@ -47,7 +47,8 @@ export default function TenderDetailPage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
-  const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin';
+  const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
+  const isMisRole = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS';
   const isAdmin = currentUser?.role === 'Admin';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
@@ -1165,8 +1166,8 @@ export default function TenderDetailPage() {
             {/* ==================== SECTION 2: WORKFLOW PIPELINE ==================== */}
             <div style={{ borderTop: '2px dashed var(--border-color)', paddingTop: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
-              {/* Participation Decision Banner for New / Unreviewed Tenders */}
-              {canRecordOperationalStages && (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
+              {/* Participation Decision Banner for New / Unreviewed Tenders - Exclusive to MIS Team */}
+              {isMisRole && (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: '12px', flexWrap: 'wrap', gap: '12px' }}>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
