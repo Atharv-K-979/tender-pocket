@@ -109,7 +109,7 @@ public class AuthController {
 
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         if (!WorkflowPermissions.allowed(MANAGE_USERS)) {
-            List<Map<String, String>> directory = userRepository.findAll().stream()
+            List<Map<String, String>> directory = (userRepository != null ? userRepository.findAll() : Collections.<User>emptyList()).stream()
                     .map(user -> Map.of("username", user.getUsername(), "role", user.getRole())).toList();
             return ResponseEntity.ok(Map.of("success", true, "users", directory));
         }
@@ -208,7 +208,7 @@ public class AuthController {
         }
 
         // Fetch real role from database for logged in user to guarantee accuracy
-        if (adminUser != null && !adminUser.isEmpty()) {
+        if (userRepository != null && adminUser != null && !adminUser.isEmpty()) {
             Optional<User> uOpt = userRepository.findById(adminUser);
             if (uOpt.isPresent()) {
                 adminRole = uOpt.get().getRole();
