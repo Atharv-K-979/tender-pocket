@@ -22,6 +22,47 @@ export function reconcileApprovalRequests(): void {
         )
     `).run();
 
+    // 0.1 Heal downstream statuses and delete premature approval requests if prerequisite stages are incomplete
+    db.prepare(`
+      UPDATE tenders
+      SET payment_status = 'None',
+          submission_status = 'None'
+      WHERE verification_status != 'Approved'
+        AND (status IS NULL OR status NOT IN ('Won', 'Lost', 'Awarded', 'Not Awarded', 'Submitted', 'Filed'))
+        AND (payment_status IN ('Approved', 'Pending') OR submission_status IN ('Approved', 'Pending'))
+    `).run();
+
+    db.prepare(`
+      UPDATE tenders
+      SET submission_status = 'None'
+      WHERE payment_status != 'Approved'
+        AND (status IS NULL OR status NOT IN ('Won', 'Lost', 'Awarded', 'Not Awarded', 'Submitted', 'Filed'))
+        AND submission_status IN ('Approved', 'Pending')
+    `).run();
+
+    // Clean up orphaned / premature approval requests
+    db.prepare(`
+      DELETE FROM tender_approval_requests
+      WHERE status = 'PENDING'
+        AND stage IN ('PAYMENT_APPROVAL', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING')
+        AND tender_id IN (
+          SELECT id FROM tenders
+          WHERE verification_status != 'Approved'
+            AND (status IS NULL OR status NOT IN ('Won', 'Lost', 'Awarded', 'Not Awarded', 'Submitted', 'Filed'))
+        )
+    `).run();
+
+    db.prepare(`
+      DELETE FROM tender_approval_requests
+      WHERE status = 'PENDING'
+        AND stage IN ('SUBMISSION_PENDING', 'WIN_LOSS_PENDING')
+        AND tender_id IN (
+          SELECT id FROM tenders
+          WHERE payment_status != 'Approved'
+            AND (status IS NULL OR status NOT IN ('Won', 'Lost', 'Awarded', 'Not Awarded', 'Submitted', 'Filed'))
+        )
+    `).run();
+
     // 1. Spec Clearance (Executive submitted for clearance)
     const pendingSpecs = db.prepare(`
       SELECT id, mis_executive, assigned_mis_member_spec 
@@ -44,6 +85,8 @@ export function reconcileApprovalRequests(): void {
       SELECT id, mis_executive 
       FROM tenders 
       WHERE current_stage = 'TPC_PRICING'
+        AND (tpc_purchase_price IS NULL OR tpc_purchase_price = 0)
+        AND (status IS NULL OR status NOT IN ('Won', 'Lost', 'Awarded', 'Not Awarded', 'Not Participating', 'Submitted', 'Filed'))
     `).all() as any[];
 
     for (const t of pendingTpc) {
@@ -61,6 +104,8 @@ export function reconcileApprovalRequests(): void {
       SELECT id, tpc_purchase_price, assigned_mis_member 
       FROM tenders 
       WHERE current_stage = 'MIS_PRICING'
+        AND (mis_final_price IS NULL OR mis_final_price = 0)
+        AND (status IS NULL OR status NOT IN ('Won', 'Lost', 'Awarded', 'Not Awarded', 'Not Participating', 'Submitted', 'Filed'))
     `).all() as any[];
 
     for (const t of pendingMis) {
@@ -73,24 +118,7 @@ export function reconcileApprovalRequests(): void {
       }
     }
 
-    // 4. Payment Approval (EMD payment request submitted)
-    const pendingPayment = db.prepare(`
-      SELECT id, mis_executive, assigned_mis_member, emd_amount_actual, emd_payment_mode, emd_payment_ref 
-      FROM tenders 
-      WHERE payment_status = 'Pending'
-    `).all() as any[];
-
-    for (const t of pendingPayment) {
-      const exists = db.prepare("SELECT id FROM tender_approval_requests WHERE tender_id = ? AND stage = 'PAYMENT_APPROVAL' AND status = 'PENDING'").get(t.id);
-      if (!exists) {
-        db.prepare(`
-          INSERT INTO tender_approval_requests (tender_id, stage, requested_by, assigned_to, emd_amount, transfer_mode, transfer_ref_no, status, created_at, updated_at)
-          VALUES (?, 'PAYMENT_APPROVAL', ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-        `).run(t.id, t.mis_executive || 'executive', t.assigned_mis_member || 'misteam', t.emd_amount_actual || null, t.emd_payment_mode || null, t.emd_payment_ref || null, now, now);
-      }
-    }
-
-    // 5. Document Verification (Review requested)
+    // 4. Document Verification (Review requested)
     const pendingDoc = db.prepare(`
       SELECT id, mis_executive, assigned_mis_member, working_path 
       FROM tenders 
@@ -107,11 +135,28 @@ export function reconcileApprovalRequests(): void {
       }
     }
 
-    // 6. Submission Audit (Bid filing audit requested)
+    // 5. Payment Approval (EMD payment request submitted, docs approved)
+    const pendingPayment = db.prepare(`
+      SELECT id, mis_executive, assigned_mis_member, emd_amount_actual, emd_payment_mode, emd_payment_ref 
+      FROM tenders 
+      WHERE payment_status = 'Pending' AND verification_status = 'Approved'
+    `).all() as any[];
+
+    for (const t of pendingPayment) {
+      const exists = db.prepare("SELECT id FROM tender_approval_requests WHERE tender_id = ? AND stage = 'PAYMENT_APPROVAL' AND status = 'PENDING'").get(t.id);
+      if (!exists) {
+        db.prepare(`
+          INSERT INTO tender_approval_requests (tender_id, stage, requested_by, assigned_to, emd_amount, transfer_mode, transfer_ref_no, status, created_at, updated_at)
+          VALUES (?, 'PAYMENT_APPROVAL', ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+        `).run(t.id, t.mis_executive || 'executive', t.assigned_mis_member || 'misteam', t.emd_amount_actual || null, t.emd_payment_mode || null, t.emd_payment_ref || null, now, now);
+      }
+    }
+
+    // 6. Submission Audit (Bid filing audit requested, payment approved)
     const pendingSub = db.prepare(`
       SELECT id, mis_executive, assigned_mis_member, assigned_mis_member_submission 
       FROM tenders 
-      WHERE submission_status = 'Pending'
+      WHERE submission_status = 'Pending' AND payment_status = 'Approved'
     `).all() as any[];
 
     for (const t of pendingSub) {
@@ -173,8 +218,7 @@ export function reconcileApprovalRequests(): void {
       WHERE status = 'PENDING' AND stage = 'SPEC_CLEARANCE' 
         AND tender_id IN (
           SELECT id FROM tenders 
-          WHERE spec_verification_status = 'Approved' 
-             OR (spec_verification_status != 'Pending' AND current_stage != 'SPEC_CLEARANCE')
+          WHERE spec_verification_status = 'Approved'
         )
     `).run(now);
 
@@ -182,24 +226,20 @@ export function reconcileApprovalRequests(): void {
       UPDATE tender_approval_requests 
       SET status = 'APPROVED', updated_at = ? 
       WHERE status = 'PENDING' AND stage = 'TPC_PRICING' 
-        AND tender_id IN (SELECT id FROM tenders WHERE current_stage != 'TPC_PRICING')
+        AND tender_id IN (
+          SELECT id FROM tenders 
+          WHERE (tpc_purchase_price IS NOT NULL AND tpc_purchase_price > 0)
+             OR (mis_final_price IS NOT NULL AND mis_final_price > 0)
+        )
     `).run(now);
 
     db.prepare(`
       UPDATE tender_approval_requests 
       SET status = 'APPROVED', updated_at = ? 
       WHERE status = 'PENDING' AND stage = 'MIS_PRICING' 
-        AND tender_id IN (SELECT id FROM tenders WHERE current_stage != 'MIS_PRICING')
-    `).run(now);
-
-    db.prepare(`
-      UPDATE tender_approval_requests 
-      SET status = 'APPROVED', updated_at = ? 
-      WHERE status = 'PENDING' AND stage = 'PAYMENT_APPROVAL' 
         AND tender_id IN (
           SELECT id FROM tenders 
-          WHERE payment_status = 'Approved'
-             OR current_stage IN ('SUBMISSION_PENDING', 'WIN_LOSS_PENDING', 'SUBMITTED', 'WON', 'LOST')
+          WHERE mis_final_price IS NOT NULL AND mis_final_price > 0
         )
     `).run(now);
 
@@ -210,7 +250,16 @@ export function reconcileApprovalRequests(): void {
         AND tender_id IN (
           SELECT id FROM tenders 
           WHERE verification_status = 'Approved'
-             OR current_stage IN ('PAYMENT_APPROVAL', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING', 'SUBMITTED', 'WON', 'LOST')
+        )
+    `).run(now);
+
+    db.prepare(`
+      UPDATE tender_approval_requests 
+      SET status = 'APPROVED', updated_at = ? 
+      WHERE status = 'PENDING' AND stage = 'PAYMENT_APPROVAL' 
+        AND tender_id IN (
+          SELECT id FROM tenders 
+          WHERE payment_status = 'Approved'
         )
     `).run(now);
 
@@ -221,7 +270,7 @@ export function reconcileApprovalRequests(): void {
         AND tender_id IN (
           SELECT id FROM tenders 
           WHERE submission_status = 'Approved'
-             OR current_stage IN ('WIN_LOSS_PENDING', 'SUBMITTED', 'WON', 'LOST')
+             OR status IN ('Submitted', 'Filed', 'Won', 'Lost', 'Awarded', 'Not Awarded')
         )
     `).run(now);
 
@@ -231,7 +280,7 @@ export function reconcileApprovalRequests(): void {
       WHERE status = 'PENDING' AND stage = 'WIN_LOSS_PENDING' 
         AND tender_id IN (
           SELECT id FROM tenders 
-          WHERE outcome_status != 'Pending' 
+          WHERE outcome_status IN ('Won', 'Lost', 'Approved', 'Rejected')
              OR current_stage IN ('WON', 'LOST')
              OR status IN ('Won', 'Lost', 'Awarded', 'Not Awarded')
         )

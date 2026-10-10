@@ -12,6 +12,7 @@ backend/src/main/resources/static/documents/
 *.db-journal
 *.db-wal
 *.db-shm
+*.sqlite
 tenders.db
 
 # Environment and secret files

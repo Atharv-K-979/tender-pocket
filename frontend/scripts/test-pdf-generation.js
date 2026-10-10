@@ -774,21 +774,20 @@ function generateHtmlTemplates(data) {
           page-break-inside: avoid;
         }
         .signature-container {
-          position: relative;
-          height: 55px;
+          display: flex;
+          align-items: center;
+          gap: 20px;
           margin: 5px 0;
         }
         .sig-img {
-          position: absolute;
-          left: 45px;
-          top: -5px;
-          width: 60px;
+          width: 75px;
+          height: auto;
+          display: inline-block;
         }
         .stamp-img {
-          position: absolute;
-          left: 0px;
-          top: 0px;
-          width: 70px;
+          width: 65px;
+          height: auto;
+          display: inline-block;
         }
       </style>
     </head>

@@ -66,10 +66,13 @@ import {
 } from 'recharts';
 import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
-import { canPerform } from '@/lib/workflowAuthorization';
+import StatusDashboard from '@/app/components/StatusDashboard';
+import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
+import { areBidDocsGenerated } from '@/lib/tenderStatus';
+import { canPerform, canonicalRole } from '@/lib/workflowAuthorization';
 
 
-type TabType = 'dashboard' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
+type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
 
 interface Toast {
   message: string;
@@ -86,6 +89,7 @@ export default function Dashboard() {
   // User Authentication & Session States
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
   const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin';
+  const isExecutive = currentUser && (currentUser.role === 'Tender Executive' || currentUser.role === 'Executive' || currentUser.role === 'MIS Executive' || canonicalRole(currentUser.role) === 'Tender Executive');
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
     status?: string;
@@ -175,6 +179,15 @@ export default function Dashboard() {
   const [sortBy, setSortBy] = useState('scraped_at');
   const [sortOrder, setSortOrder] = useState('desc');
 
+  // Status Tab Dedicated Filter States
+  const [statusTabSearch, setStatusTabSearch] = useState('');
+  const [statusTabStatusFilter, setStatusTabStatusFilter] = useState('');
+  const [statusTabStageFilter, setStatusTabStageFilter] = useState('');
+  const [statusTabUrgencyFilter, setStatusTabUrgencyFilter] = useState('');
+  const [statusTabActionRequiredOnly, setStatusTabActionRequiredOnly] = useState(false);
+  const [statusTabSortBy, setStatusTabSortBy] = useState<'due_date' | 'scraped_at' | 'estimated_cost'>('due_date');
+  const [statusTabSortOrder, setStatusTabSortOrder] = useState<'asc' | 'desc'>('asc');
+
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
   const selectedTenderRef = useRef<Tender | null>(selectedTender);
   useEffect(() => {
@@ -224,18 +237,7 @@ export default function Dashboard() {
     selectedTender.current_stage === 'WIN_LOSS_PENDING'
   ) : false;
 
-  const areDocsGenerated = selectedTender ? (() => {
-    if (isOutcomeState) return true;
-    if (!selectedTender.downloaded_docs) return false;
-    try {
-      const docs = JSON.parse(selectedTender.downloaded_docs);
-      return Array.isArray(docs) && docs.some((d: any) => 
-        d.name && (d.name.includes("Generated Bid Documents") || d.name.includes("Bid Documents"))
-      );
-    } catch {
-      return false;
-    }
-  })() : false;
+  const areDocsGenerated = selectedTender ? (isOutcomeState || areBidDocsGenerated(selectedTender)) : false;
 
   // Sequential Pipeline Stage Visibility:
   // When a tender is at stage 1, do not show remaining stages in the frontend to any user.
@@ -304,12 +306,56 @@ export default function Dashboard() {
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploadedEmlString, setUploadedEmlString] = useState('');
 
-  // Bid Document Form States
+  // Bid Document Form States & Company Presets
+  const COMPANY_PRESETS = {
+    me: {
+      companyKey: "me",
+      companyName: "Mark Enterprises",
+      companyAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
+      companyEmail: "info@markenworld.com",
+      companyWebsite: "www.markenworld.com",
+      companyContact: "09175559646 / 090111 04332",
+      manufacturerName: "M/s. Mark Enterprises",
+      manufacturerAddress: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
+      signatoryName: "Shreedhar Shingare",
+      signatoryDesignation: "Authorized Signatory – Tender manager",
+      signatoryAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
+      witnessDetails: "Mr. Korra Praveen Naik",
+      localContentPercentage: "100%",
+      localContentLocation: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
+      preferencePolicy: "PPP MII 2017",
+      warrantyPeriod: "Five (5) years",
+      serviceSupportPeriod: "Five (5) years",
+      sparesAvailabilityPeriod: "Ten (10) years",
+      place: "Nashik"
+    },
+    healthtech: {
+      companyKey: "healthtech",
+      companyName: "Marken Healthtech Limited",
+      companyAddress: "93/1 Street No.17, MIDC, Satpur, Nashik- 422007. MH. India",
+      companyEmail: "info@markenworld.com",
+      companyWebsite: "www.markenworld.com",
+      companyContact: "+91 91 3030 5959",
+      manufacturerName: "Marken Healthtech Ltd",
+      manufacturerAddress: "Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra.",
+      signatoryName: "Korra Praveen Naik",
+      signatoryDesignation: "Authorized Signatory",
+      signatoryAddress: "1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062",
+      witnessDetails: "Mr. Shreedhar Shingare (Cell No.: 09011104332)",
+      localContentPercentage: "100%",
+      localContentLocation: "Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
+      preferencePolicy: "PPP MII 2017",
+      warrantyPeriod: "Five (5) years",
+      serviceSupportPeriod: "Five (5) years",
+      sparesAvailabilityPeriod: "Ten (10) years",
+      place: "Nashik"
+    }
+  };
+
   const [isBidDocFormOpen, setIsBidDocFormOpen] = useState(false);
   const [formActiveTab, setFormActiveTab] = useState<'tender' | 'company' | 'signatory' | 'clauses'>('tender');
   const [generatingBidDocs, setGeneratingBidDocs] = useState(false);
   const [bidFormFields, setBidFormFields] = useState({
-    companyKey: "me",
     orientation: "portrait",
     date: "",
     authorityName: "",
@@ -318,24 +364,7 @@ export default function Dashboard() {
     bidNumber: "",
     bidDate: "",
     productDescription: "",
-    companyName: "Mark Enterprises",
-    companyAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
-    companyEmail: "info@markenworld.com",
-    companyWebsite: "www.markenworld.com",
-    companyContact: "09175559646 / 090111 04332",
-    manufacturerName: "M/s. Mark Enterprises",
-    manufacturerAddress: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-    signatoryName: "Korra Praveen Naik",
-    signatoryDesignation: "Partner",
-    signatoryAddress: "1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062",
-    witnessDetails: "Mr. Shreedhar Shingare (Cell No.: 09011104332)",
-    localContentPercentage: "100%",
-    localContentLocation: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-    preferencePolicy: "PPP MII 2017",
-    warrantyPeriod: "Five (5) years",
-    serviceSupportPeriod: "Five (5) years",
-    sparesAvailabilityPeriod: "Ten (10) years",
-    place: "Nashik"
+    ...COMPANY_PRESETS.me
   });
 
   const openBidDocForm = () => {
@@ -346,7 +375,6 @@ export default function Dashboard() {
     const formattedToday = `${d.getDate()}-${months[d.getMonth()]}-${d.getFullYear()}`;
 
     setBidFormFields({
-      companyKey: "me",
       orientation: "portrait",
       date: formattedToday,
       authorityName: selectedTender.authority || "",
@@ -355,24 +383,7 @@ export default function Dashboard() {
       bidNumber: selectedTender.ref_no || "",
       bidDate: selectedTender.publish_date || selectedTender.start_date || formattedToday,
       productDescription: selectedTender.product_name_as_per_tender || selectedTender.title || "",
-      companyName: "Mark Enterprises",
-      companyAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
-      companyEmail: "info@markenworld.com",
-      companyWebsite: "www.markenworld.com",
-      companyContact: "09175559646 / 090111 04332",
-      manufacturerName: "M/s. Mark Enterprises",
-      manufacturerAddress: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-      signatoryName: "Korra Praveen Naik",
-      signatoryDesignation: "Partner",
-      signatoryAddress: "1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062",
-      witnessDetails: "Mr. Shreedhar Shingare (Cell No.: 09011104332)",
-      localContentPercentage: "100%",
-      localContentLocation: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-      preferencePolicy: "PPP MII 2017",
-      warrantyPeriod: "Five (5) years",
-      serviceSupportPeriod: "Five (5) years",
-      sparesAvailabilityPeriod: "Ten (10) years",
-      place: "Nashik"
+      ...COMPANY_PRESETS.me
     });
     setFormActiveTab('tender');
     setIsBidDocFormOpen(true);
@@ -412,7 +423,21 @@ export default function Dashboard() {
           local_path: data.pdfDownloadUrl, 
           created_date: new Date().toLocaleDateString('en-IN') 
         };
-        
+        const newSpecWord = {
+          name: "Technical Specification Sheet (Word DOCX)",
+          filename: `Technical_Specification_Sheet_${selectedTender.id}.docx`,
+          local_path: data.specDownloadUrl,
+          created_date: new Date().toLocaleDateString('en-IN')
+        };
+        const newSpecPdf = {
+          name: "Technical Specification Sheet (PDF)",
+          filename: `Technical_Specification_Sheet_${selectedTender.id}.pdf`,
+          local_path: data.specPdfDownloadUrl,
+          created_date: new Date().toLocaleDateString('en-IN')
+        };
+        const generatedPaths = [data.downloadUrl, data.pdfDownloadUrl, data.specDownloadUrl, data.specPdfDownloadUrl].filter(Boolean);
+        const docsToAdd = [newDocWord, newDocPdf, newSpecWord, newSpecPdf].filter(d => Boolean(d.local_path));
+
         setTenders(prev => prev.map(t => {
           if (t.id === selectedTender.id) {
             let currentDocs = [];
@@ -422,9 +447,8 @@ export default function Dashboard() {
             } catch {
               currentDocs = [];
             }
-            currentDocs = currentDocs.filter((d: any) => d.local_path !== data.downloadUrl && d.local_path !== data.pdfDownloadUrl);
-            currentDocs.push(newDocWord);
-            currentDocs.push(newDocPdf);
+            currentDocs = currentDocs.filter((d: any) => !generatedPaths.includes(d.local_path));
+            currentDocs.push(...docsToAdd);
             return { ...t, downloaded_docs: JSON.stringify(currentDocs) };
           }
           return t;
@@ -439,9 +463,8 @@ export default function Dashboard() {
           } catch {
             currentDocs = [];
           }
-          currentDocs = currentDocs.filter((d: any) => d.local_path !== data.downloadUrl && d.local_path !== data.pdfDownloadUrl);
-          currentDocs.push(newDocWord);
-          currentDocs.push(newDocPdf);
+          currentDocs = currentDocs.filter((d: any) => !generatedPaths.includes(d.local_path));
+          currentDocs.push(...docsToAdd);
           return { 
             ...prev, 
             downloaded_docs: JSON.stringify(currentDocs),
@@ -1281,6 +1304,271 @@ export default function Dashboard() {
     }
   };
 
+  const resolveTenderStage = (tender: Tender) => {
+    // Stage 8: Final Outcome (Won/Lost)
+    if (tender.status === 'Won' || tender.status === 'Awarded' || tender.outcome_status === 'Won' || tender.current_stage === 'WON') {
+      return {
+        stageNumber: 8,
+        stageKey: 'WON',
+        stageName: 'Stage 8: Won & Awarded',
+        shortStage: 'Won / Awarded',
+        actionTitle: 'Tender Won & Awarded',
+        actionDesc: 'Bid awarded successfully. Order/Contract processing active.',
+        statusColor: '#10b981',
+        badgeBg: 'rgba(16, 185, 129, 0.12)',
+        badgeBorder: 'rgba(16, 185, 129, 0.3)',
+        needsAction: false,
+        blocker: 'Completed'
+      };
+    }
+    if (tender.status === 'Lost' || tender.status === 'Not Awarded' || tender.outcome_status === 'Lost' || tender.current_stage === 'LOST') {
+      return {
+        stageNumber: 8,
+        stageKey: 'LOST',
+        stageName: 'Stage 8: Lost / Closed',
+        shortStage: 'Lost / Closed',
+        actionTitle: 'Tender Lost',
+        actionDesc: tender.loss_reason ? `Loss reason: ${tender.loss_reason}` : 'Bid concluded without contract award.',
+        statusColor: '#ef4444',
+        badgeBg: 'rgba(239, 68, 68, 0.12)',
+        badgeBorder: 'rgba(239, 68, 68, 0.3)',
+        needsAction: false,
+        blocker: 'Closed'
+      };
+    }
+    if (tender.status === 'Not Participating') {
+      return {
+        stageNumber: 0,
+        stageKey: 'NOT_PARTICIPATING',
+        stageName: 'Intake: Declined',
+        shortStage: 'Not Participating',
+        actionTitle: 'Participation Declined',
+        actionDesc: 'Tender marked as not participating. You can re-activate participation anytime.',
+        statusColor: '#64748b',
+        badgeBg: 'rgba(100, 116, 139, 0.12)',
+        badgeBorder: 'rgba(100, 116, 139, 0.3)',
+        needsAction: false,
+        blocker: 'Declined'
+      };
+    }
+    // Stage 7: Submission
+    if (tender.status === 'Submitted' || tender.status === 'Filed' || tender.submission_status === 'Approved') {
+      return {
+        stageNumber: 7,
+        stageKey: 'SUBMITTED',
+        stageName: 'Stage 7: Bid Submitted',
+        shortStage: 'Submitted',
+        actionTitle: 'Submitted to Portal',
+        actionDesc: 'Bid filed on portal and verified by MIS Team. Awaiting commercial evaluation.',
+        statusColor: '#3b82f6',
+        badgeBg: 'rgba(59, 130, 246, 0.12)',
+        badgeBorder: 'rgba(59, 130, 246, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting Results'
+      };
+    }
+    if (tender.submission_status === 'Pending') {
+      return {
+        stageNumber: 7,
+        stageKey: 'SUBMISSION_PENDING',
+        stageName: 'Stage 7: Submission Audit',
+        shortStage: 'Audit Pending',
+        actionTitle: 'Awaiting Submission Audit',
+        actionDesc: 'Bid filed. Awaiting MIS Team verification audit to confirm submission.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting MIS Audit'
+      };
+    }
+    if (tender.payment_status === 'Approved') {
+      return {
+        stageNumber: 7,
+        stageKey: 'READY_TO_SUBMIT',
+        stageName: 'Stage 7: Portal Submission',
+        shortStage: 'Ready to File',
+        actionTitle: 'Action Required: File Bid on Portal',
+        actionDesc: 'EMD Payment confirmed! Please physically/digitally file the bid on portal and request audit.',
+        statusColor: '#8b5cf6',
+        badgeBg: 'rgba(139, 92, 246, 0.15)',
+        badgeBorder: 'rgba(139, 92, 246, 0.35)',
+        needsAction: true,
+        blocker: 'File Bid on Portal'
+      };
+    }
+    // Stage 6: EMD Payment
+    if (tender.payment_status === 'Pending') {
+      return {
+        stageNumber: 6,
+        stageKey: 'EMD_PENDING',
+        stageName: 'Stage 6: EMD Payment Approval',
+        shortStage: 'EMD In Progress',
+        actionTitle: 'Awaiting EMD Payment Approval',
+        actionDesc: 'EMD request submitted to MIS Team. Awaiting payment reference and approval.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting EMD'
+      };
+    }
+    if (tender.verification_status === 'Approved') {
+      return {
+        stageNumber: 6,
+        stageKey: 'EMD_REQ_READY',
+        stageName: 'Stage 6: EMD Payment Prep',
+        shortStage: 'Request EMD',
+        actionTitle: 'Action: Submit EMD Request',
+        actionDesc: 'Bid documents approved by MIS Team. Please submit EMD payment request to MIS.',
+        statusColor: '#3b82f6',
+        badgeBg: 'rgba(59, 130, 246, 0.15)',
+        badgeBorder: 'rgba(59, 130, 246, 0.35)',
+        needsAction: true,
+        blocker: 'Submit EMD Request'
+      };
+    }
+    // Stage 5: Doc Verification
+    if (tender.verification_status === 'Pending') {
+      return {
+        stageNumber: 5,
+        stageKey: 'DOC_VERIFICATION',
+        stageName: 'Stage 5: Doc Verification',
+        shortStage: 'Doc Review',
+        actionTitle: 'Awaiting MIS Doc Approval',
+        actionDesc: 'Generated bid documents submitted. Awaiting MIS Team audit & sign-off.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting Doc Review'
+      };
+    }
+    if (tender.verification_status === 'Rejected') {
+      return {
+        stageNumber: 4,
+        stageKey: 'DOCS_REJECTED',
+        stageName: 'Stage 4: Docs Revision',
+        shortStage: 'Docs Rejected',
+        actionTitle: 'Action: Revise Bid Documents',
+        actionDesc: 'MIS Team requested changes to bid documents. Regenerate and resubmit.',
+        statusColor: '#ef4444',
+        badgeBg: 'rgba(239, 68, 68, 0.15)',
+        badgeBorder: 'rgba(239, 68, 68, 0.35)',
+        needsAction: true,
+        blocker: 'Revise Bid Docs'
+      };
+    }
+    // Stage 4: Docs Prep
+    if (tender.mis_final_price && Number(tender.mis_final_price) > 0) {
+      return {
+        stageNumber: 4,
+        stageKey: 'DOCS_PREP',
+        stageName: 'Stage 4: Docs Preparation',
+        shortStage: 'Generate Docs',
+        actionTitle: 'Action: Generate Bid Documents',
+        actionDesc: 'MIS Provided Price configured. Fill the bid form and generate Annexure docs.',
+        statusColor: '#10b981',
+        badgeBg: 'rgba(16, 185, 129, 0.15)',
+        badgeBorder: 'rgba(16, 185, 129, 0.35)',
+        needsAction: true,
+        blocker: 'Generate Bid Docs'
+      };
+    }
+    // Stage 3: MIS Pricing
+    if (tender.tpc_purchase_price && Number(tender.tpc_purchase_price) > 0) {
+      return {
+        stageNumber: 3,
+        stageKey: 'MIS_PRICING',
+        stageName: 'Stage 3: MIS Pricing',
+        shortStage: 'MIS Pricing',
+        actionTitle: 'Awaiting MIS Team Pricing',
+        actionDesc: 'Manufacturer quote submitted by TPC Team. Awaiting MIS Team provided price.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting MIS Price'
+      };
+    }
+    // Stage 2: TPC Pricing
+    if (tender.spec_verification_status === 'Approved') {
+      return {
+        stageNumber: 2,
+        stageKey: 'TPC_PRICING',
+        stageName: 'Stage 2: TPC Pricing',
+        shortStage: 'TPC Quote',
+        actionTitle: 'Awaiting TPC Pricing',
+        actionDesc: 'Technical specs approved by Clearance Team. Awaiting OEM purchase price from TPC Team.',
+        statusColor: '#ec4899',
+        badgeBg: 'rgba(236, 72, 153, 0.12)',
+        badgeBorder: 'rgba(236, 72, 153, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting TPC Quote'
+      };
+    }
+    // Stage 1: Spec Clearance
+    if (tender.spec_verification_status === 'Pending') {
+      return {
+        stageNumber: 1,
+        stageKey: 'SPEC_CLEARANCE_PENDING',
+        stageName: 'Stage 1: Spec Clearance',
+        shortStage: 'Clearance Pending',
+        actionTitle: 'Awaiting Clearance Team Approval',
+        actionDesc: 'Technical specs submitted. Awaiting Clearance Team verification and sign-off.',
+        statusColor: '#8b5cf6',
+        badgeBg: 'rgba(139, 92, 246, 0.12)',
+        badgeBorder: 'rgba(139, 92, 246, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting Clearance'
+      };
+    }
+    if (tender.spec_verification_status === 'Rejected') {
+      return {
+        stageNumber: 1,
+        stageKey: 'SPEC_REJECTED',
+        stageName: 'Stage 1: Specs Rejected',
+        shortStage: 'Specs Rejected',
+        actionTitle: 'Action: Re-upload Technical Specs',
+        actionDesc: 'Clearance Team rejected technical specification. Upload revised document.',
+        statusColor: '#ef4444',
+        badgeBg: 'rgba(239, 68, 68, 0.15)',
+        badgeBorder: 'rgba(239, 68, 68, 0.35)',
+        needsAction: true,
+        blocker: 'Re-upload Specs'
+      };
+    }
+    if (tender.status === 'Participating') {
+      return {
+        stageNumber: 1,
+        stageKey: 'SPEC_NOT_STARTED',
+        stageName: 'Stage 1: Spec Clearance',
+        shortStage: 'Upload Specs',
+        actionTitle: 'Action: Upload Tech Spec Document',
+        actionDesc: 'Bid accepted for participation. Upload tender PDF/Doc to generate technical specs.',
+        statusColor: 'var(--primary)',
+        badgeBg: 'rgba(99, 102, 241, 0.15)',
+        badgeBorder: 'rgba(99, 102, 241, 0.35)',
+        needsAction: true,
+        blocker: 'Upload Tech Specs'
+      };
+    }
+    // Stage 0: Intake / Decision (New / Issued / Lapsed)
+    return {
+      stageNumber: 0,
+      stageKey: 'NEW_UNREVIEWED',
+      stageName: 'Intake: New Assignment',
+      shortStage: 'Decision Needed',
+      actionTitle: 'Action: Accept or Decline Bid',
+      actionDesc: 'New tender assigned to you. Review requirement and decide whether to participate.',
+      statusColor: 'var(--accent-yellow)',
+      badgeBg: 'rgba(245, 158, 11, 0.15)',
+      badgeBorder: 'rgba(245, 158, 11, 0.35)',
+      needsAction: true,
+      blocker: 'Accept / Decline Bid'
+    };
+  };
+
   // Update Tender Status
   const handleStatusChange = async (tenderId: string, newStatus: 'Issued' | 'Participating' | 'Not Participating' | 'Filed' | 'Awarded' | 'Not Awarded') => {
     try {
@@ -1842,6 +2130,20 @@ export default function Dashboard() {
             <span>Dashboard</span>
           </button>
           <button 
+            className={`menu-item ${activeTab === 'status' ? 'active' : ''}`}
+            onClick={() => {
+              setStatusFilter('');
+              setSearchQuery('');
+              setLocationFilter('');
+              setSectorFilter('');
+              setMisExecutiveFilter('');
+              setActiveTab('status');
+            }}
+          >
+            <Activity size={18} />
+            <span>Status</span>
+          </button>
+          <button 
             className={`menu-item ${activeTab === 'tenders' ? 'active' : ''}`}
             onClick={() => {
               setStatusFilter('');
@@ -1994,6 +2296,7 @@ export default function Dashboard() {
           <div className="header-title-area">
             <h1>
               {activeTab === 'dashboard' && 'Control Desk'}
+              {activeTab === 'status' && 'Tender Status & Overview'}
               {activeTab === 'tenders' && 'Tender Repositories'}
               {activeTab === 'analytics' && 'Tender Analytics'}
               {activeTab === 'settings' && 'Platform Settings'}
@@ -2004,6 +2307,7 @@ export default function Dashboard() {
             </h1>
             <p className="page-subtitle">
               {activeTab === 'dashboard' && 'Real-time overview of active bids, alerts, and deadline schedules.'}
+              {activeTab === 'status' && 'Track and manage all your tenders at a glance across every pipeline stage.'}
               {activeTab === 'tenders' && 'Search, filter, and modify status for all parsed tenders.'}
               {activeTab === 'analytics' && 'Distribution of bids by value brackets, regions, and authorities.'}
               {activeTab === 'settings' && 'Manage connections, SQLite configurations, and database options.'}
@@ -2023,7 +2327,7 @@ export default function Dashboard() {
             >
               <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             </button>
-            {(activeTab === 'tenders' || activeTab === 'dashboard') && (
+            {(activeTab === 'tenders' || activeTab === 'dashboard' || activeTab === 'status') && (
               <button className="btn btn-secondary" onClick={exportToCSV} style={{ gap: '6px' }}>
                 <Download size={16} />
                 <span>Export CSV</span>
@@ -2171,7 +2475,7 @@ export default function Dashboard() {
                             <div className="metric-info">
                               <h3>Total Tenders</h3>
                               <div className="metric-number">{totalTenders}</div>
-                              <div className="metric-trend">From {processedEmails} parsed emails</div>
+                              <div className="metric-trend">{isExecutive ? 'Assigned to you' : `From ${processedEmails} parsed emails`}</div>
                             </div>
                           </div>
 
@@ -2450,6 +2754,21 @@ export default function Dashboard() {
                   </section>
                 </div>
               </div>
+            )}
+
+            {/* TAB: STATUS DASHBOARD (ALL ROLES) */}
+            {activeTab === 'status' && (
+              <StatusDashboard
+                tenders={tenders}
+                currentUser={currentUser}
+                executives={executives}
+                openTenderDetails={openTenderDetails}
+                handleStatusChange={handleStatusChange}
+                fetchWithAuth={fetchWithAuth}
+                showToast={showToast}
+                handleRefresh={handleRefresh}
+                refreshing={refreshing}
+              />
             )}
 
             {/* TAB: ALL TENDERS */}
@@ -5329,74 +5648,77 @@ export default function Dashboard() {
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Workflow Pipeline</span>
                 </div>
 
-                {/* Horizontal Stepper Progress Bar */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', margin: '10px 0 20px 0', padding: '0 6px' }}>
-                  <div style={{ position: 'absolute', top: '12px', left: '16px', right: '16px', height: '2px', backgroundColor: 'var(--border-color)', zIndex: 0 }}></div>
-                  <div style={{ 
-                    position: 'absolute', 
-                    top: '12px', 
-                    left: '16px', 
-                    width: (() => {
-                      if (selectedTender.status === 'Won' || selectedTender.status === 'Lost' || selectedTender.status === 'Awarded' || selectedTender.status === 'Not Awarded') return '100%';
-                      if (selectedTender.status === 'Submitted' || selectedTender.status === 'Filed') return '86%';
-                      if (selectedTender.payment_status === 'Approved') return '72%';
-                      if (selectedTender.verification_status === 'Approved') return '58%';
-                      if (areDocsGenerated) return '44%';
-                      if (selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0) return '30%';
-                      if (selectedTender.tpc_purchase_price && Number(selectedTender.tpc_purchase_price) > 0) return '16%';
-                      if (selectedTender.spec_verification_status === 'Approved') return '8%';
-                      return '0%';
-                    })(),
-                    height: '2px', 
-                    backgroundColor: 'var(--primary)', 
-                    transition: 'width 0.3s ease',
-                    zIndex: 0 
-                  }}></div>
+                {/* Participation Decision Actions */}
+                {currentUser?.role !== 'Admin' && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    background: (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed')
+                      ? 'rgba(245, 158, 11, 0.08)'
+                      : selectedTender.status === 'Participating'
+                      ? 'rgba(16, 185, 129, 0.08)'
+                      : 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-color)',
+                    flexWrap: 'wrap',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>Participation:</span>
+                      <span style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        fontWeight: '700',
+                        backgroundColor: selectedTender.status === 'Participating' ? 'rgba(16, 185, 129, 0.15)' : selectedTender.status === 'Not Participating' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                        color: selectedTender.status === 'Participating' ? '#10b981' : selectedTender.status === 'Not Participating' ? '#ef4444' : '#f59e0b'
+                      }}>
+                        {selectedTender.status === 'Participating' ? 'Participating' : selectedTender.status === 'Not Participating' ? 'Declined' : 'Decision Pending'}
+                      </span>
+                    </div>
 
-                  {[
-                    { name: 'Spec Clearance', label: '1' },
-                    { name: 'TPC Pricing', label: '2' },
-                    { name: 'MIS Pricing', label: '3' },
-                    { name: 'Docs Prep', label: '4' },
-                    { name: 'Docs Approval', label: '5' },
-                    { name: 'EMD Payment', label: '6' },
-                    { name: 'Submission', label: '7' },
-                    { name: 'Outcome', label: '8' }
-                  ].map((step, idx) => {
-                    const isActive = (() => {
-                      if (idx === 0) return true;
-                      if (idx === 1) return selectedTender.spec_verification_status === 'Approved';
-                      if (idx === 2) return (selectedTender.tpc_purchase_price && Number(selectedTender.tpc_purchase_price) > 0) || (selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0);
-                      if (idx === 3) return selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0;
-                      if (idx === 4) return areDocsGenerated;
-                      if (idx === 5) return selectedTender.verification_status === 'Approved';
-                      if (idx === 6) return selectedTender.payment_status === 'Approved';
-                      if (idx === 7) return selectedTender.status === 'Submitted' || selectedTender.status === 'Filed' || isOutcomeState;
-                      return false;
-                    })();
-                    return (
-                      <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, position: 'relative' }}>
-                        <div style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '50%',
-                          backgroundColor: isActive ? 'var(--primary)' : 'var(--bg-app)',
-                          border: `2px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}`,
-                          color: isActive ? '#fff' : 'var(--text-muted)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '10px',
-                          fontWeight: '700'
-                        }}>
-                          {step.label}
-                        </div>
-                        <span style={{ fontSize: '9.5px', color: isActive ? 'var(--text-primary)' : 'var(--text-muted)', marginTop: '4px', fontWeight: isActive ? '700' : '500', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {step.name}
-                        </span>
-                      </div>
-                    );
-                  })}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {(selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
+                        <button
+                          className="btn btn-primary"
+                          style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          onClick={() => handleStatusChange(selectedTender.id, 'Participating')}
+                        >
+                          <CheckCircle2 size={14} /> Accept & Participate
+                        </button>
+                      )}
+                      {(selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed') && (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--accent-red)', borderColor: 'rgba(239, 68, 68, 0.3)', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          onClick={() => handleStatusChange(selectedTender.id, 'Not Participating')}
+                        >
+                          <Trash2 size={14} /> Decline
+                        </button>
+                      )}
+                      {selectedTender.status === 'Participating' && (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 10px', fontSize: '11px', color: 'var(--text-muted)' }}
+                          onClick={() => handleStatusChange(selectedTender.id, 'Not Participating')}
+                        >
+                          Change to Not Participating
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Horizontal Stepper Progress Bar */}
+                <div style={{ margin: '10px 0 20px 0' }}>
+                  <WorkflowPipelineStepper
+                    tender={selectedTender}
+                    currentUser={currentUser}
+                    showStageTitle={true}
+                    showActionBanner={true}
+                  />
                 </div>
 
                 {/* Workflow Cards */}
@@ -6556,56 +6878,26 @@ export default function Dashboard() {
                   <div className="form-grid">
                     <div className="form-group span-2" style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '8px' }}>
                       <label className="form-label" style={{ color: '#3b82f6', fontWeight: 'bold' }}>🏢 Letterhead & Template Format</label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '6px' }}>
                         <div>
                           <label className="form-label" style={{ fontSize: '11px' }}>Select Company</label>
                           <select
                             className="form-input"
                             value={bidFormFields.companyKey || 'me'}
                             onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === 'healthtech') {
-                                setBidFormFields(prev => ({
-                                  ...prev,
-                                  companyKey: 'healthtech',
-                                  companyName: 'Healthtech Limited',
-                                  companyAddress: 'Plot No. 45, Healthcare Park, MIDC Industrial Area, Ambad, Nashik – 422010, Maharashtra, India',
-                                  companyEmail: 'info@healthtech.co.in',
-                                  companyWebsite: 'www.healthtech.co.in',
-                                  companyContact: '0253 2381200 / +91 98220 12345'
-                                }));
-                              } else {
-                                setBidFormFields(prev => ({
-                                  ...prev,
-                                  companyKey: 'me',
-                                  companyName: 'Mark Enterprises',
-                                  companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-                                  companyEmail: 'info@markenworld.com',
-                                  companyWebsite: 'www.markenworld.com',
-                                  companyContact: '09175559646 / 090111 04332'
-                                }));
-                              }
+                              const val = e.target.value as 'me' | 'healthtech';
+                              const preset = COMPANY_PRESETS[val] || COMPANY_PRESETS.me;
+                              setBidFormFields(prev => ({
+                                ...prev,
+                                ...preset
+                              }));
                             }}
                             style={{ fontWeight: '600' }}
                           >
                             <option value="me">Mark Enterprises (ME)</option>
-                            <option value="healthtech">Healthtech Limited</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="form-label" style={{ fontSize: '11px' }}>Page Orientation</label>
-                          <select
-                            className="form-input"
-                            value={bidFormFields.orientation || 'portrait'}
-                            onChange={(e) => setBidFormFields(prev => ({ ...prev, orientation: e.target.value }))}
-                            style={{ fontWeight: '600' }}
-                          >
-                            <option value="portrait">📄 Portrait (A4 Vertical)</option>
-                            <option value="landscape">📜 Landscape (A4 Horizontal)</option>
+                            <option value="healthtech">Healthtech Limited (Marken)</option>
                           </select>
                         </div>
                       </div>
-                    </div>
                     <div className="form-group">
                       <label className="form-label">Bid / Tender Number</label>
                       <input
@@ -7075,7 +7367,6 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

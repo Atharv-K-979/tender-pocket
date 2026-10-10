@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
 import { canPerform } from '@/lib/workflowAuthorization';
+import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
+import { areBidDocsGenerated } from '@/lib/tenderStatus';
 
 interface Toast {
   message: string;
@@ -101,11 +103,62 @@ export default function TenderDetailPage() {
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
 
+  // Company Presets
+  const COMPANY_PRESETS = {
+    me: {
+      companyKey: 'me',
+      companyName: 'Mark Enterprises',
+      companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+      companyEmail: 'info@markenworld.com',
+      companyWebsite: 'www.markenworld.com',
+      companyContact: '09175559646 / 090111 04332',
+      manufacturerName: 'M/s. Mark Enterprises',
+      manufacturerAddress: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      signatoryName: 'Shreedhar Shingare',
+      signatoryDesignation: 'Authorized Signatory – Tender manager',
+      signatoryAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+      witnessDetails: 'Mr. Korra Praveen Naik',
+      localContentPercentage: '100%',
+      localContentLocation: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      preferencePolicy: 'PPP MII 2017',
+      warrantyPeriod: 'Five (5) years',
+      serviceSupportPeriod: 'Five (5) years',
+      sparesAvailabilityPeriod: 'Ten (10) years',
+      place: 'Nashik',
+      make: 'MarkEn',
+      model: 'MILR-04',
+      companyNameCompliance: 'M/s. Mark Enterprises'
+    },
+    healthtech: {
+      companyKey: 'healthtech',
+      companyName: 'Marken Healthtech Limited',
+      companyAddress: '93/1 Street No.17, MIDC, Satpur, Nashik- 422007. MH. India',
+      companyEmail: 'info@markenworld.com',
+      companyWebsite: 'www.markenworld.com',
+      companyContact: '+91 91 3030 5959',
+      manufacturerName: 'Marken Healthtech Ltd',
+      manufacturerAddress: 'Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra.',
+      signatoryName: 'Korra Praveen Naik',
+      signatoryDesignation: 'Authorized Signatory',
+      signatoryAddress: '1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062',
+      witnessDetails: 'Mr. Shreedhar Shingare (Cell No.: 09011104332)',
+      localContentPercentage: '100%',
+      localContentLocation: 'Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
+      preferencePolicy: 'PPP MII 2017',
+      warrantyPeriod: 'Five (5) years',
+      serviceSupportPeriod: 'Five (5) years',
+      sparesAvailabilityPeriod: 'Ten (10) years',
+      place: 'Nashik',
+      make: 'MarkEn',
+      model: 'MILR-04',
+      companyNameCompliance: 'Marken Healthtech Limited'
+    }
+  };
+
   // Bid Doc Generator Modal States
   const [isBidDocFormOpen, setIsBidDocFormOpen] = useState(false);
   const [generatingBidDocs, setGeneratingBidDocs] = useState(false);
   const [bidFormFields, setBidFormFields] = useState({
-    companyKey: 'me',
     orientation: 'portrait',
     bidNumber: '',
     bidDate: '',
@@ -113,28 +166,8 @@ export default function TenderDetailPage() {
     authorityDept: '',
     authorityAddress: '',
     productDescription: '',
-    companyName: '',
-    companyContact: '',
-    companyAddress: '',
-    companyEmail: '',
-    companyWebsite: '',
-    manufacturerName: '',
-    manufacturerAddress: '',
-    signatoryName: '',
-    signatoryDesignation: '',
-    signatoryAddress: '',
-    witnessDetails: '',
-    localContentPercentage: '50',
-    preferencePolicy: 'yes',
-    localContentLocation: '',
-    warrantyPeriod: '1',
-    serviceSupportPeriod: '1',
-    sparesAvailabilityPeriod: '10',
-    place: '',
-    make: 'MarkEn',
-    model: 'MILR-04',
     requiredQuantity: '300',
-    companyNameCompliance: 'M/s. Mark Enterprises'
+    ...COMPANY_PRESETS.me
   });
 
   const [toast, setToast] = useState<Toast>({ message: '', type: 'success', show: false });
@@ -634,7 +667,6 @@ export default function TenderDetailPage() {
   const openBidDocForm = () => {
     if (!selectedTender) return;
     setBidFormFields({
-      companyKey: 'me',
       orientation: 'portrait',
       bidNumber: selectedTender.id || '',
       bidDate: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD
@@ -642,28 +674,8 @@ export default function TenderDetailPage() {
       authorityDept: '',
       authorityAddress: selectedTender.location || '',
       productDescription: selectedTender.product_name_as_per_tender || selectedTender.title || '',
-      companyName: 'Mark Enterprises',
-      companyContact: '09175559646 / 090111 04332',
-      companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-      companyEmail: 'info@markenworld.com',
-      companyWebsite: 'www.markenworld.com',
-      manufacturerName: 'Marken OEM Division',
-      manufacturerAddress: 'Industrial Area Phase 2, Mumbai',
-      signatoryName: 'John Doe',
-      signatoryDesignation: 'Director BD',
-      signatoryAddress: 'Delhi, India',
-      witnessDetails: 'Jane Smith, Manager Finance',
-      localContentPercentage: '50',
-      preferencePolicy: 'yes',
-      localContentLocation: 'New Delhi Plant',
-      warrantyPeriod: '1',
-      serviceSupportPeriod: '1',
-      sparesAvailabilityPeriod: '10',
-      place: selectedTender.place || 'New Delhi',
-      make: 'MarkEn',
-      model: 'MILR-04',
       requiredQuantity: selectedTender.bid_qty !== null && selectedTender.bid_qty !== undefined ? String(selectedTender.bid_qty) : '300',
-      companyNameCompliance: 'M/s. Mark Enterprises'
+      ...COMPANY_PRESETS.me
     });
     setIsBidDocFormOpen(true);
   };
@@ -716,18 +728,7 @@ export default function TenderDetailPage() {
     selectedTender.current_stage === 'WIN_LOSS_PENDING'
   ) : false;
 
-  const areDocsGenerated = selectedTender ? (() => {
-    if (isOutcomeState) return true;
-    if (!selectedTender.downloaded_docs) return false;
-    try {
-      const docs = JSON.parse(selectedTender.downloaded_docs);
-      return Array.isArray(docs) && docs.some((d: any) => 
-        d.name && (d.name.includes("Generated Bid Documents") || d.name.includes("Bid Documents"))
-      );
-    } catch {
-      return false;
-    }
-  })() : false;
+  const areDocsGenerated = selectedTender ? (isOutcomeState || areBidDocsGenerated(selectedTender)) : false;
 
   // Sequential Pipeline Stage Visibility:
   // When a tender is at stage 1, do not show remaining stages in the frontend to any user.
@@ -1144,6 +1145,38 @@ export default function TenderDetailPage() {
             {/* ==================== SECTION 2: WORKFLOW PIPELINE ==================== */}
             <div style={{ borderTop: '2px dashed var(--border-color)', paddingTop: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
+              {/* Participation Decision Banner for New / Unreviewed Tenders */}
+              {canRecordOperationalStages && (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: '12px', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                      {selectedTender.status === 'Not Participating' ? 'Tender Marked as Not Participating' : 'Participation Decision Pending'}
+                    </h4>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      {selectedTender.status === 'Not Participating' ? 'You declined this tender. Click below to reactivate and participate.' : 'Review this tender requirement and accept participation to activate technical specs and documentation.'}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      className="btn btn-primary"
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 16px' }}
+                      onClick={() => updateTenderField({ status: 'Participating' })}
+                    >
+                      <CheckCircle2 size={16} /> Accept & Participate
+                    </button>
+                    {selectedTender.status !== 'Not Participating' && (
+                      <button
+                        className="btn btn-secondary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 16px', color: 'var(--accent-red)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                        onClick={() => updateTenderField({ status: 'Not Participating' })}
+                      >
+                        <XCircle size={16} /> Decline / Not Participating
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Stepper Card */}
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
                 <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
@@ -1165,75 +1198,12 @@ export default function TenderDetailPage() {
                     </span>
                   </div>
                 ) : (
-                  /* Horizontal Stepper Progress Bar */
-                  <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', margin: '10px 0 20px 0', padding: '0 6px' }}>
-                    <div style={{ position: 'absolute', top: '12px', left: '16px', right: '16px', height: '2px', backgroundColor: 'var(--border-color)', zIndex: 0 }}></div>
-                    <div style={{ 
-                      position: 'absolute', 
-                      top: '12px', 
-                      left: '16px', 
-                      width: (() => {
-                        if (selectedTender.status === 'Won' || selectedTender.status === 'Lost' || selectedTender.status === 'Awarded' || selectedTender.status === 'Not Awarded') return '100%';
-                        if (selectedTender.status === 'Submitted' || selectedTender.status === 'Filed') return '86%';
-                        if (selectedTender.payment_status === 'Approved') return '72%';
-                        if (selectedTender.verification_status === 'Approved') return '58%';
-                        if (areDocsGenerated) return '44%';
-                        if (selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0) return '30%';
-                        if (selectedTender.tpc_purchase_price && Number(selectedTender.tpc_purchase_price) > 0) return '16%';
-                        if (selectedTender.spec_verification_status === 'Approved') return '8%';
-                        return '0%';
-                      })(),
-                      height: '2px', 
-                      backgroundColor: 'var(--primary)', 
-                      transition: 'width 0.3s ease',
-                      zIndex: 0 
-                    }}></div>
-
-                    {[
-                      { name: 'Spec Clearance', label: '1' },
-                      { name: 'TPC Pricing', label: '2' },
-                      { name: 'MIS Pricing', label: '3' },
-                      { name: 'Docs Prep', label: '4' },
-                      { name: 'Docs Approval', label: '5' },
-                      { name: 'EMD Payment', label: '6' },
-                      { name: 'Submission', label: '7' },
-                      { name: 'Outcome', label: '8' }
-                    ].map((step, idx) => {
-                      const isActive = (() => {
-                        if (idx === 0) return true;
-                        if (idx === 1) return selectedTender.spec_verification_status === 'Approved';
-                        if (idx === 2) return (selectedTender.tpc_purchase_price && Number(selectedTender.tpc_purchase_price) > 0) || (selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0);
-                        if (idx === 3) return selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0;
-                        if (idx === 4) return areDocsGenerated;
-                        if (idx === 5) return selectedTender.verification_status === 'Approved';
-                        if (idx === 6) return selectedTender.payment_status === 'Approved';
-                        if (idx === 7) return selectedTender.status === 'Submitted' || selectedTender.status === 'Filed' || isOutcomeState;
-                        return false;
-                      })();
-                      return (
-                        <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, position: 'relative' }}>
-                          <div style={{
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '50%',
-                            backgroundColor: isActive ? 'var(--primary)' : 'var(--bg-app)',
-                            border: `2px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}`,
-                            color: isActive ? '#fff' : 'var(--text-muted)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: '700'
-                          }}>
-                            {step.label}
-                          </div>
-                          <span style={{ fontSize: '9.5px', color: isActive ? 'var(--text-primary)' : 'var(--text-muted)', marginTop: '4px', fontWeight: isActive ? '700' : '500', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                            {step.name}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <WorkflowPipelineStepper
+                    tender={selectedTender}
+                    currentUser={currentUser}
+                    showStageTitle={true}
+                    showActionBanner={true}
+                  />
                 )}
               </div>
 
@@ -2492,53 +2462,24 @@ export default function TenderDetailPage() {
                     <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--primary)' }}>Tender Parameters</h4>
                     <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '12px' }}>
                       <label style={{ fontSize: '12px', color: '#3b82f6', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>🏢 Letterhead & Template Format</label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Select Company</label>
                           <select
                             value={bidFormFields.companyKey || 'me'}
                             onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === 'healthtech') {
-                                setBidFormFields(prev => ({
-                                  ...prev,
-                                  companyKey: 'healthtech',
-                                  companyName: 'Healthtech Limited',
-                                  companyAddress: 'Plot No. 45, Healthcare Park, MIDC Industrial Area, Ambad, Nashik – 422010, Maharashtra, India',
-                                  companyEmail: 'info@healthtech.co.in',
-                                  companyWebsite: 'www.healthtech.co.in',
-                                  companyContact: '0253 2381200 / +91 98220 12345'
-                                }));
-                              } else {
-                                setBidFormFields(prev => ({
-                                  ...prev,
-                                  companyKey: 'me',
-                                  companyName: 'Mark Enterprises',
-                                  companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-                                  companyEmail: 'info@markenworld.com',
-                                  companyWebsite: 'www.markenworld.com',
-                                  companyContact: '09175559646 / 090111 04332'
-                                }));
-                              }
+                              const val = e.target.value as 'me' | 'healthtech';
+                              const preset = COMPANY_PRESETS[val] || COMPANY_PRESETS.me;
+                              setBidFormFields(prev => ({
+                                ...prev,
+                                ...preset
+                              }));
                             }}
                             style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}
                           >
                             <option value="me">Mark Enterprises (ME)</option>
-                            <option value="healthtech">Healthtech Limited</option>
+                            <option value="healthtech">Healthtech Limited (Marken)</option>
                           </select>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Page Orientation</label>
-                          <select
-                            value={bidFormFields.orientation || 'portrait'}
-                            onChange={(e) => setBidFormFields(prev => ({ ...prev, orientation: e.target.value }))}
-                            style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}
-                          >
-                            <option value="portrait">📄 Portrait (A4 Vertical)</option>
-                            <option value="landscape">📜 Landscape (A4 Horizontal)</option>
-                          </select>
-                        </div>
-                      </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

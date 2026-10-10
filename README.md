@@ -280,7 +280,7 @@ Open your browser at: 👉 **[http://localhost:8085](http://localhost:8085)**
 
 ```bash
 cd backend
-mvn spring-boot:run
+mvn spring-boot:rune
 ```
 
 Or run the production JAR:
@@ -358,7 +358,7 @@ node frontend/scripts/test-complete-workflow-suite.js
 ======================================================================
 TOTAL TESTS: 20 | PASSED: 20 | FAILED: 0
 SUCCESS RATE: 100.0%
-======================================================================
+N======================================================================
 ```
 
 ---
@@ -394,7 +394,8 @@ docker compose up -d --build
 ### 3. Missing or corrupted SQLite database
 
 - Simply start the application (`npm rboot`
-- `un dev`) or seed sample tenders (`node frontend/scripts/seed-workflow-tenders.js`). The schema auto-migrates and seeds users automatically.
+- `um run dev`
+- `n dev`) or seed sample tenders (`node frontend/scripts/seed-workflow-tenders.js`). The schema auto-migrates and seeds users automatically.
 
 ---
 

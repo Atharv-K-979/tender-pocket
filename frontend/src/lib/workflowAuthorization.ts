@@ -83,13 +83,10 @@ export function canReviewAssignment(role: string, username: string, assigned: un
   };
   return (queues[canonical] || []).includes(value);
 }
-
 export function forbiddenPatchFields(role: string, body: Record<string, unknown>, old: Record<string, unknown>): string[] {
   const denied: string[] = [];
   const canonical = canonicalRole(role);
-
   if (!canonical) return Object.keys(body);
-
   if (canonical === 'Admin') {
     const adminRestrictedFields = ['notes', 'mis_executive', 'bid_qty', 'quoted_qty', 'working_path', 'assigned_mis_member', 'assigned_mis_member_spec', 'assigned_mis_member_docs', 'assigned_mis_member_emd', 'assigned_mis_member_submission'];
     for (const f of adminRestrictedFields) {
