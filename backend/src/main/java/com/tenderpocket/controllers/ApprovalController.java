@@ -340,6 +340,14 @@ public class ApprovalController {
         for (TenderApprovalRequest req : requests) {
             Tender tender = tenderMap.get(req.getTenderId());
 
+            // Tenders in SPEC_CLEARANCE stage must have a generated tech spec to appear in Clearance Team queue
+            if (req.getStage() == TenderWorkflowStage.SPEC_CLEARANCE) {
+                boolean hasTechSpec = tender != null && tender.getDownloadedDocs() != null && (tender.getDownloadedDocs().contains("Technical Specification") || tender.getDownloadedDocs().contains("specification"));
+                if (tender == null || !hasTechSpec || !"Pending".equalsIgnoreCase(tender.getSpecVerificationStatus())) {
+                    continue;
+                }
+            }
+
             // Apply search filter on tender fields (post-load, avoids complex JPQL join)
             if (search != null && !search.isBlank()) {
                 String lc = search.toLowerCase();

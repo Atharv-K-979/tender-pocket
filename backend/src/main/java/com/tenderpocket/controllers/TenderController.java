@@ -618,6 +618,24 @@ public class TenderController {
             String val = (String) (body.containsKey("spec_verification_status") ? body.get("spec_verification_status") : body.get("specVerificationStatus"));
             tender.setSpecVerificationStatus(val);
             logDetails.add("spec verification status updated to '" + val + "'");
+
+            if ("Approved".equalsIgnoreCase(val)) {
+                tender.setCurrentStage("TPC_PRICING");
+                logDetails.add("workflow stage auto-advanced to 'TPC_PRICING'");
+                try {
+                    List<TenderApprovalRequest> existingTpc = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.TPC_PRICING);
+                    if (existingTpc.isEmpty()) {
+                        TenderApprovalRequest tpcReq = new TenderApprovalRequest(
+                                tender.getId(),
+                                TenderWorkflowStage.TPC_PRICING,
+                                username,
+                                "TPC Pricing Team",
+                                "PENDING"
+                        );
+                        approvalRepository.save(tpcReq);
+                    }
+                } catch (Exception e) {}
+            }
         }
 
         if (body.containsKey("assigned_mis_member_spec") || body.containsKey("assignedMisMemberSpec")) {
@@ -1145,31 +1163,39 @@ public class TenderController {
     }
 
     private String resolveStatus(Tender t, String todayIST) {
-        boolean hasPassedDueDate = t.getDueDate() != null && t.getDueDate().split(" ")[0].compareTo(todayIST) < 0;
+        boolean hasPassedDueDate = t.getDueDate() != null && !t.getDueDate().isBlank() && t.getDueDate().split(" ")[0].compareTo(todayIST) < 0;
 
-        if ("Awarded".equalsIgnoreCase(t.getStatus())) return "Won";
-        if ("Not Awarded".equalsIgnoreCase(t.getStatus())) return "Lost";
-        if ("Filed".equalsIgnoreCase(t.getStatus())) return "Submitted";
+        if ("Awarded".equalsIgnoreCase(t.getStatus()) || "Won".equalsIgnoreCase(t.getStatus())) return "Won";
+        if ("Not Awarded".equalsIgnoreCase(t.getStatus()) || "Lost".equalsIgnoreCase(t.getStatus())) return "Lost";
+        if ("Filed".equalsIgnoreCase(t.getStatus()) || "Submitted".equalsIgnoreCase(t.getStatus())) return "Submitted";
 
         if (hasPassedDueDate) {
-            if ("Not Participating".equalsIgnoreCase(t.getStatus())) return "Missed Opportunity";
-            if ("Issued".equalsIgnoreCase(t.getStatus()) || "Participating".equalsIgnoreCase(t.getStatus()) || t.getStatus() == null) {
+            if ("Not Participating".equalsIgnoreCase(t.getStatus()) || "NON_PARTICIPATING".equalsIgnoreCase(t.getStatus())) {
+                return "Missed Opportunity";
+            }
+            if ("Issued".equalsIgnoreCase(t.getStatus()) || "Participating".equalsIgnoreCase(t.getStatus()) || "New".equalsIgnoreCase(t.getStatus()) || t.getStatus() == null) {
                 return "Missed Deadline";
             }
         }
 
-        if ("Not Participating".equalsIgnoreCase(t.getStatus())) return "Not Participating";
+        if ("Not Participating".equalsIgnoreCase(t.getStatus()) || "NON_PARTICIPATING".equalsIgnoreCase(t.getStatus())) {
+            return "Not Participating";
+        }
         if ("Participating".equalsIgnoreCase(t.getStatus())) return "Participating";
 
-        if (t.getPublishDate() != null && !"N/A".equals(t.getPublishDate())) {
+        String refDate = t.getAssignedAt() != null ? t.getAssignedAt() : (t.getScrapedAt() != null ? t.getScrapedAt() : t.getPublishDate());
+        if (refDate != null && !"N/A".equals(refDate) && !refDate.isBlank()) {
             try {
-                LocalDate pub = LocalDate.parse(t.getPublishDate());
-                long diff = ChronoUnit.DAYS.between(pub, LocalDate.now());
-                if (diff > 3) return "Lapsed";
+                String dStr = refDate.split(" ")[0].split("T")[0];
+                LocalDate date = LocalDate.parse(dStr);
+                long diff = ChronoUnit.DAYS.between(date, LocalDate.now());
+                if (diff >= 3 && (t.getMisExecutive() == null || t.getMisExecutive().isBlank())) {
+                    return "Lapsed";
+                }
             } catch (Exception e) {}
         }
 
-        return "New";
+        return (t.getStatus() != null && !t.getStatus().isBlank()) ? t.getStatus() : "New";
     }
 
     private String generateDetailsSummary(Tender t) {
