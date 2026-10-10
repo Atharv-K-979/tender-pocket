@@ -853,10 +853,7 @@ public class TenderController {
 
     private boolean isBidDocsProvided(Tender tender) {
         if (tender == null) return false;
-        if (tender.getWorkingPath() != null && !tender.getWorkingPath().trim().isEmpty()) return true;
-        if (tender.getDownloadedDocs() == null) return false;
-        String docs = tender.getDownloadedDocs().toLowerCase();
-        return docs.contains("bid_documents") || docs.contains("generated bid documents") || docs.contains("bid documents");
+        return tender.getWorkingPath() != null && !tender.getWorkingPath().trim().isEmpty();
     }
 
     @GetMapping("/{id}/tech-spec-progress")

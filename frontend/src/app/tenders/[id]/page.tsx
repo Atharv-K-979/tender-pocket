@@ -30,7 +30,7 @@ import {
 import { Tender } from '@/lib/db';
 import { canPerform } from '@/lib/workflowAuthorization';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
-import { areBidDocsGenerated } from '@/lib/tenderStatus';
+import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 
 interface Toast {
   message: string;
@@ -1895,23 +1895,23 @@ export default function TenderDetailPage() {
                               ))}
                             </select>
                           </div>
-                          {!areBidDocsGenerated(selectedTender) && !workingPath?.trim() && (
+                          {!hasWorkingPathSaved(selectedTender) && !workingPath?.trim() && (
                             <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#f59e0b' }}>
-                              ⚠️ <strong>Bid Documents Required:</strong> Please fill the form above and generate bid documents before submitting for MIS approval.
+                              ⚠️ <strong>Working Folder Path Required:</strong> Please enter and save the Working Folder Path above before submitting for MIS approval.
                             </div>
                           )}
                           <button 
                             className="btn btn-primary" 
-                            disabled={!areBidDocsGenerated(selectedTender) && !workingPath?.trim()}
-                            style={{ width: '100%', justifyContent: 'center', opacity: (areBidDocsGenerated(selectedTender) || workingPath?.trim()) ? 1 : 0.5, cursor: (areBidDocsGenerated(selectedTender) || workingPath?.trim()) ? 'pointer' : 'not-allowed' }}
+                            disabled={!hasWorkingPathSaved(selectedTender) && !workingPath?.trim()}
+                            style={{ width: '100%', justifyContent: 'center', opacity: (hasWorkingPathSaved(selectedTender) || workingPath?.trim()) ? 1 : 0.5, cursor: (hasWorkingPathSaved(selectedTender) || workingPath?.trim()) ? 'pointer' : 'not-allowed' }}
                             onClick={() => {
                               if (!selectedMisMemberDocs) {
                                 showToast('Please select a Target MIS Team Representative first.', 'error');
                                 alert('Please select a Target MIS Team Representative first.');
                                 return;
                               }
-                              if (!areBidDocsGenerated(selectedTender) && !workingPath?.trim()) {
-                                showToast('Please generate bid documents using the form above before submitting for MIS approval.', 'error');
+                              if (!hasWorkingPathSaved(selectedTender) && !workingPath?.trim()) {
+                                showToast('Please enter and save the Working Folder Path first.', 'error');
                                 return;
                               }
                               updateTenderField({ verification_status: 'Pending', working_path: workingPath, assigned_mis_member_docs: selectedMisMemberDocs, current_stage: 'DOC_VERIFICATION' });
@@ -1924,9 +1924,9 @@ export default function TenderDetailPage() {
 
                       {selectedTender.verification_status === 'Pending' && ((selectedTender.assigned_mis_member_docs && currentUser?.username === selectedTender.assigned_mis_member_docs) || currentUser?.role === 'MIS Team') && (
                         <>
-                          {!areBidDocsGenerated(selectedTender) && !workingPath?.trim() ? (
+                          {!hasWorkingPathSaved(selectedTender) ? (
                             <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#ef4444', marginBottom: '12px' }}>
-                              ⚠️ <strong>Bid Documents Missing:</strong> Generated bid documents have not been uploaded/compiled yet. Please ask the Tender Executive to generate bid documents before auditing or approving.
+                              ⚠️ <strong>Working Folder Path Required:</strong> The Tender Executive has not saved the Working Folder Path yet. Bid document approval will unlock once the Working Folder Path is saved.
                             </div>
                           ) : (
                             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>

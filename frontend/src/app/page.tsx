@@ -68,7 +68,7 @@ import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
-import { areBidDocsGenerated } from '@/lib/tenderStatus';
+import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole } from '@/lib/workflowAuthorization';
 
 
@@ -6306,18 +6306,18 @@ export default function Dashboard() {
 
                     {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
                       <>
-                        {!areBidDocsGenerated(selectedTender) && !workingPath?.trim() && (
+                        {!hasWorkingPathSaved(selectedTender) && !workingPath?.trim() && (
                           <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#f59e0b', marginBottom: '8px' }}>
-                            ⚠️ <strong>Bid Documents Required:</strong> Please fill the form above and generate bid documents before submitting for MIS approval.
+                            ⚠️ <strong>Working Folder Path Required:</strong> Please enter and save the Working Folder Path above before submitting for MIS approval.
                           </div>
                         )}
                         <button 
                           className="btn btn-primary" 
-                          disabled={!areBidDocsGenerated(selectedTender) && !workingPath?.trim()}
-                          style={{ width: '100%', padding: '8px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px', opacity: (areBidDocsGenerated(selectedTender) || workingPath?.trim()) ? 1 : 0.5, cursor: (areBidDocsGenerated(selectedTender) || workingPath?.trim()) ? 'pointer' : 'not-allowed' }}
+                          disabled={!hasWorkingPathSaved(selectedTender) && !workingPath?.trim()}
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px', opacity: (hasWorkingPathSaved(selectedTender) || workingPath?.trim()) ? 1 : 0.5, cursor: (hasWorkingPathSaved(selectedTender) || workingPath?.trim()) ? 'pointer' : 'not-allowed' }}
                           onClick={() => {
-                            if (!areBidDocsGenerated(selectedTender) && !workingPath?.trim()) {
-                              showToast('Please generate bid documents using the form above before submitting for MIS approval.', 'error');
+                            if (!hasWorkingPathSaved(selectedTender) && !workingPath?.trim()) {
+                              showToast('Please enter and save the Working Folder Path first.', 'error');
                               return;
                             }
                             updateTenderField({ 
@@ -6341,9 +6341,9 @@ export default function Dashboard() {
 
                     {selectedTender.verification_status === 'Pending' && (currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
                       <>
-                        {!areBidDocsGenerated(selectedTender) && !workingPath?.trim() ? (
+                        {!hasWorkingPathSaved(selectedTender) ? (
                           <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#ef4444', marginBottom: '12px' }}>
-                            ⚠️ <strong>Bid Documents Missing:</strong> Generated bid documents have not been uploaded/compiled yet. Please ask the Tender Executive to generate bid documents before auditing or approving.
+                            ⚠️ <strong>Working Folder Path Required:</strong> The Tender Executive has not saved the Working Folder Path yet. Bid document approval will unlock once the Working Folder Path is saved.
                           </div>
                         ) : (
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>

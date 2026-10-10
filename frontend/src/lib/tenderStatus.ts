@@ -101,31 +101,15 @@ export interface TenderStageDetails {
   isDeclined: boolean;
 }
 
+export function hasWorkingPathSaved(tender: any): boolean {
+  if (!tender) return false;
+  const path = tender.working_path || tender.workingPath;
+  return Boolean(path && typeof path === 'string' && path.trim() !== '');
+}
+
 export function areBidDocsGenerated(tender: any): boolean {
   if (!tender) return false;
-  if (tender.working_path || tender.workingPath) return true;
-  if (tender.verification_status === 'Approved') return true;
-  if (tender.payment_status === 'Approved') return true;
-  if (tender.submission_status === 'Approved') return true;
-  if (['Submitted', 'Filed', 'Won', 'Lost', 'Awarded', 'Not Awarded'].includes(tender.status)) return true;
-
-  const docsRaw = tender.downloaded_docs || tender.downloadedDocs;
-  if (!docsRaw) return false;
-  try {
-    const docs = typeof docsRaw === 'string' ? JSON.parse(docsRaw) : docsRaw;
-    if (Array.isArray(docs)) {
-      return docs.some((d: any) => 
-        (d.name && (d.name.includes('Generated Bid Documents') || d.name.includes('Bid Documents') || d.name.includes('Bid_Documents'))) ||
-        (d.filename && (d.filename.includes('Bid_Documents_') || d.filename.includes('Generated_Bid_Documents_'))) ||
-        (d.local_path && d.local_path.includes('Bid_Documents_'))
-      );
-    }
-  } catch {
-    if (typeof docsRaw === 'string') {
-      return docsRaw.includes('Bid_Documents_') || docsRaw.includes('Generated Bid Documents');
-    }
-  }
-  return false;
+  return hasWorkingPathSaved(tender);
 }
 
 /**
