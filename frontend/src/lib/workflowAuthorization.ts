@@ -28,7 +28,10 @@ export function canonicalRole(role: string | null | undefined): string {
 export function canPerform(role: string | null | undefined, action: WorkflowAction): boolean {
   const canonical = canonicalRole(role);
   if (!canonical) return false;
-  if (action === 'viewTenders' || action === 'viewAudit' || canonical === 'Admin') return true;
+  if (action === 'viewTenders' || action === 'viewAudit') return true;
+  if (canonical === 'Admin') {
+    return action === 'manageUsers' || action === 'viewTpcPrice' || action === 'setMisPrice';
+  }
   switch (action) {
     case 'uploadSpecs':
     case 'generateBids': return canonical === 'Tender Executive';
