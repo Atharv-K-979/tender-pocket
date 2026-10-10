@@ -129,13 +129,12 @@ public final class WorkflowPermissions {
         }
 
         if (body.containsKey("current_stage")) {
-            String newStage = String.valueOf(body.get("current_stage"));
+            String newStage = String.valueOf(body.get("current_stage")).toUpperCase(Locale.ROOT);
             if (List.of("WON", "LOST", "WIN_LOSS_PENDING").contains(newStage) && !isMis) return false;
             if ("DOC_VERIFICATION".equals(newStage) && !isExec && !isMis) return false;
-            if ("TPC_PRICING".equals(newStage) && !isClearance && !isExec) return false;
-            if ("MIS_PRICING".equals(newStage) && !isTpc) return false;
+            if ("TPC_PRICING".equals(newStage) && !isClearance && !isExec && !isMis) return false;
+            if ("MIS_PRICING".equals(newStage) && !isTpc && !isMis) return false;
             if ("PAYMENT_APPROVAL".equals(newStage) && !isMis && !isExec) return false;
-            if (List.of("WON", "LOST").contains(newStage) && !"WIN_LOSS_PENDING".equals(currentStage) && !"SUBMISSION_PENDING".equals(currentStage)) return false;
         }
 
         String status = String.valueOf(body.get("status"));

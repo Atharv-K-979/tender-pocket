@@ -6808,7 +6808,7 @@ export default function Dashboard() {
                       )}
 
                       {/* Pending Outcome Controls (only if neither won nor lost) */}
-                      {(currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Admin') && !isWon && !isLost && (
+                      {isMisRole && !isWon && !isLost && (
                         <>
                           {/* Loss Reason Input Box */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
@@ -6830,7 +6830,7 @@ export default function Dashboard() {
                             </button>
                           </div>
 
-                          {/* Outcome Choice Action Buttons - Displayed to all roles */}
+                          {/* Outcome Choice Action Buttons */}
                           <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                             <button 
                               className="btn btn-primary" 
@@ -6848,6 +6848,12 @@ export default function Dashboard() {
                             </button>
                           </div>
                         </>
+                      )}
+
+                      {!isMisRole && !isWon && !isLost && (
+                        <div style={{ padding: '12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          Outcome pending. Final outcome selection is reserved for MIS Team.
+                        </div>
                       )}
                     </div>
                   );
