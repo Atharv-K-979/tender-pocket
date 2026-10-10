@@ -179,7 +179,7 @@ export default function StatusDashboard({
     const actionRequiredCount = tendersWithStage.filter(i => i.flags.needsAction).length;
 
     // 8 Pipeline Stages
-    const stage1Count = tendersWithStage.filter(i => i.stage.stageNumber === 1 || (i.stage.currentStepIndex === 0 && i.tender.status === 'Participating')).length;
+    const stage1Count = tendersWithStage.filter(i => i.stage.stageNumber === 1).length;
     const stage2Count = tendersWithStage.filter(i => i.stage.stageNumber === 2).length;
     const stage3Count = tendersWithStage.filter(i => i.stage.stageNumber === 3).length;
     const stage4Count = tendersWithStage.filter(i => i.stage.stageNumber === 4).length;
@@ -251,7 +251,7 @@ export default function StatusDashboard({
         icon: ShieldCheck,
         iconColor: '#8b5cf6',
         bgColor: 'rgba(139, 92, 246, 0.1)',
-        filterFn: (i: any) => i.stage.stageNumber === 1 || (i.stage.currentStepIndex === 0 && i.tender.status === 'Participating')
+        filterFn: (i: any) => i.stage.stageNumber === 1
       },
       {
         key: 'STAGE_2_TPC',
