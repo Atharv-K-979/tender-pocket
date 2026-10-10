@@ -90,6 +90,8 @@ services:
       NODE_ENV: production
       BACKEND_URL: ${BACKEND_URL:-http://tender-pocket-backend:8090}
       JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - backend_documents:/app/public/documents
     networks:
       - tender_pocket_net
 

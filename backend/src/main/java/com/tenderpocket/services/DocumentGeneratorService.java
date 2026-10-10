@@ -1733,7 +1733,7 @@ public class DocumentGeneratorService {
         byte[] imageBytesToPass = null;
 
         if (aiSpecificationIntelligenceService == null) {
-            aiSpecificationIntelligenceService = new AISpecificationIntelligenceServiceV1();
+            aiSpecificationIntelligenceService = new AISpecificationIntelligenceService();
         }
 
             if (metrics != null) metrics.setDocumentCounts(0, 1);
@@ -1782,7 +1782,7 @@ public class DocumentGeneratorService {
                                                         ConversionProgressListener progress,
                                                         ComplianceConversionMetrics metrics) {
         if (aiSpecificationIntelligenceService == null) {
-            aiSpecificationIntelligenceService = new AISpecificationIntelligenceServiceV1();
+            aiSpecificationIntelligenceService = new AISpecificationIntelligenceService();
         }
         List<PdfBatch> batches;
         try {
