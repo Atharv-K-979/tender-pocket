@@ -2271,6 +2271,12 @@ export default function TenderDetailPage() {
                         </div>
                       )}
 
+                      {(!canRecordOperationalStages || selectedTender.submission_status === 'Approved') && selectedTender.assigned_mis_member_submission && (
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                          <strong>Target MIS Representative:</strong> <span style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_submission}</span>
+                        </div>
+                      )}
+
                       {selectedTender.submission_status === 'Pending' && (currentUser?.role === 'MIS Team' || (selectedTender.assigned_mis_member_submission && currentUser?.username === selectedTender.assigned_mis_member_submission)) && (
                         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                           <button 

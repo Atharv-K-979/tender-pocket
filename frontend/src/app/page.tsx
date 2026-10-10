@@ -6488,24 +6488,31 @@ export default function Dashboard() {
                         </div>
 
                         {/* Target MIS Team Representative Selector */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                            Target MIS Team Representative
-                          </label>
-                          <select 
-                            value={selectedMisMember}
-                            onChange={(e) => {
-                              setSelectedMisMember(e.target.value);
-                              updateTenderField({ assigned_mis_member: e.target.value });
-                            }}
-                            style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
-                          >
-                            <option value="">-- Select Target MIS Representative --</option>
-                            {misTeamMembers.map(m => (
-                              <option key={m} value={m}>{m}</option>
-                            ))}
-                          </select>
-                        </div>
+                        {canRecordOperationalStages && selectedTender.payment_status !== 'Approved' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              Target MIS Team Representative
+                            </label>
+                            <select 
+                              value={selectedMisMember}
+                              onChange={(e) => {
+                                setSelectedMisMember(e.target.value);
+                                updateTenderField({ assigned_mis_member: e.target.value });
+                              }}
+                              style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
+                            >
+                              <option value="">-- Select Target MIS Representative --</option>
+                              {misTeamMembers.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        {(!canRecordOperationalStages || selectedTender.payment_status === 'Approved') && selectedMisMember && (
+                          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                            <strong>Target MIS Representative:</strong> <span style={{ color: 'var(--text-primary)' }}>{selectedMisMember}</span>
+                          </div>
+                        )}
 
                         {/* Action buttons */}
                         {canRecordOperationalStages && selectedTender.payment_status !== 'Approved' && (
@@ -6632,24 +6639,31 @@ export default function Dashboard() {
                     </p>
 
                     {/* Target MIS Team Representative Selector */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                      <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                        Target MIS Team Representative
-                      </label>
-                      <select 
-                        value={selectedMisMember}
-                        onChange={(e) => {
-                          setSelectedMisMember(e.target.value);
-                          updateTenderField({ assigned_mis_member: e.target.value });
-                        }}
-                        style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
-                      >
-                        <option value="">-- Select Target MIS Representative --</option>
-                        {misTeamMembers.map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {canRecordOperationalStages && selectedTender.status !== 'Submitted' && selectedTender.status !== 'Filed' && selectedTender.submission_status !== 'Approved' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                        <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
+                          Target MIS Team Representative
+                        </label>
+                        <select 
+                          value={selectedMisMember}
+                          onChange={(e) => {
+                            setSelectedMisMember(e.target.value);
+                            updateTenderField({ assigned_mis_member: e.target.value });
+                          }}
+                          style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
+                        >
+                          <option value="">-- Select Target MIS Representative --</option>
+                          {misTeamMembers.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {(!canRecordOperationalStages || selectedTender.submission_status === 'Approved') && selectedMisMember && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                        <strong>Target MIS Representative:</strong> <span style={{ color: 'var(--text-primary)' }}>{selectedMisMember}</span>
+                      </div>
+                    )}
 
                     {canRecordOperationalStages && selectedTender.status !== 'Submitted' && selectedTender.status !== 'Filed' && selectedTender.submission_status !== 'Pending' && (
                       <button 
