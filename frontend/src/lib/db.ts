@@ -307,8 +307,11 @@ export interface Tender {
   due_date: string | null;
   opening_date: string | null;
   document_url: string | null;
+  documentUrl?: string | null;
   downloaded_docs?: string | null;
+  downloadedDocs?: string | null;
   original_url: string;
+  originalUrl?: string | null;
   status: 'Issued' | 'Participating' | 'Not Participating' | 'Lapsed (Unreviewed)' | 'Filed' | 'Awarded' | 'Not Awarded' | 'Business Loss due to Non-Submission' | 'Business Loss due to Non-Participation' | 'New' | 'Lapsed' | 'Submitted' | 'Won' | 'Lost' | 'Missed Deadline' | 'Missed Opportunity';
   notes: string;
   scraped_at: string;
