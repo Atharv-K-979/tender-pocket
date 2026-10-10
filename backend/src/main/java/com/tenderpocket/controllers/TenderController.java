@@ -473,12 +473,12 @@ public class TenderController {
         }
 
         Tender tender = opt.get();
-        if (!WorkflowPermissions.allowedPatch(body, tender.getCurrentStage())) return WorkflowPermissions.denied();
-        if (List.of("Generated", "Pending").contains(String.valueOf(body.get("spec_verification_status")))
-                && !Objects.equals(body.get("spec_verification_status"), tender.getSpecVerificationStatus())) {
+        String requestedVerStatus = (String) (body.containsKey("verification_status") ? body.get("verification_status") : body.get("verificationStatus"));
+        if (List.of("Pending", "Approved").contains(requestedVerStatus) && !isBidDocsProvided(tender)) {
             return ResponseEntity.badRequest().body(Map.of("success", false,
-                    "error", "Use the specification upload or clearance-request endpoint."));
+                    "error", "Generated bid documents are required before submitting or approving document verification."));
         }
+
         List<String> logDetails = new ArrayList<>();
 
         if (body.containsKey("status")) {
@@ -849,6 +849,14 @@ public class TenderController {
         if (tender == null || tender.getDownloadedDocs() == null) return false;
         String docs = tender.getDownloadedDocs().toLowerCase();
         return docs.contains("technical specification") || docs.contains("tech_spec") || docs.contains("uploaded pdf");
+    }
+
+    private boolean isBidDocsProvided(Tender tender) {
+        if (tender == null) return false;
+        if (tender.getWorkingPath() != null && !tender.getWorkingPath().trim().isEmpty()) return true;
+        if (tender.getDownloadedDocs() == null) return false;
+        String docs = tender.getDownloadedDocs().toLowerCase();
+        return docs.contains("bid_documents") || docs.contains("generated bid documents") || docs.contains("bid documents");
     }
 
     @GetMapping("/{id}/tech-spec-progress")

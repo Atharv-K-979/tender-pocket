@@ -103,12 +103,11 @@ export interface TenderStageDetails {
 
 export function areBidDocsGenerated(tender: any): boolean {
   if (!tender) return false;
-  // If verified or subsequent stages have been reached, docs were definitely generated
-  if (tender.verification_status === 'Approved' || tender.verification_status === 'Pending') return true;
-  if (tender.payment_status === 'Approved' || tender.payment_status === 'Pending') return true;
-  if (tender.submission_status === 'Approved' || tender.submission_status === 'Pending') return true;
+  if (tender.working_path || tender.workingPath) return true;
+  if (tender.verification_status === 'Approved') return true;
+  if (tender.payment_status === 'Approved') return true;
+  if (tender.submission_status === 'Approved') return true;
   if (['Submitted', 'Filed', 'Won', 'Lost', 'Awarded', 'Not Awarded'].includes(tender.status)) return true;
-  if (['DOC_VERIFICATION', 'EMD_REQ_READY', 'EMD_PENDING', 'READY_TO_SUBMIT', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING', 'WON', 'LOST'].includes(tender.current_stage)) return true;
 
   const docsRaw = tender.downloaded_docs || tender.downloadedDocs;
   if (!docsRaw) return false;

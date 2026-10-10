@@ -6305,18 +6305,32 @@ export default function Dashboard() {
                     </div>
 
                     {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
-                      <button 
-                        className="btn btn-primary" 
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px' }}
-                        onClick={() => updateTenderField({ 
-                          working_path: workingPath, 
-                          assigned_mis_member: selectedMisMember, 
-                          verification_status: 'Pending',
-                          current_stage: 'DOC_VERIFICATION'
-                        })}
-                      >
-                        🚀 Submit Bid Documents for MIS Approval
-                      </button>
+                      <>
+                        {!areBidDocsGenerated(selectedTender) && !workingPath?.trim() && (
+                          <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#f59e0b', marginBottom: '8px' }}>
+                            ⚠️ <strong>Bid Documents Required:</strong> Please fill the form above and generate bid documents before submitting for MIS approval.
+                          </div>
+                        )}
+                        <button 
+                          className="btn btn-primary" 
+                          disabled={!areBidDocsGenerated(selectedTender) && !workingPath?.trim()}
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px', opacity: (areBidDocsGenerated(selectedTender) || workingPath?.trim()) ? 1 : 0.5, cursor: (areBidDocsGenerated(selectedTender) || workingPath?.trim()) ? 'pointer' : 'not-allowed' }}
+                          onClick={() => {
+                            if (!areBidDocsGenerated(selectedTender) && !workingPath?.trim()) {
+                              showToast('Please generate bid documents using the form above before submitting for MIS approval.', 'error');
+                              return;
+                            }
+                            updateTenderField({ 
+                              working_path: workingPath, 
+                              assigned_mis_member: selectedMisMember, 
+                              verification_status: 'Pending',
+                              current_stage: 'DOC_VERIFICATION'
+                            });
+                          }}
+                        >
+                          🚀 Submit Bid Documents for MIS Approval
+                        </button>
+                      </>
                     )}
 
                     {canRecordOperationalStages && selectedTender.verification_status === 'Pending' && (
@@ -6326,28 +6340,36 @@ export default function Dashboard() {
                     )}
 
                     {selectedTender.verification_status === 'Pending' && (currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                        <button 
-                          className="btn btn-primary" 
-                          style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
-                          onClick={async () => {
-                            await updateTenderField({ verification_status: 'Approved', current_stage: 'PAYMENT_APPROVAL' });
-                            showToast('Bid documents approved! EMD Payment is now unblocked.', 'success');
-                          }}
-                        >
-                          ✅ Approve Bid Documents
-                        </button>
-                        <button 
-                          className="btn btn-secondary" 
-                          style={{ flex: 1, color: 'var(--accent-red)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
-                          onClick={async () => {
-                            await updateTenderField({ verification_status: 'Rejected' });
-                            showToast('Bid documents rejected / changes requested.', 'error');
-                          }}
-                        >
-                          ❌ Request Changes
-                        </button>
-                      </div>
+                      <>
+                        {!areBidDocsGenerated(selectedTender) && !workingPath?.trim() ? (
+                          <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#ef4444', marginBottom: '12px' }}>
+                            ⚠️ <strong>Bid Documents Missing:</strong> Generated bid documents have not been uploaded/compiled yet. Please ask the Tender Executive to generate bid documents before auditing or approving.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                            <button 
+                              className="btn btn-primary" 
+                              style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                              onClick={async () => {
+                                await updateTenderField({ verification_status: 'Approved', current_stage: 'PAYMENT_APPROVAL' });
+                                showToast('Bid documents approved! EMD Payment is now unblocked.', 'success');
+                              }}
+                            >
+                              ✅ Approve Bid Documents
+                            </button>
+                            <button 
+                              className="btn btn-secondary" 
+                              style={{ flex: 1, color: 'var(--accent-red)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                              onClick={async () => {
+                                await updateTenderField({ verification_status: 'Rejected' });
+                                showToast('Bid documents rejected / changes requested.', 'error');
+                              }}
+                            >
+                              ❌ Request Changes
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {selectedTender.verification_status === 'Approved' && (
