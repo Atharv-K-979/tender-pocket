@@ -1702,7 +1702,7 @@ export default function TenderDetailPage() {
                         <span><strong>Locked:</strong> Provided Price from MIS Team is required before bid documents can be generated. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
                       </div>
                     ) : (
-                      (currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
+                      canPerform(currentUser?.role, 'generateBids') && (
                         <button 
                           className="btn btn-primary" 
                           style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
@@ -1751,7 +1751,7 @@ export default function TenderDetailPage() {
                         📁 Working folder: <code>{selectedTender.working_path}</code>
                       </span>
                     )}
-                    {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
+                    {canPerform(currentUser?.role, 'generateBids') && (
                       <button 
                         className="btn btn-primary" 
                         style={{ fontSize: '11px', padding: '6px 12px', alignSelf: 'flex-start', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}
