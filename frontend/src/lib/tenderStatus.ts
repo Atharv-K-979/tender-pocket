@@ -317,7 +317,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
         isDeclined: false
       };
     }
-    if (tender.spec_verification_status === 'Pending' || tender.current_stage === 'SPEC_CLEARANCE') {
+    if (tender.spec_verification_status === 'Pending') {
       return {
         stageNumber: 1,
         stageKey: 'SPEC_CLEARANCE_PENDING',

@@ -158,7 +158,7 @@ public class Tender {
     private Double misFinalPrice;
 
     @Column(name = "current_stage")
-    private String currentStage = "SPEC_CLEARANCE";
+    private String currentStage = "NEW";
 
     @Column(name = "quoted_qty")
     private Integer quotedQty;

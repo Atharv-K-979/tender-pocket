@@ -67,7 +67,7 @@ export function reconcileApprovalRequests(): void {
     const pendingSpecs = db.prepare(`
       SELECT id, mis_executive, assigned_mis_member_spec 
       FROM tenders 
-      WHERE spec_verification_status = 'Pending' OR current_stage = 'SPEC_CLEARANCE'
+      WHERE spec_verification_status = 'Pending'
     `).all() as any[];
 
     for (const t of pendingSpecs) {
