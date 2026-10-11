@@ -154,7 +154,22 @@ export default function Dashboard() {
         headers.set('Authorization', `Bearer ${token}`);
       }
     }
-    return fetch(url, { cache: 'no-store', ...options, headers });
+    const response = await fetch(url, { cache: 'no-store', ...options, headers });
+
+    // Automatically recover from expired or invalidated sessions on read/data endpoints
+    if ((response.status === 401 || response.status === 403) && currentUser) {
+      const isWorkflowAction = url.includes('/approve-') || url.includes('/tpc-') || url.includes('/mis-') || url.includes('/clearance-') || url.includes('/generate-bid-docs');
+      if (!isWorkflowAction) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('token');
+        }
+        setCurrentUser(null);
+        setLoginError('Your session has expired. Please sign in again.');
+      }
+    }
+
+    return response;
   }, [currentUser]);
   
   // Data States
@@ -499,12 +514,19 @@ export default function Dashboard() {
     document.documentElement.setAttribute('data-theme', initialTheme);
 
     const storedUser = localStorage.getItem('currentUser');
-    if (storedUser) {
+    const storedToken = localStorage.getItem('token');
+    if (storedUser && storedToken) {
       try {
         setCurrentUser(JSON.parse(storedUser));
       } catch (e) {
         console.error('Failed to parse currentUser from localStorage:', e);
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('token');
       }
+    } else if (storedUser && !storedToken) {
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('token');
+      setLoginError('Please sign in to continue.');
     }
 
     const handleHashChange = () => {

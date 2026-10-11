@@ -33,7 +33,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD}
       SPRING_JPA_DATABASE_PLATFORM: ${SPRING_JPA_DATABASE_PLATFORM:-org.hibernate.dialect.PostgreSQLDialect}
       SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-tender_pocket_production_jwt_signing_secret_key_2026_marken_512bit_secure}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-315360000}
       ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-}
       MISTEAM_DEFAULT_PASSWORD: ${MISTEAM_DEFAULT_PASSWORD:-}
@@ -89,7 +89,7 @@ services:
       PORT: 8085
       NODE_ENV: production
       BACKEND_URL: ${BACKEND_URL:-http://tender-pocket-backend:8090}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-tender_pocket_production_jwt_signing_secret_key_2026_marken_512bit_secure}
     volumes:
       - backend_documents:/app/public/documents
     networks:
