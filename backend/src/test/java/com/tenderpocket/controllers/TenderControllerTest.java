@@ -23,6 +23,15 @@ public class TenderControllerTest {
     @Mock
     private TenderRepository tenderRepository;
 
+    @Mock
+    private com.tenderpocket.repositories.ActivityLogRepository activityLogRepository;
+
+    @Mock
+    private com.tenderpocket.repositories.StatusHistoryRepository statusHistoryRepository;
+
+    @Mock
+    private com.tenderpocket.repositories.TenderApprovalRepository approvalRepository;
+
     @InjectMocks
     private TenderController tenderController;
 
@@ -392,5 +401,72 @@ public class TenderControllerTest {
         Map<?, ?> body = (Map<?, ?>) response.getBody();
         assertTrue((Boolean) body.get("success"));
         assertNotNull(body.get("stats"));
+    }
+
+    @Test
+    void testUpdateTenderStatusParticipatingWithoutVerificationStatus() {
+        authenticate("misteam", "MIS Team");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", "Participating");
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertTrue((Boolean) respBody.get("success"));
+        assertEquals("Participating", tender1.getStatus());
+        verify(tenderRepository, atLeastOnce()).save(tender1);
+    }
+
+    @Test
+    void testUpdateTenderSaveAssignmentAndQuantities() {
+        authenticate("misteam", "MIS Team");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("mis_executive", "EXECUTIVE_1");
+        body.put("bid_qty", 3);
+        body.put("quoted_qty", 3);
+        body.put("notes", "Assigned via MIS Team dashboard");
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        assertEquals("EXECUTIVE_1", tender1.getMisExecutive());
+        assertEquals(3, tender1.getBidQty());
+        assertEquals(3, tender1.getQuotedQty());
+        assertEquals("Assigned via MIS Team dashboard", tender1.getNotes());
+        verify(tenderRepository, atLeastOnce()).save(tender1);
+    }
+
+    @Test
+    void testUpdateTenderEmptyBodyDoesNotThrowNPE() {
+        authenticate("misteam", "MIS Team");
+
+        Map<String, Object> body = new HashMap<>();
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertTrue((Boolean) respBody.get("success"));
+    }
+
+    @Test
+    void testUpdateTenderRequiresBidDocsForVerificationApproval() {
+        authenticate("misteam", "MIS Team");
+
+        tender1.setWorkingPath(null);
+        tender1.setDownloadedDocs(null);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("verification_status", "Approved");
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertFalse((Boolean) respBody.get("success"));
+        assertTrue(respBody.get("error").toString().contains("Generated bid documents are required"));
     }
 }

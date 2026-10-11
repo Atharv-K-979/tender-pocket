@@ -37,9 +37,9 @@ DECLARE
 BEGIN
     IF (TG_OP = 'DELETE') THEN
         IF (TG_TABLE_NAME = 'users' OR TG_TABLE_NAME = 'user_signatures') THEN
-            rec_pk := OLD.username::TEXT;
+            rec_pk := COALESCE(OLD.username::TEXT, 'unknown');
         ELSE
-            rec_pk := OLD.id::TEXT;
+            rec_pk := COALESCE(OLD.id::TEXT, '0');
         END IF;
 
         INSERT INTO db_change_log (table_name, operation, record_pk, row_data, created_at)
@@ -47,9 +47,9 @@ BEGIN
         RETURN OLD;
     ELSIF (TG_OP = 'UPDATE') THEN
         IF (TG_TABLE_NAME = 'users' OR TG_TABLE_NAME = 'user_signatures') THEN
-            rec_pk := NEW.username::TEXT;
+            rec_pk := COALESCE(NEW.username::TEXT, 'unknown');
         ELSE
-            rec_pk := NEW.id::TEXT;
+            rec_pk := COALESCE(NEW.id::TEXT, '0');
         END IF;
 
         INSERT INTO db_change_log (table_name, operation, record_pk, row_data, created_at)
@@ -57,9 +57,9 @@ BEGIN
         RETURN NEW;
     ELSIF (TG_OP = 'INSERT') THEN
         IF (TG_TABLE_NAME = 'users' OR TG_TABLE_NAME = 'user_signatures') THEN
-            rec_pk := NEW.username::TEXT;
+            rec_pk := COALESCE(NEW.username::TEXT, 'unknown');
         ELSE
-            rec_pk := NEW.id::TEXT;
+            rec_pk := COALESCE(NEW.id::TEXT, '0');
         END IF;
 
         INSERT INTO db_change_log (table_name, operation, record_pk, row_data, created_at)

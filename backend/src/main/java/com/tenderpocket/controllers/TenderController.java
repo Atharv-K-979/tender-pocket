@@ -313,7 +313,7 @@ public class TenderController {
         }
 
         // Dynamic Sorting
-        String safeSortBy = List.of("scraped_at", "due_date", "estimated_cost").contains(sortBy) ? sortBy : "scraped_at";
+        String safeSortBy = (sortBy != null && List.of("scraped_at", "due_date", "estimated_cost").contains(sortBy)) ? sortBy : "scraped_at";
         boolean isAsc = "asc".equalsIgnoreCase(order);
 
         filtered.sort((a, b) -> {
@@ -474,7 +474,7 @@ public class TenderController {
 
         Tender tender = opt.get();
         String requestedVerStatus = (String) (body.containsKey("verification_status") ? body.get("verification_status") : body.get("verificationStatus"));
-        if (List.of("Pending", "Approved").contains(requestedVerStatus) && !isBidDocsProvided(tender)) {
+        if (requestedVerStatus != null && List.of("Pending", "Approved").contains(requestedVerStatus) && !isBidDocsProvided(tender)) {
             return ResponseEntity.badRequest().body(Map.of("success", false,
                     "error", "Generated bid documents are required before submitting or approving document verification."));
         }
@@ -523,11 +523,13 @@ public class TenderController {
         }
 
         if (body.containsKey("quoted_qty")) {
-            tender.setQuotedQty((Integer) body.get("quoted_qty"));
+            Object q = body.get("quoted_qty");
+            tender.setQuotedQty(q instanceof Number ? ((Number) q).intValue() : null);
         }
 
         if (body.containsKey("bid_qty")) {
-            tender.setBidQty((Integer) body.get("bid_qty"));
+            Object b = body.get("bid_qty");
+            tender.setBidQty(b instanceof Number ? ((Number) b).intValue() : null);
         }
 
         if (body.containsKey("mis_executive")) {
@@ -655,12 +657,16 @@ public class TenderController {
         tenderRepository.save(tender);
 
         // Audit Log
-        ActivityLog log = new ActivityLog(
-                username, userRole, "Updated Tender", id,
-                new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
-                String.join(", ", logDetails)
-        );
-        activityLogRepository.save(log);
+        try {
+            ActivityLog log = new ActivityLog(
+                    username, userRole, "Updated Tender", id,
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
+                    String.join(", ", logDetails)
+            );
+            activityLogRepository.save(log);
+        } catch (Exception e) {
+            System.err.println("[TenderController] Warning saving activity log for tender " + id + ": " + e.getMessage());
+        }
 
         return ResponseEntity.ok(Map.of("success", true, "message", "Tender updated successfully"));
     }

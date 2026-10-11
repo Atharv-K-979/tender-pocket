@@ -137,10 +137,12 @@ public final class WorkflowPermissions {
             if ("PAYMENT_APPROVAL".equals(newStage) && !isMis && !isExec) return false;
         }
 
-        String status = String.valueOf(body.get("status"));
-        if (List.of("Won", "Lost", "Awarded", "Not Awarded", "Disqualified", "Missed Opportunity").contains(status) && !isMis) return false;
-        if (List.of("Participating", "Not Participating").contains(status) && !isMis) return false;
-        if (List.of("Submitted", "Filed").contains(status) && !isMis && !isExec) return false;
+        if (body.containsKey("status") && body.get("status") != null) {
+            String status = String.valueOf(body.get("status"));
+            if (List.of("Won", "Lost", "Awarded", "Not Awarded", "Disqualified", "Missed Opportunity").contains(status) && !isMis) return false;
+            if (List.of("Participating", "Not Participating").contains(status) && !isMis) return false;
+            if (List.of("Submitted", "Filed").contains(status) && !isMis && !isExec) return false;
+        }
 
         return true;
     }
