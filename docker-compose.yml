@@ -22,12 +22,14 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: tender-pocket-backend
+    mem_limit: 5g
     restart: always
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       SPRING_PORT: 8090
+      JAVA_TOOL_OPTIONS: "-Xmx3g -Xms512m"
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/${POSTGRES_DB:-tender_pocket}?sslmode=disable}
       SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD}
