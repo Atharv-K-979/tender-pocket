@@ -202,6 +202,8 @@ export default function Dashboard() {
   const [statusTabActionRequiredOnly, setStatusTabActionRequiredOnly] = useState(false);
   const [statusTabSortBy, setStatusTabSortBy] = useState<'due_date' | 'scraped_at' | 'estimated_cost'>('due_date');
   const [statusTabSortOrder, setStatusTabSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [statusCategoryFilter, setStatusCategoryFilter] = useState<'ALL' | 'OVERVIEW' | 'PIPELINE' | 'ACTION_REQUIRED'>('ALL');
+  const [statusExecutiveFilter, setStatusExecutiveFilter] = useState('');
 
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
   const selectedTenderRef = useRef<Tender | null>(selectedTender);
@@ -2314,7 +2316,7 @@ export default function Dashboard() {
 
       {/* Main Panel Content */}
       <main className="main-content">
-        <header className="content-header">
+        <header className="content-header" style={activeTab === 'status' ? { marginBottom: '20px' } : undefined}>
           <div className="header-title-area">
             <h1>
               {activeTab === 'dashboard' && 'Control Desk'}
@@ -2341,6 +2343,47 @@ export default function Dashboard() {
           </div>
 
           <div className="header-actions">
+            {activeTab === 'status' && (
+              <>
+                {(currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team') && (
+                  <select
+                    className="filter-select"
+                    value={statusExecutiveFilter}
+                    onChange={(e) => setStatusExecutiveFilter(e.target.value)}
+                    style={{
+                      minWidth: '160px',
+                      background: 'var(--bg-card)',
+                      borderColor: statusExecutiveFilter ? 'var(--primary)' : 'var(--border-color)',
+                      fontWeight: '600',
+                      fontSize: '12.5px'
+                    }}
+                  >
+                    <option value="">All Executives</option>
+                    {executives.map(exec => (
+                      <option key={exec} value={exec}>{exec}</option>
+                    ))}
+                  </select>
+                )}
+
+                <select
+                  className="filter-select"
+                  value={statusCategoryFilter}
+                  onChange={(e) => setStatusCategoryFilter(e.target.value as any)}
+                  style={{
+                    minWidth: '150px',
+                    background: 'var(--bg-card)',
+                    fontWeight: '600',
+                    fontSize: '12.5px'
+                  }}
+                >
+                  <option value="ALL">All Cards (12)</option>
+                  <option value="OVERVIEW">Overview (4 Cards)</option>
+                  <option value="PIPELINE">8 Pipeline Stages</option>
+                  <option value="ACTION_REQUIRED">Action Required Only</option>
+                </select>
+              </>
+            )}
+
             <button 
               className="btn btn-secondary btn-icon-only" 
               onClick={handleRefresh} 
@@ -2790,6 +2833,8 @@ export default function Dashboard() {
                 showToast={showToast}
                 handleRefresh={handleRefresh}
                 refreshing={refreshing}
+                categoryFilter={statusCategoryFilter}
+                executiveFilter={statusExecutiveFilter}
               />
             )}
 
