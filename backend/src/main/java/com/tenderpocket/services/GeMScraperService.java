@@ -40,6 +40,49 @@ public class GeMScraperService {
     @Value("${gemini.api.key}")
     private String geminiApiKey;
 
+    /**
+     * GeM's /all-bids-data endpoint returns a fixed 10 results per request; a "rows" or page-size
+     * parameter is ignored. Pagination is therefore the only way to see past the first 10 matches,
+     * and measurement against the live endpoint showed a single keyword ("Hospital Bed") reporting
+     * numFound = 105 while only 10 docs came back.
+     */
+    private static final int GEM_PAGE_SIZE = 10;
+
+    /**
+     * Sorting by Bid-End-Date-Oldest (the previous hardcoded value) returns the bids closest to
+     * closing. That set barely changes until those bids actually close, so every sync re-fetched
+     * the same rows, the deduplication check rejected all of them, and the sync reported
+     * "Imported: 0" while newly published bids - which have distant end dates and therefore sort
+     * last - were never reached. Bid-Start-Date-Latest puts the most recently published bids on
+     * the first page, which is what an incremental sync needs.
+     */
+    @Value("${gem.sort:Bid-Start-Date-Latest}")
+    private String gemSort;
+
+    /** Safety ceiling on requests per keyword, so a logic error cannot become thousands of calls. */
+    @Value("${gem.max-pages-per-keyword:15}")
+    private int maxPagesPerKeyword;
+
+    /**
+     * Stop paging a keyword once this many consecutive results are already in the database. With
+     * newest-first ordering that means we have caught up with the last sync. Two pages' worth by
+     * default; set higher to tolerate out-of-order results, or lower for faster syncs.
+     */
+    @Value("${gem.stop-after-known:20}")
+    private int stopAfterKnown;
+
+    /** Pause between requests to GeM. Unchanged from the previous hardcoded 2500ms. */
+    @Value("${gem.request-pause-ms:2500}")
+    private long requestPauseMs;
+
+    /**
+     * Whether GeM's "page" parameter counts from 1 or 0. Verified against the live endpoint by
+     * comparing the result set for an explicit page against the result set for no page parameter
+     * at all. Exposed as configuration so it can be corrected without a rebuild.
+     */
+    @Value("${gem.first-page-index:1}")
+    private int firstPageIndex;
+
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -92,21 +135,46 @@ public class GeMScraperService {
             if (keyword.length() < 3) continue;
             System.out.println(String.format("[%d/%d] Querying GeM for: \"%s\"...", i + 1, keywords.size(), keyword));
 
-            try {
-                JsonNode docs = searchKeyword(keyword);
-                System.out.println(String.format("  - Found %d ongoing bid(s) for \"%s\"", docs.size(), keyword));
+            int page = firstPageIndex;
+            int pagesFetched = 0;
+            int consecutiveKnown = 0;
+            boolean caughtUp = false;
+
+            while (!caughtUp && pagesFetched < maxPagesPerKeyword) {
+                JsonNode docs = searchKeywordWithRetry(keyword, page);
+                pagesFetched++;
+
+                // null means the page failed twice, including after re-authentication. Give up on
+                // this keyword rather than silently treating it as "no more results".
+                if (docs == null) break;
+
+                System.out.println(String.format("  - page %d: %d ongoing bid(s) for \"%s\"",
+                        page, docs.size(), keyword));
+                if (docs.size() == 0) break;
 
                 for (JsonNode doc : docs) {
+                  try {
                     String bId = getJsonString(doc, "b_id");
                     String bidNo = getJsonString(doc, "b_bid_number");
 
                     if (bId == null || bidNo == null) continue;
 
-                    // Deduplication check
+                    // Deduplication check. With newest-first ordering, a run of already-known bids
+                    // means we have reached what the previous sync imported, so there is nothing
+                    // older worth paging for.
                     Optional<Tender> existing = tenderRepository.findById(bId);
                     if (existing.isPresent()) {
+                        consecutiveKnown++;
+                        if (consecutiveKnown >= stopAfterKnown) {
+                            System.out.println(String.format(
+                                    "  - caught up on \"%s\" after %d consecutive known bid(s)",
+                                    keyword, consecutiveKnown));
+                            caughtUp = true;
+                            break;
+                        }
                         continue;
                     }
+                    consecutiveKnown = 0;
 
                     String start = getJsonString(doc, "final_start_date_sort");
                     String formattedStartDate = (start != null && start.contains("T")) ? start.split("T")[0] : "";
@@ -188,17 +256,25 @@ public class GeMScraperService {
 
                     // Download document PDF and run python PDF parser
                     downloadAndParseGemPdf(bId, url, bidNo, doc);
+                  } catch (Exception docError) {
+                    // One malformed bid must not cost the rest of the keyword. Before pagination
+                    // that only lost the remainder of a single page; now it would lose every
+                    // remaining page too, so each bid is isolated.
+                    System.err.println(String.format("  - Skipping a bid for \"%s\": %s",
+                            keyword, docError.getMessage() != null ? docError.getMessage() : docError.toString()));
+                  }
                 }
 
-                // Rate limiting sleep
-                Thread.sleep(2500);
+                // A short page means GeM has no further matches for this keyword.
+                if (docs.size() < GEM_PAGE_SIZE) caughtUp = true;
 
-            } catch (Exception e) {
-                String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
-                System.err.println(String.format("  - Error syncing GeM for keyword \"%s\": %s", keyword, errorMsg));
-                if (errorMsg.contains("CSRF") || errorMsg.contains("session") || errorMsg.contains("non-200")) {
-                    cachedCookieHeader = null;
-                    cachedCsrfHash = null;
+                page++;
+                try {
+                    Thread.sleep(requestPauseMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    System.err.println("[GeM Sync] Interrupted; returning early with " + importCount + " import(s).");
+                    return importCount;
                 }
             }
         }
@@ -247,7 +323,16 @@ public class GeMScraperService {
                             t.setLocation(place + ", " + state);
                         }
                         if (!"N/A".equals(state)) t.setState(state);
-                        if (dueDate != null) {
+                        // The search API's final_end_date_sort is live, and GeM extends it by
+                        // corrigendum. The saved bid document is a snapshot from publication day,
+                        // so its date goes stale: tender 10017569 was given a due date of
+                        // 2026-10-07 - four days in the past - while GeM still listed it as an
+                        // ongoing bid. Let the PDF fill a gap, never overwrite a real API value.
+                        String storedDueDate = t.getDueDate();
+                        boolean storedUsable = storedDueDate != null
+                                && !storedDueDate.isBlank()
+                                && !"N/A".equalsIgnoreCase(storedDueDate.trim());
+                        if (dueDate != null && !storedUsable) {
                             t.setDueDate(dueDate + (dueTime != null ? " " + dueTime : ""));
                         }
                         if (emdAmount != null) {
@@ -299,11 +384,43 @@ public class GeMScraperService {
         return builder.build();
     }
 
-    private JsonNode searchKeyword(String keyword) throws Exception {
+    /**
+     * Fetches one page for a keyword, retrying once after discarding the cached session.
+     * Returns null when both attempts fail, which the caller treats as "abandon this keyword"
+     * rather than "no more results" - the previous code skipped a failed keyword outright,
+     * losing roughly 7% of keywords per sync to transient non-200 responses with no retry.
+     */
+    private JsonNode searchKeywordWithRetry(String keyword, int page) {
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                return searchKeyword(keyword, page);
+            } catch (Exception e) {
+                String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+                System.err.println(String.format(
+                        "  - Error syncing GeM for keyword \"%s\" page %d (attempt %d/2): %s",
+                        keyword, page, attempt, errorMsg));
+                if (errorMsg.contains("CSRF") || errorMsg.contains("session") || errorMsg.contains("non-200")) {
+                    cachedCookieHeader = null;
+                    cachedCsrfHash = null;
+                }
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep(requestPauseMs * 2);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return null;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private JsonNode searchKeyword(String keyword, int page) throws Exception {
         getCredentials();
 
         String url = "https://bidplus.gem.gov.in/all-bids-data";
-        
+
         Map<String, Object> param = new HashMap<>();
         param.put("searchBid", keyword);
         param.put("searchType", "fullText");
@@ -313,11 +430,15 @@ public class GeMScraperService {
         filter.put("byType", "all");
         filter.put("highBidValue", "");
         filter.put("byEndDate", Map.of("from", "", "to", ""));
-        filter.put("sort", "Bid-End-Date-Oldest");
+        filter.put("sort", gemSort);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("param", param);
         payload.put("filter", filter);
+        // "page" sits at the top level of the payload, beside param and filter. Verified against
+        // the live endpoint: page inside param, a Solr-style "start" offset, and a "rows" page
+        // size were all accepted with HTTP 200 and then silently ignored, returning page one.
+        payload.put("page", page);
 
         String payloadStr = objectMapper.writeValueAsString(payload);
 
