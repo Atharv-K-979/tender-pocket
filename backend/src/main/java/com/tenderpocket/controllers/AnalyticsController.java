@@ -359,31 +359,13 @@ public class AnalyticsController {
         return "New";
     }
 
+    /**
+     * Delegates to the shared resolver so the dashboard and the tender list cannot disagree.
+     * This copy previously derived "Lapsed" from publish_date, which marked a tender neglected
+     * the moment it was imported - GeM bids are routinely published days before they are
+     * scraped - and reported 130 of 198 tenders as Lapsed on a database populated that evening.
+     */
     private String resolveStatus(Tender t, String todayIST) {
-        boolean hasPassedDueDate = t.getDueDate() != null && t.getDueDate().split(" ")[0].compareTo(todayIST) < 0;
-
-        if ("Awarded".equalsIgnoreCase(t.getStatus())) return "Won";
-        if ("Not Awarded".equalsIgnoreCase(t.getStatus())) return "Lost";
-        if ("Filed".equalsIgnoreCase(t.getStatus())) return "Submitted";
-
-        if (hasPassedDueDate) {
-            if ("Not Participating".equalsIgnoreCase(t.getStatus())) return "Missed Opportunity";
-            if ("Issued".equalsIgnoreCase(t.getStatus()) || "Participating".equalsIgnoreCase(t.getStatus()) || t.getStatus() == null) {
-                return "Missed Deadline";
-            }
-        }
-
-        if ("Not Participating".equalsIgnoreCase(t.getStatus())) return "Not Participating";
-        if ("Participating".equalsIgnoreCase(t.getStatus())) return "Participating";
-
-        if (t.getPublishDate() != null && !"N/A".equals(t.getPublishDate())) {
-            try {
-                LocalDate pub = LocalDate.parse(t.getPublishDate());
-                long diff = ChronoUnit.DAYS.between(pub, LocalDate.now());
-                if (diff > 3) return "Lapsed";
-            } catch (Exception e) {}
-        }
-
-        return "New";
+        return com.tenderpocket.services.TenderStatusResolver.resolve(t, todayIST);
     }
 }

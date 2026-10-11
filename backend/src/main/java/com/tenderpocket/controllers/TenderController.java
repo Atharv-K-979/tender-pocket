@@ -1173,40 +1173,15 @@ public class TenderController {
         }
     }
 
+    /**
+     * Delegates to the shared resolver. This copy previously returned the stored status verbatim
+     * as its fallback, so a scraped tender - which GeMScraperService stores as "Issued" - matched
+     * neither the "New" nor the "Lapsed" filter and the list came back empty for every status.
+     * Its Lapsed branch was also unreachable, because scraped_at is written with
+     * java.util.Date.toString() and LocalDate.parse("Sun") threw into an empty catch.
+     */
     private String resolveStatus(Tender t, String todayIST) {
-        boolean hasPassedDueDate = t.getDueDate() != null && !t.getDueDate().isBlank() && t.getDueDate().split(" ")[0].compareTo(todayIST) < 0;
-
-        if ("Awarded".equalsIgnoreCase(t.getStatus()) || "Won".equalsIgnoreCase(t.getStatus())) return "Won";
-        if ("Not Awarded".equalsIgnoreCase(t.getStatus()) || "Lost".equalsIgnoreCase(t.getStatus())) return "Lost";
-        if ("Filed".equalsIgnoreCase(t.getStatus()) || "Submitted".equalsIgnoreCase(t.getStatus())) return "Submitted";
-
-        if (hasPassedDueDate) {
-            if ("Not Participating".equalsIgnoreCase(t.getStatus()) || "NON_PARTICIPATING".equalsIgnoreCase(t.getStatus())) {
-                return "Missed Opportunity";
-            }
-            if ("Issued".equalsIgnoreCase(t.getStatus()) || "Participating".equalsIgnoreCase(t.getStatus()) || "New".equalsIgnoreCase(t.getStatus()) || t.getStatus() == null) {
-                return "Missed Deadline";
-            }
-        }
-
-        if ("Not Participating".equalsIgnoreCase(t.getStatus()) || "NON_PARTICIPATING".equalsIgnoreCase(t.getStatus())) {
-            return "Not Participating";
-        }
-        if ("Participating".equalsIgnoreCase(t.getStatus())) return "Participating";
-
-        String refDate = t.getAssignedAt() != null ? t.getAssignedAt() : (t.getScrapedAt() != null ? t.getScrapedAt() : t.getPublishDate());
-        if (refDate != null && !"N/A".equals(refDate) && !refDate.isBlank()) {
-            try {
-                String dStr = refDate.split(" ")[0].split("T")[0];
-                LocalDate date = LocalDate.parse(dStr);
-                long diff = ChronoUnit.DAYS.between(date, LocalDate.now());
-                if (diff >= 3 && (t.getMisExecutive() == null || t.getMisExecutive().isBlank())) {
-                    return "Lapsed";
-                }
-            } catch (Exception e) {}
-        }
-
-        return (t.getStatus() != null && !t.getStatus().isBlank()) ? t.getStatus() : "New";
+        return com.tenderpocket.services.TenderStatusResolver.resolve(t, todayIST);
     }
 
     private String generateDetailsSummary(Tender t) {
