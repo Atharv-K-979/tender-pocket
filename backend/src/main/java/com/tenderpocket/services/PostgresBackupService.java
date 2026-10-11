@@ -100,7 +100,7 @@ public class PostgresBackupService {
             currentRun.setCompletedAt(LocalDateTime.now());
 
             BackupRun saved = backupRunRepository.save(currentRun);
-            enforceDailyRetention(30);
+            enforceDailyRetention(14);
             System.out.println("[PostgresBackupService] Daily backup completed successfully. Checkpoint: " + maxIdInLog);
             return saved;
 
@@ -200,7 +200,8 @@ public class PostgresBackupService {
      */
     public boolean uploadToS3OrStorage(String bucket, String key, byte[] content) {
         try {
-            Path targetFile = Paths.get(localBackupDir).resolve(key).normalize();
+            String relativeKey = key.startsWith(localBackupDir + "/") ? key.substring(localBackupDir.length() + 1) : key;
+            Path targetFile = Paths.get(localBackupDir).resolve(relativeKey).normalize();
             Files.createDirectories(targetFile.getParent());
             Files.write(targetFile, content);
 
@@ -208,10 +209,15 @@ public class PostgresBackupService {
             try {
                 String awsCmd = String.format("aws s3 cp %s s3://%s/%s", targetFile.toAbsolutePath(), bucket, key);
                 Process proc = Runtime.getRuntime().exec(new String[]{"bash", "-c", awsCmd});
-                proc.waitFor();
-            } catch (Exception ignored) {}
+                int exitCode = proc.waitFor();
+                if (exitCode != 0) {
+                    System.err.println("[PostgresBackupService] AWS S3 upload exited with code " + exitCode);
+                }
+            } catch (Exception e) {
+                System.err.println("[PostgresBackupService] S3 CLI execution warning: " + e.getMessage());
+            }
 
-            // Verify upload locally / S3
+            // Verify upload locally
             return Files.exists(targetFile) && Files.size(targetFile) == content.length;
         } catch (Exception e) {
             System.err.println("[PostgresBackupService] Storage upload failed: " + e.getMessage());
@@ -283,7 +289,7 @@ public class PostgresBackupService {
             run.setCompletedAt(LocalDateTime.now());
 
             BackupRun saved = backupRunRepository.save(run);
-            enforceMonthlyRetention(12);
+            enforceMonthlyRetention(6);
             System.out.println("[PostgresBackupService] Monthly consolidation completed successfully: " + targetYearMonth);
             return saved;
 

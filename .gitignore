@@ -26,3 +26,8 @@ scratch/
 *.tmp
 *.temp
 .tempmediaStorage/
+
+# PostgreSQL backup files and Python cache
+backups/
+**/__pycache__/
+*.sql.gz

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Tender Pocket — Isolated PostgreSQL Restore Testing Script
-Restores monthly base + daily incremental backup chain into an isolated temporary test database
-(tender_pocket_restore_test), runs integrity checks, verifies application queries, and cleans up.
+Restores a verified full PostgreSQL backup into an isolated temporary test database
+(tender_pocket_restore_test), runs integrity checks, verifies schema and row counts,
+compares with active database, and cleans up.
 """
 
 import os
@@ -16,7 +17,9 @@ from email.mime.multipart import MIMEMultipart
 
 DB_CONTAINER = os.getenv("POSTGRES_CONTAINER_NAME", "tender-pocket-postgres")
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
+SOURCE_DB = os.getenv("POSTGRES_DB", "tender_pocket")
 TEST_DB = "tender_pocket_restore_test"
+LOCAL_BACKUP_DIR = os.getenv("POSTGRES_BACKUP_LOCAL_DIR", "backups/postgresql")
 
 SMTP_HOST = os.getenv("SPRING_MAIL_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SPRING_MAIL_PORT", "465"))
@@ -34,6 +37,19 @@ def run_psql(db, query):
         raise Exception(f"psql error on {db}: {res.stderr.strip()}")
     return res.stdout.strip()
 
+def find_latest_backup():
+    """Finds the most recent local .sql.gz backup."""
+    candidates = []
+    for root, dirs, files in os.walk(LOCAL_BACKUP_DIR):
+        for file in files:
+            if file.endswith(".sql.gz") and not file.endswith(".tmp"):
+                path = os.path.join(root, file)
+                candidates.append((os.path.getmtime(path), path))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    return candidates[0][1]
+
 def send_alert_email(stage, error_msg):
     subject = "[Tender Pocket] PostgreSQL Restore Verification FAILED"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -46,7 +62,7 @@ Failure Stage: {stage}
 Error Details: {error_msg}
 
 RECOMMENDED ACTION:
-Inspect backup artifacts for corruption or missing daily delta sequence.
+Inspect backup artifacts for corruption or missing schema definitions.
 ==================================================
 """
     print(f"================ EMAIL ALERT ================\n{body}\n=============================================")
@@ -69,44 +85,71 @@ Inspect backup artifacts for corruption or missing daily delta sequence.
         print(f"[!] Failed to send alert email: {e}")
 
 def main():
-    print("[*] Starting Isolated PostgreSQL Restore Verification Test...")
-    
+    backup_file = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else None
+    if not backup_file:
+        backup_file = find_latest_backup()
+
+    if not backup_file or not os.path.exists(backup_file):
+        print(f"[❌] No backup file provided or found to restore: {backup_file}")
+        sys.exit(1)
+
+    print(f"[*] Starting Isolated PostgreSQL Restore Verification Test using: {backup_file}")
+
     try:
-        # 1. Ensure test database is clean
+        # 1. Ensure test database is clean and recreate
         run_psql("postgres", f"DROP DATABASE IF EXISTS {TEST_DB};")
         run_psql("postgres", f"CREATE DATABASE {TEST_DB};")
         print(f"[✓] Isolated test database '{TEST_DB}' created.")
 
-        # 2. Extract production schema definitions onto test DB
-        schema_dump = subprocess.run(
-            ["docker", "exec", "-i", DB_CONTAINER, "pg_dump", "-U", DB_USER, "-d", "tender_pocket", "--schema-only"],
-            capture_output=True, check=True
-        ).stdout
+        # 2. Decompress and pipe dump into test DB
+        print(f"[*] Decompressing and restoring {backup_file} into {TEST_DB}...")
+        with gzip.open(backup_file, "rb") as gz_in:
+            decompressed_sql = gz_in.read()
 
-        restore_proc = subprocess.run(
-            ["docker", "exec", "-i", DB_CONTAINER, "psql", "-U", DB_USER, "-d", TEST_DB],
-            input=schema_dump, capture_output=True
-        )
+        restore_cmd = [
+            "docker", "exec", "-i", DB_CONTAINER,
+            "psql", "-U", DB_USER, "-d", TEST_DB
+        ]
+        restore_proc = subprocess.run(restore_cmd, input=decompressed_sql, capture_output=True)
+
         if restore_proc.returncode != 0:
-            raise Exception(f"Schema restore failed: {restore_proc.stderr.decode('utf-8', errors='ignore')}")
+            err_msg = restore_proc.stderr.decode("utf-8", errors="ignore").strip()
+            raise Exception(f"Database restore failed with exit code {restore_proc.returncode}: {err_msg}")
 
-        print("[✓] Restored base database schema onto test environment.")
+        print("[✓] Backup dump successfully applied to isolated test database.")
 
-        # 3. Apply business tables data validation
-        required_tables = ["users", "user_signatures", "tenders", "activity_log", "status_history", "tender_approval_requests", "tender_comments", "tender_workflow_comments", "email_notification_logs"]
+        # 3. Validate required business tables
+        required_tables = [
+            "users", "user_signatures", "tenders", "activity_log",
+            "status_history", "tender_approval_requests", "tender_comments",
+            "tender_workflow_comments", "email_notification_logs"
+        ]
 
+        missing_tables = []
         for t in required_tables:
-            res = run_psql(TEST_DB, f"SELECT COUNT(*) FROM information_schema.tables WHERE table_name='{t}';")
+            res = run_psql(TEST_DB, f"SELECT COUNT(*) FROM information_schema.tables WHERE table_name='{t}' AND table_schema='public';")
             if res != "1":
-                raise Exception(f"Validation failed: Required table '{t}' does not exist in restored DB.")
+                missing_tables.append(t)
 
-        print(f"[✓] Validated schema: All {len(required_tables)} business tables exist.")
+        if missing_tables:
+            raise Exception(f"Schema validation failed: Missing required tables in restored DB: {missing_tables}")
 
-        # 4. Perform test query
-        user_cnt = run_psql(TEST_DB, "SELECT COUNT(*) FROM users;")
-        tender_cnt = run_psql(TEST_DB, "SELECT COUNT(*) FROM tenders;")
+        print(f"[✓] Schema Validation: All {len(required_tables)} business tables exist in restored database.")
 
-        print(f"[✓] Data Query Validation: Users count = {user_cnt}, Tenders count = {tender_cnt}")
+        # 4. Compare non-sensitive aggregate checks with source DB
+        source_user_cnt = run_psql(SOURCE_DB, "SELECT COUNT(*) FROM users;")
+        restored_user_cnt = run_psql(TEST_DB, "SELECT COUNT(*) FROM users;")
+        source_tender_cnt = run_psql(SOURCE_DB, "SELECT COUNT(*) FROM tenders;")
+        restored_tender_cnt = run_psql(TEST_DB, "SELECT COUNT(*) FROM tenders;")
+
+        print(f"[✓] Integrity Counts Check:")
+        print(f"    Users   — Source: {source_user_cnt} | Restored: {restored_user_cnt}")
+        print(f"    Tenders — Source: {source_tender_cnt} | Restored: {restored_tender_cnt}")
+
+        if source_user_cnt != restored_user_cnt:
+            raise Exception(f"Count mismatch on 'users': source {source_user_cnt} != restored {restored_user_cnt}")
+        if source_tender_cnt != restored_tender_cnt:
+            raise Exception(f"Count mismatch on 'tenders': source {source_tender_cnt} != restored {restored_tender_cnt}")
 
         # 5. Clean up temporary test database
         run_psql("postgres", f"DROP DATABASE IF EXISTS {TEST_DB};")
@@ -114,7 +157,9 @@ def main():
 
         print("==================================================")
         print("RESTORE VERIFICATION TEST: PASSED")
+        print(f"Verified Backup: {os.path.basename(backup_file)}")
         print("==================================================")
+        sys.exit(0)
 
     except Exception as e:
         err_msg = str(e)

@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-Tender Pocket — Standalone PostgreSQL Daily Incremental Backup Script
-Tracks CDC deltas from db_change_log, compresses, uploads to dedicated S3 bucket,
-maintains checkpoint state, enforces 30-day retention, and emails alerts on failure.
+Tender Pocket — Standalone PostgreSQL Daily Backup Script
+Takes a complete, restorable PostgreSQL dump via pg_dump, compresses it with gzip,
+verifies integrity and SHA-256 checksum, uploads to dedicated S3 bucket,
+optionally archives a weekly recovery point on Sundays, verifies S3 upload,
+records run state in backup_runs, enforces local retention (14d daily, 8w weekly),
+and alerts on failure.
 """
 
 import os
 import sys
 import fcntl
 import gzip
+import hashlib
 import json
 import smtplib
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -39,6 +43,7 @@ def acquire_lock():
         sys.exit(1)
 
 def run_psql(query):
+    """Executes a query against the PostgreSQL database."""
     cmd = [
         "docker", "exec", "-i", DB_CONTAINER,
         "psql", "-U", DB_USER, "-d", DB_NAME, "-t", "-A", "-c", query
@@ -48,22 +53,115 @@ def run_psql(query):
         raise Exception(f"psql error: {res.stderr.strip()}")
     return res.stdout.strip()
 
-def send_alert_email(stage, error_msg, checkpoint_id):
+def ensure_backup_runs_table():
+    """Ensures the backup_runs table exists for tracking execution state."""
+    create_sql = """
+    CREATE TABLE IF NOT EXISTS backup_runs (
+        id BIGSERIAL PRIMARY KEY,
+        backup_type VARCHAR(20) NOT NULL,
+        started_at TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ,
+        checkpoint_from_id BIGINT DEFAULT 0,
+        checkpoint_to_id BIGINT DEFAULT 0,
+        s3_bucket VARCHAR(255),
+        s3_key VARCHAR(512),
+        status VARCHAR(20) NOT NULL,
+        error_message TEXT,
+        size_bytes BIGINT,
+        record_count BIGINT
+    );
+    """
+    try:
+        run_psql(create_sql)
+    except Exception as e:
+        print(f"[!] Warning: Could not verify/create backup_runs table: {e}")
+
+def calculate_sha256(filepath):
+    """Calculates SHA-256 checksum of a file."""
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for byte_block in iter(lambda: f.read(65536), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
+
+def verify_gzip_file(filepath):
+    """Verifies that a gzip file is valid and readable."""
+    try:
+        with gzip.open(filepath, "rb") as f:
+            while f.read(65536):
+                pass
+        return True
+    except Exception as e:
+        print(f"[❌] Gzip verification failed for {filepath}: {e}")
+        return False
+
+def verify_s3_object(bucket, key, expected_size):
+    """Verifies that an uploaded object exists in S3 and matches expected size."""
+    cmd = ["aws", "s3api", "head-object", "--bucket", bucket, "--key", key]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        raise Exception(f"S3 head-object verification failed for s3://{bucket}/{key}: {res.stderr.strip()}")
+    try:
+        meta = json.loads(res.stdout)
+        remote_size = meta.get("ContentLength", 0)
+        if remote_size != expected_size:
+            raise Exception(f"S3 size mismatch for s3://{bucket}/{key}: expected {expected_size}, got {remote_size}")
+        return True
+    except json.JSONDecodeError:
+        raise Exception(f"Failed to parse S3 head-object response for s3://{bucket}/{key}")
+
+def enforce_local_retention():
+    """Retains daily backups for 14 days and weekly backups for 56 days (8 weeks)."""
+    now = datetime.now()
+    daily_cutoff = now - timedelta(days=14)
+    weekly_cutoff = now - timedelta(days=56)
+
+    daily_base = os.path.join(LOCAL_BACKUP_DIR, "daily")
+    weekly_base = os.path.join(LOCAL_BACKUP_DIR, "weekly")
+
+    # Clean daily backups older than 14 days
+    if os.path.exists(daily_base):
+        for root, dirs, files in os.walk(daily_base):
+            for file in files:
+                if file.startswith("backup-daily-") and file.endswith(".sql.gz"):
+                    file_path = os.path.join(root, file)
+                    try:
+                        mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+                        if mtime < daily_cutoff:
+                            os.remove(file_path)
+                            print(f"[✓] Local retention: Removed aged daily backup {file_path}")
+                    except Exception as e:
+                        print(f"[!] Warning cleaning {file_path}: {e}")
+
+    # Clean weekly backups older than 56 days
+    if os.path.exists(weekly_base):
+        for root, dirs, files in os.walk(weekly_base):
+            for file in files:
+                if file.startswith("backup-weekly-") and file.endswith(".sql.gz"):
+                    file_path = os.path.join(root, file)
+                    try:
+                        mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+                        if mtime < weekly_cutoff:
+                            os.remove(file_path)
+                            print(f"[✓] Local retention: Removed aged weekly backup {file_path}")
+                    except Exception as e:
+                        print(f"[!] Warning cleaning {file_path}: {e}")
+
+def send_alert_email(stage, error_msg):
     subject = "[Tender Pocket] PostgreSQL Backup FAILED"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     body = f"""
 ==================================================
 POSTGRESQL DAILY BACKUP FAILURE ALERT
 ==================================================
 Timestamp: {timestamp}
 Failure Stage: {stage}
-Checkpoint ID: {checkpoint_id}
 Error Details: {error_msg}
 
 RECOMMENDED ACTION:
-Inspect PostgreSQL logs, disk space, and S3 bucket configuration.
-Checkpoint was NOT advanced.
+Inspect PostgreSQL logs, disk space, and S3 bucket permissions.
+Backup run was marked FAILED.
 ==================================================
 """
     print(f"================ EMAIL ALERT ================\n{body}\n=============================================")
@@ -88,122 +186,133 @@ Checkpoint was NOT advanced.
 
 def main():
     lock_fd = acquire_lock()
-    checkpoint_from = 0
+    start_time = datetime.now()
+    now_str = start_time.strftime("%Y-%m-%d-%H%M%S")
+    date_folder = start_time.strftime("%Y/%m")
+
+    # Output file paths
+    filename = f"backup-daily-{now_str}.sql.gz"
+    s3_key = f"backups/postgresql/daily/{date_folder}/{filename}"
+    local_path = os.path.join(LOCAL_BACKUP_DIR, "daily", date_folder, filename)
+    temp_path = local_path + ".tmp"
 
     try:
-        print("[*] Starting PostgreSQL Daily Incremental Backup...")
-
-        # 1. Fetch last successful checkpoint
-        chk_query = "SELECT COALESCE(MAX(checkpoint_to_id), 0) FROM backup_runs WHERE status='SUCCESS' AND backup_type='DAILY';"
-        chk_res = run_psql(chk_query)
-        checkpoint_from = int(chk_res) if chk_res else 0
-
-        # 2. Fetch current max ID in db_change_log
-        max_query = "SELECT COALESCE(MAX(id), 0) FROM db_change_log;"
-        max_res = run_psql(max_query)
-        checkpoint_to = int(max_res) if max_res else 0
-
-        print(f"[*] Checkpoint range: {checkpoint_from} -> {checkpoint_to}")
-
-        if checkpoint_to <= checkpoint_from:
-            print("[✓] No new database changes since last backup checkpoint. Skipping artifact generation.")
-            ins_log = f"INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, status, record_count, s3_key) VALUES ('DAILY', NOW(), NOW(), {checkpoint_from}, {checkpoint_to}, 'SUCCESS', 0, 'NO_CHANGES');"
-            run_psql(ins_log)
-            sys.exit(0)
-
-        # 3. Extract deltas
-        delta_query = f"SELECT json_build_object('id', id, 'table_name', table_name, 'operation', operation, 'record_pk', record_pk, 'row_data', row_data) FROM db_change_log WHERE id > {checkpoint_from} AND id <= {checkpoint_to} ORDER BY id ASC;"
-        delta_raw = run_psql(delta_query)
-        lines = [line for line in delta_raw.split("\n") if line.strip()]
-
-        print(f"[*] Extracting {len(lines)} incremental change records...")
-
-        # 4. Generate SQL delta file
-        now = datetime.now()
-        timestamp_str = now.strftime("%Y-%m-%d-%H%M%S")
-        date_folder = now.strftime("%Y/%m")
-        filename = f"backup-daily-{timestamp_str}.sql.gz"
-        s3_key = f"backups/postgresql/daily/{date_folder}/{filename}"
-        local_path = os.path.join(LOCAL_BACKUP_DIR, s3_key)
+        print(f"[*] Starting PostgreSQL Full Daily Backup for Tender Pocket ({now_str})...")
+        ensure_backup_runs_table()
 
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
-        sql_lines = [
-            "-- TENDER POCKET DAILY INCREMENTAL BACKUP",
-            f"-- Range: {checkpoint_from} to {checkpoint_to}",
-            f"-- Count: {len(lines)}",
-            f"-- Date: {now.isoformat()}",
-            "BEGIN;\n"
+        # 1. Execute full pg_dump
+        dump_cmd = [
+            "docker", "exec", "-i", DB_CONTAINER,
+            "pg_dump", "-U", DB_USER, "-d", DB_NAME,
+            "--clean", "--if-exists", "--no-owner", "--no-privileges"
         ]
+        print(f"[*] Executing pg_dump on container '{DB_CONTAINER}'...")
+        dump_proc = subprocess.run(dump_cmd, capture_output=True)
 
-        for line in lines:
-            entry = json.loads(line)
-            t_name = entry["table_name"]
-            op = entry["operation"]
-            pk = entry["record_pk"]
-            row = entry.get("row_data")
+        if dump_proc.returncode != 0:
+            err_output = dump_proc.stderr.decode("utf-8", errors="ignore").strip()
+            raise Exception(f"pg_dump execution failed with returncode {dump_proc.returncode}: {err_output}")
 
-            if op == "DELETE":
-                pk_col = "username" if t_name in ("users", "user_signatures") else "id"
-                sql_lines.append(f"DELETE FROM {t_name} WHERE {pk_col} = '{pk}';")
-            elif op in ("INSERT", "UPDATE") and row:
-                cols = list(row.keys())
-                vals = []
-                for c in cols:
-                    v = row[c]
-                    if v is None:
-                        vals.append("NULL")
-                    elif isinstance(v, (int, float, bool)):
-                        vals.append(str(v))
-                    else:
-                        vals.append("'" + str(v).replace("'", "''") + "'")
-                
-                pk_col = "username" if t_name in ("users", "user_signatures") else "id"
-                set_clauses = [f"{c} = EXCLUDED.{c}" for c in cols if c != pk_col]
-                set_str = ", ".join(set_clauses) if set_clauses else f"{pk_col} = EXCLUDED.{pk_col}"
+        raw_sql = dump_proc.stdout
+        if not raw_sql or len(raw_sql) < 100:
+            raise Exception("pg_dump generated empty or suspiciously small output (< 100 bytes)")
 
-                upsert = f"INSERT INTO {t_name} ({', '.join(cols)}) VALUES ({', '.join(vals)}) ON CONFLICT ({pk_col}) DO UPDATE SET {set_str};"
-                sql_lines.append(upsert)
-
-        sql_lines.append("\nCOMMIT;")
-        sql_content = "\n".join(sql_lines).encode("utf-8")
-
-        # Compress
-        compressed = gzip.compress(sql_content)
-        with open(local_path, "wb") as f:
+        # 2. Compress with gzip and write to temp file
+        print(f"[*] Compressing {len(raw_sql)} bytes of SQL dump with gzip...")
+        compressed = gzip.compress(raw_sql, compresslevel=9)
+        with open(temp_path, "wb") as f:
             f.write(compressed)
 
-        print(f"[✓] Compressed daily backup artifact created at {local_path} ({len(compressed)} bytes)")
+        # 3. Verify gzip integrity
+        if not verify_gzip_file(temp_path):
+            raise Exception("Generated backup failed gzip integrity verification")
 
-        # 5. Upload to S3
+        # Atomically rename to final local path
+        os.replace(temp_path, local_path)
+        file_size = os.path.getsize(local_path)
+        sha256_checksum = calculate_sha256(local_path)
+
+        print(f"[✓] Daily backup created successfully: {local_path}")
+        print(f"    Size: {file_size} bytes ({file_size / 1024:.2f} KB)")
+        print(f"    SHA-256: {sha256_checksum}")
+
+        # 4. Upload to S3
+        print(f"[*] Uploading to s3://{S3_BUCKET}/{s3_key}...")
         aws_cmd = ["aws", "s3", "cp", local_path, f"s3://{S3_BUCKET}/{s3_key}"]
         upload_proc = subprocess.run(aws_cmd, capture_output=True, text=True)
 
         if upload_proc.returncode != 0:
-            print(f"[!] S3 upload warning (falling back to local retention): {upload_proc.stderr.strip()}")
+            raise Exception(f"AWS S3 upload failed (code {upload_proc.returncode}): {upload_proc.stderr.strip()}")
 
-        # 6. Verify Upload / File integrity
-        if not os.path.exists(local_path) or os.path.getsize(local_path) != len(compressed):
-            raise Exception(f"Upload verification failed for {local_path}")
+        # 5. Verify upload in S3 via head-object
+        print("[*] Verifying S3 object existence and size...")
+        verify_s3_object(S3_BUCKET, s3_key, file_size)
+        print(f"[✓] S3 upload verified: s3://{S3_BUCKET}/{s3_key} ({file_size} bytes)")
 
-        # 7. Update checkpoint in DB ONLY AFTER SUCCESSFUL UPLOAD
-        ins_success = f"INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, size_bytes, record_count) VALUES ('DAILY', NOW(), NOW(), {checkpoint_from}, {checkpoint_to}, '{S3_BUCKET}', '{s3_key}', 'SUCCESS', {len(compressed)}, {len(lines)});"
+        # 6. Weekly recovery point: On Sundays (weekday == 6), archive a weekly copy
+        # This reuses the exact verified daily dump without generating an extra database dump.
+        is_sunday = start_time.weekday() == 6
+        force_weekly = "--weekly" in sys.argv
+        if is_sunday or force_weekly:
+            week_date = start_time.strftime("%Y-%m-%d")
+            weekly_year = start_time.strftime("%Y")
+            weekly_filename = f"backup-weekly-{week_date}.sql.gz"
+            weekly_s3_key = f"backups/postgresql/weekly/{weekly_year}/{weekly_filename}"
+            weekly_local_path = os.path.join(LOCAL_BACKUP_DIR, "weekly", weekly_year, weekly_filename)
+
+            os.makedirs(os.path.dirname(weekly_local_path), exist_ok=True)
+            with open(local_path, "rb") as src, open(weekly_local_path, "wb") as dst:
+                dst.write(src.read())
+
+            print(f"[*] Archiving weekly recovery point to s3://{S3_BUCKET}/{weekly_s3_key}...")
+            weekly_upload = subprocess.run(["aws", "s3", "cp", weekly_local_path, f"s3://{S3_BUCKET}/{weekly_s3_key}"], capture_output=True, text=True)
+            if weekly_upload.returncode == 0:
+                verify_s3_object(S3_BUCKET, weekly_s3_key, file_size)
+                print(f"[✓] Weekly recovery point archived: s3://{S3_BUCKET}/{weekly_s3_key}")
+                run_psql(f"INSERT INTO backup_runs (backup_type, started_at, completed_at, s3_bucket, s3_key, status, size_bytes) VALUES ('WEEKLY', NOW(), NOW(), '{S3_BUCKET}', '{weekly_s3_key}', 'SUCCESS', {file_size});")
+            else:
+                print(f"[!] Warning: Weekly copy upload failed: {weekly_upload.stderr.strip()}")
+
+        # 7. Record SUCCESS in backup_runs
+        ins_success = f"""
+        INSERT INTO backup_runs (backup_type, started_at, completed_at, s3_bucket, s3_key, status, size_bytes, record_count)
+        VALUES ('DAILY', '{start_time.isoformat()}', NOW(), '{S3_BUCKET}', '{s3_key}', 'SUCCESS', {file_size}, 0);
+        """
         run_psql(ins_success)
 
-        print(f"[✓] DAILY BACKUP SUCCESSFUL. Advanced checkpoint to {checkpoint_to}")
+        # 8. Local retention enforcement (14 days daily, 8 weeks weekly)
+        enforce_local_retention()
+
+        print(f"==================================================")
+        print(f"[✓] DAILY BACKUP COMPLETED & VERIFIED: {filename}")
+        print(f"    S3 Key : {s3_key}")
+        print(f"    SHA-256: {sha256_checksum}")
+        print(f"==================================================")
+        sys.exit(0)
 
     except Exception as e:
         err_msg = str(e)
         print(f"[❌] DAILY BACKUP FAILED: {err_msg}")
-        
-        # Log failure in backup_runs WITHOUT advancing checkpoint
+
+        # Clean up temporary file if left behind
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
         try:
-            ins_fail = f"INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, status, error_message) VALUES ('DAILY', NOW(), NOW(), {checkpoint_from}, {checkpoint_from}, 'FAILED', '{err_msg.replace('\'', '\'\'')}');"
+            ins_fail = f"""
+            INSERT INTO backup_runs (backup_type, started_at, completed_at, status, error_message)
+            VALUES ('DAILY', '{start_time.isoformat()}', NOW(), 'FAILED', '{err_msg.replace("'", "''")}');
+            """
             run_psql(ins_fail)
         except Exception:
             pass
 
-        send_alert_email("DAILY_BACKUP_EXECUTION", err_msg, checkpoint_from)
+        send_alert_email("DAILY_BACKUP_EXECUTION", err_msg)
         sys.exit(1)
 
 if __name__ == "__main__":
