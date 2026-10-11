@@ -32,7 +32,6 @@ import {
   ArrowUpDown,
   ClipboardCheck,
   TrendingUp,
-  RefreshCw,
   Layers,
   SlidersHorizontal
 } from 'lucide-react';
@@ -49,6 +48,8 @@ interface StatusDashboardProps {
   showToast: (message: string, type: 'success' | 'error') => void;
   handleRefresh: () => Promise<void>;
   refreshing: boolean;
+  categoryFilter?: 'ALL' | 'OVERVIEW' | 'PIPELINE' | 'ACTION_REQUIRED';
+  executiveFilter?: string;
 }
 
 export default function StatusDashboard({
@@ -60,12 +61,20 @@ export default function StatusDashboard({
   fetchWithAuth,
   showToast,
   handleRefresh,
-  refreshing
+  refreshing,
+  categoryFilter: propCategoryFilter,
+  executiveFilter: propExecutiveFilter
 }: StatusDashboardProps) {
   // Navigation & Filtering States
   const [selectedCardKey, setSelectedCardKey] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'OVERVIEW' | 'PIPELINE' | 'ACTION_REQUIRED'>('ALL');
-  const [executiveFilter, setExecutiveFilter] = useState<string>('');
+  const [internalCategoryFilter, setInternalCategoryFilter] = useState<'ALL' | 'OVERVIEW' | 'PIPELINE' | 'ACTION_REQUIRED'>('ALL');
+  const [internalExecutiveFilter, setInternalExecutiveFilter] = useState<string>('');
+
+  const categoryFilter = propCategoryFilter ?? internalCategoryFilter;
+  const executiveFilter = propExecutiveFilter ?? internalExecutiveFilter;
+  const setCategoryFilter = setInternalCategoryFilter;
+  const setExecutiveFilter = setInternalExecutiveFilter;
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [urgencyFilter, setUrgencyFilter] = useState<'' | 'today' | '3days' | '7days' | 'high_value'>('');
   const [sortBy, setSortBy] = useState<'due_date' | 'estimated_cost' | 'scraped_at'>('due_date');
@@ -210,8 +219,8 @@ export default function StatusDashboard({
         trend: 'new bids today',
         subText: 'Intake: Decision needed',
         icon: Zap,
-        iconColor: '#f59e0b',
-        bgColor: 'rgba(245, 158, 11, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.flags.isNewToday || i.flags.isNew
       },
       {
@@ -222,8 +231,8 @@ export default function StatusDashboard({
         trend: 'within 7 days',
         subText: 'Urgent deadline approaching',
         icon: Clock,
-        iconColor: '#f97316',
-        bgColor: 'rgba(249, 115, 22, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.flags.isClosingSoon
       },
       {
@@ -234,9 +243,9 @@ export default function StatusDashboard({
         trend: 'bids need attention',
         subText: 'Waiting on immediate action',
         icon: AlertTriangle,
-        iconColor: '#ef4444',
-        bgColor: 'rgba(239, 68, 68, 0.1)',
-        isAlert: true,
+        iconColor: actionRequiredCount > 0 ? '#ef4444' : '#6366f1',
+        bgColor: actionRequiredCount > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+        isAlert: actionRequiredCount > 0,
         filterFn: (i: any) => i.flags.needsAction
       },
 
@@ -249,8 +258,8 @@ export default function StatusDashboard({
         trend: 'Stage 1 of 8',
         subText: 'Technical spec clearance',
         icon: ShieldCheck,
-        iconColor: '#8b5cf6',
-        bgColor: 'rgba(139, 92, 246, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.stage.stageNumber === 1
       },
       {
@@ -261,8 +270,8 @@ export default function StatusDashboard({
         trend: 'Stage 2 of 8',
         subText: 'OEM purchase quote',
         icon: Tag,
-        iconColor: '#ec4899',
-        bgColor: 'rgba(236, 72, 153, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.stage.stageNumber === 2
       },
       {
@@ -273,8 +282,8 @@ export default function StatusDashboard({
         trend: 'Stage 3 of 8',
         subText: 'Final margin price setting',
         icon: Calculator,
-        iconColor: '#f59e0b',
-        bgColor: 'rgba(245, 158, 11, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.stage.stageNumber === 3
       },
       {
@@ -285,8 +294,8 @@ export default function StatusDashboard({
         trend: 'Stage 4 of 8',
         subText: 'Bid documents preparation',
         icon: FileText,
-        iconColor: '#06b6d4',
-        bgColor: 'rgba(6, 182, 212, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.stage.stageNumber === 4
       },
       {
@@ -297,8 +306,8 @@ export default function StatusDashboard({
         trend: 'Stage 5 of 8',
         subText: 'Document review & approval',
         icon: CheckCircle2,
-        iconColor: '#10b981',
-        bgColor: 'rgba(16, 185, 129, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.stage.stageNumber === 5
       },
       {
@@ -309,8 +318,8 @@ export default function StatusDashboard({
         trend: 'Stage 6 of 8',
         subText: 'EMD fee approval & payment',
         icon: CreditCard,
-        iconColor: '#d97706',
-        bgColor: 'rgba(217, 119, 6, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.stage.stageNumber === 6
       },
       {
@@ -321,8 +330,8 @@ export default function StatusDashboard({
         trend: 'Stage 7 of 8',
         subText: 'Final filing & audit',
         icon: UploadCloud,
-        iconColor: '#3b82f6',
-        bgColor: 'rgba(59, 130, 246, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.stage.stageNumber === 7
       },
       {
@@ -333,8 +342,8 @@ export default function StatusDashboard({
         trend: 'Stage 8 of 8',
         subText: 'Under evaluation, Won & Lost',
         icon: Trophy,
-        iconColor: '#a855f7',
-        bgColor: 'rgba(168, 85, 247, 0.1)',
+        iconColor: '#6366f1',
+        bgColor: 'rgba(99, 102, 241, 0.1)',
         filterFn: (i: any) => i.stage.stageNumber === 8
       }
     ];
@@ -454,6 +463,7 @@ export default function StatusDashboard({
 
   const renderCard = (card: typeof stageCards[0]) => {
     const isSelected = selectedCardKey === card.key;
+    const isActionRequiredZero = card.key === 'ACTION_REQUIRED' && card.count === 0;
     const Icon = card.icon;
 
     return (
@@ -465,15 +475,17 @@ export default function StatusDashboard({
           borderRadius: '14px',
           padding: '18px 20px',
           border: isSelected
-            ? `2px solid ${card.iconColor}`
+            ? (isActionRequiredZero ? '2px solid #10b981' : `2px solid ${card.iconColor}`)
+            : isActionRequiredZero
+            ? '1.5px solid #10b981'
             : card.isAlert
             ? '1.5px solid #f87171'
             : '1px solid var(--border-color)',
           boxShadow: isSelected
-            ? `0 0 14px ${card.bgColor}`
+            ? (isActionRequiredZero ? '0 0 14px rgba(16, 185, 129, 0.15)' : `0 0 14px ${card.bgColor}`)
             : 'var(--shadow-sm)',
           background: card.isAlert && !isSelected
-            ? 'rgba(239, 68, 68, 0.035)'
+            ? (isActionRequiredZero ? 'rgba(16, 185, 129, 0.035)' : 'rgba(239, 68, 68, 0.035)')
             : 'var(--bg-card)',
           display: 'flex',
           alignItems: 'center',
@@ -489,7 +501,9 @@ export default function StatusDashboard({
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = isSelected ? `0 0 14px ${card.bgColor}` : 'var(--shadow-sm)';
+          e.currentTarget.style.boxShadow = isSelected
+            ? (isActionRequiredZero ? '0 0 14px rgba(16, 185, 129, 0.15)' : `0 0 14px ${card.bgColor}`)
+            : 'var(--shadow-sm)';
         }}
       >
         {/* Selected indicator pin */}
@@ -500,7 +514,7 @@ export default function StatusDashboard({
             left: 0,
             right: 0,
             height: '3px',
-            backgroundColor: card.iconColor
+            backgroundColor: isActionRequiredZero ? '#10b981' : card.iconColor
           }} />
         )}
 
@@ -529,89 +543,14 @@ export default function StatusDashboard({
             <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--text-primary)', lineHeight: '1.2', margin: '2px 0' }}>
               {card.count}
             </div>
-            <span style={{ fontSize: '11px', color: card.iconColor, fontWeight: '600', display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <span style={{ fontSize: '12px' }}>↑</span> {card.trend}
-            </span>
           </div>
-        </div>
-
-        {/* Right Side: Chevron */}
-        <div style={{ color: isSelected ? card.iconColor : 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-          <ChevronRight size={18} style={{ transform: isSelected ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s ease' }} />
         </div>
       </div>
     );
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-      
-      {/* ── TOP CONTROLS & HEADER ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-primary)', margin: '0 0 4px 0', letterSpacing: '-0.3px' }}>
-            Tender Status & Overview
-          </h2>
-          <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Track and manage all your tenders at a glance across every pipeline stage
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          {/* Executive Switcher for Admin & MIS Team */}
-          {(currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team') && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <select
-                className="filter-select"
-                value={executiveFilter}
-                onChange={(e) => setExecutiveFilter(e.target.value)}
-                style={{
-                  minWidth: '170px',
-                  background: 'var(--bg-card)',
-                  borderColor: executiveFilter ? 'var(--primary)' : 'var(--border-color)',
-                  fontWeight: '600',
-                  fontSize: '12.5px'
-                }}
-              >
-                <option value="">All Executives</option>
-                {executives.map(exec => (
-                  <option key={exec} value={exec}>{exec}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Category Filter Dropdown */}
-          <select
-            className="filter-select"
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value as any)}
-            style={{
-              minWidth: '160px',
-              background: 'var(--bg-card)',
-              fontWeight: '600',
-              fontSize: '12.5px'
-            }}
-          >
-            <option value="ALL">All Cards (12)</option>
-            <option value="OVERVIEW">Overview (4 Cards)</option>
-            <option value="PIPELINE">8 Pipeline Stages</option>
-            <option value="ACTION_REQUIRED">Action Required Only</option>
-          </select>
-
-          {/* Refresh Button */}
-          <button
-            className="btn btn-secondary btn-icon-only"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            title="Refresh status data"
-            style={{ padding: '9px 12px' }}
-          >
-            <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
-          </button>
-        </div>
-      </div>
-
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
       {/* ── OVERVIEW (4 CARDS) & 8 PIPELINE STAGE CARDS ── */}
       {categoryFilter === 'ALL' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
