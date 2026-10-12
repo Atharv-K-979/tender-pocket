@@ -476,23 +476,23 @@ public class ApprovalController {
                             "This approval request has already been actioned (status: " + approvalReq.getStatus() + ")"));
         }
 
-        // Ownership safeguard: Non-Admin users can only review requests assigned to them or their team queue
+        // Ownership safeguard: Non-Admin users can only review requests assigned to them or their unassigned team queue
         if (!"Admin".equalsIgnoreCase(role)) {
             String assigned = approvalReq.getAssignedTo();
-            boolean isAssignedToUser = assigned == null || (username != null && assigned.equalsIgnoreCase(username));
+            boolean isAssignedToUser = username != null && assigned != null && assigned.equalsIgnoreCase(username);
 
             boolean isTeamQueue = false;
             if ("MIS Team".equalsIgnoreCase(role) || "MIS Executive".equalsIgnoreCase(role)) {
-                isTeamQueue = assigned == null || "misteam".equalsIgnoreCase(assigned) || "mis team".equalsIgnoreCase(assigned);
+                isTeamQueue = assigned == null || assigned.isBlank() || "misteam".equalsIgnoreCase(assigned) || "mis team".equalsIgnoreCase(assigned);
             } else if ("Clearance Team".equalsIgnoreCase(role) || "Specification Team".equalsIgnoreCase(role)) {
-                isTeamQueue = assigned == null || "clearance".equalsIgnoreCase(assigned) || "clearance team".equalsIgnoreCase(assigned) || "specification team".equalsIgnoreCase(assigned);
+                isTeamQueue = assigned == null || assigned.isBlank() || "clearance".equalsIgnoreCase(assigned) || "clearance team".equalsIgnoreCase(assigned) || "specification team".equalsIgnoreCase(assigned);
             } else if ("TPC Pricing Team".equalsIgnoreCase(role) || "TPC Team".equalsIgnoreCase(role)) {
-                isTeamQueue = assigned == null || "tpc".equalsIgnoreCase(assigned) || "tpc team".equalsIgnoreCase(assigned) || "tpc pricing team".equalsIgnoreCase(assigned);
+                isTeamQueue = assigned == null || assigned.isBlank() || "tpc".equalsIgnoreCase(assigned) || "tpc team".equalsIgnoreCase(assigned) || "tpc pricing team".equalsIgnoreCase(assigned);
             }
 
             if (!isAssignedToUser && !isTeamQueue) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("success", false, "error", "Access denied: You can only review approval requests assigned to you or your team queue."));
+                        .body(Map.of("success", false, "error", "Access denied: This approval request is assigned to " + assigned + ". You have view-only access."));
             }
 
             // Stage-level authorization check
@@ -564,11 +564,14 @@ public class ApprovalController {
                     List<TenderApprovalRequest> existingOutcome = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.WIN_LOSS_PENDING);
                     boolean hasPendingOutcome = existingOutcome.stream().anyMatch(r -> "PENDING".equalsIgnoreCase(r.getStatus()));
                     if (!hasPendingOutcome) {
+                        String outcomeAssignee = tender.getAssignedMisMemberSubmission() != null && !tender.getAssignedMisMemberSubmission().isBlank()
+                                ? tender.getAssignedMisMemberSubmission()
+                                : (tender.getAssignedMisMember() != null && !tender.getAssignedMisMember().isBlank() ? tender.getAssignedMisMember() : "misteam");
                         TenderApprovalRequest outcomeReq = new TenderApprovalRequest(
                                 tender.getId(),
                                 TenderWorkflowStage.WIN_LOSS_PENDING,
                                 tender.getMisExecutive() != null ? tender.getMisExecutive() : username,
-                                tender.getAssignedMisMember() != null ? tender.getAssignedMisMember() : "misteam",
+                                outcomeAssignee,
                                 "PENDING"
                         );
                         approvalRepository.save(outcomeReq);

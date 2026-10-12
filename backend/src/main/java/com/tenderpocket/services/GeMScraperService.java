@@ -159,11 +159,11 @@ public class GeMScraperService {
 
                     if (bId == null || bidNo == null) continue;
 
-                    // Deduplication check. With newest-first ordering, a run of already-known bids
-                    // means we have reached what the previous sync imported, so there is nothing
-                    // older worth paging for.
-                    Optional<Tender> existing = tenderRepository.findById(bId);
-                    if (existing.isPresent()) {
+                    // Deduplication check: if tender already exists in the system (by ID, refNo, or sourceId), do not add it again
+                    boolean alreadyExists = tenderRepository.existsById(bId)
+                            || tenderRepository.existsByRefNo(bidNo)
+                            || tenderRepository.existsBySourceId(bidNo);
+                    if (alreadyExists) {
                         consecutiveKnown++;
                         if (consecutiveKnown >= stopAfterKnown) {
                             System.out.println(String.format(
@@ -179,10 +179,39 @@ public class GeMScraperService {
                     String start = getJsonString(doc, "final_start_date_sort");
                     String formattedStartDate = (start != null && start.contains("T")) ? start.split("T")[0] : "";
 
-                    // Date filter
-                    String todayStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-                    if (!allDates && !formattedStartDate.equals(todayStr)) {
-                        continue;
+                    // Date filter: Fetch tenders published in the last 2 days (India Standard Time)
+                    // With newest-first ordering, once a bid's start date is older than the last 2 days cutoff, stop paging for this keyword
+                    if (!allDates) {
+                        LocalDate todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate();
+                        LocalDate cutoffDate = todayIST.minusDays(1); // Last 2 days: today and yesterday
+                        LocalDate bidStartDate = null;
+                        if (start != null && !start.isBlank()) {
+                            try {
+                                if (start.endsWith("Z")) {
+                                    bidStartDate = java.time.Instant.parse(start).atZone(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate();
+                                } else {
+                                    bidStartDate = LocalDate.parse(formattedStartDate);
+                                }
+                            } catch (Exception ignored) {
+                                try { bidStartDate = LocalDate.parse(formattedStartDate); } catch (Exception ignored2) {}
+                            }
+                        }
+
+                        if (bidStartDate != null) {
+                            if (bidStartDate.isBefore(cutoffDate)) {
+                                System.out.println(String.format(
+                                        "  - reached bid %s dated %s prior to last 2 days cutoff (%s) for \"%s\"; stopping paging.",
+                                        bidNo, formattedStartDate, cutoffDate, keyword));
+                                caughtUp = true;
+                                break;
+                            }
+                        } else if (!formattedStartDate.isEmpty() && formattedStartDate.compareTo(cutoffDate.toString()) < 0) {
+                            System.out.println(String.format(
+                                    "  - reached bid %s dated %s prior to last 2 days cutoff (%s) for \"%s\"; stopping paging.",
+                                    bidNo, formattedStartDate, cutoffDate, keyword));
+                            caughtUp = true;
+                            break;
+                        }
                     }
 
                     String items = getJsonString(doc, "b_category_name");

@@ -22,6 +22,9 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
     Page<Tender> findByLocation(String location, Pageable pageable);
     Page<Tender> findBySource(String source, Pageable pageable);
 
+    boolean existsByRefNo(String refNo);
+    boolean existsBySourceId(String sourceId);
+
     List<Tender> findByAssignedMisMemberSpec(String assignedMisMemberSpec);
 
     @Query("SELECT DISTINCT t.location FROM Tender t WHERE t.location IS NOT NULL AND t.location != '' ORDER BY t.location")

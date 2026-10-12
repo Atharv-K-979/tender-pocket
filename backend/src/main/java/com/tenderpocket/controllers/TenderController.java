@@ -120,7 +120,7 @@ public class TenderController {
             System.out.println("[API Trigger] Initiating manual GeM sync in background...");
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try {
-                    geMScraperService.syncTenders(true, Collections.emptyList());
+                    geMScraperService.syncTenders(false, Collections.emptyList());
                 } catch (Exception e) {
                     System.err.println("Background manual GeM sync failed: " + e.getMessage());
                 }
@@ -565,6 +565,45 @@ public class TenderController {
             String val = (String) (body.containsKey("assigned_mis_member") ? body.get("assigned_mis_member") : body.get("assignedMisMember"));
             tender.setAssignedMisMember(val);
             logDetails.add("assigned MIS member updated to '" + val + "'");
+            if (tender.getAssignedMisMemberDocs() == null || tender.getAssignedMisMemberDocs().isBlank()) {
+                syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.DOC_VERIFICATION, val);
+            }
+            if (tender.getAssignedMisMemberEmd() == null || tender.getAssignedMisMemberEmd().isBlank()) {
+                syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.PAYMENT_APPROVAL, val);
+            }
+            if (tender.getAssignedMisMemberSubmission() == null || tender.getAssignedMisMemberSubmission().isBlank()) {
+                syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.SUBMISSION_PENDING, val);
+                syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.WIN_LOSS_PENDING, val);
+            }
+        }
+
+        if (body.containsKey("assigned_mis_member_docs") || body.containsKey("assignedMisMemberDocs")) {
+            String val = (String) (body.containsKey("assigned_mis_member_docs") ? body.get("assigned_mis_member_docs") : body.get("assignedMisMemberDocs"));
+            tender.setAssignedMisMemberDocs(val);
+            logDetails.add("assigned MIS docs member updated to '" + val + "'");
+            syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.DOC_VERIFICATION, val);
+        }
+
+        if (body.containsKey("assigned_mis_member_emd") || body.containsKey("assignedMisMemberEmd")) {
+            String val = (String) (body.containsKey("assigned_mis_member_emd") ? body.get("assigned_mis_member_emd") : body.get("assignedMisMemberEmd"));
+            tender.setAssignedMisMemberEmd(val);
+            logDetails.add("assigned MIS EMD member updated to '" + val + "'");
+            syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.PAYMENT_APPROVAL, val);
+        }
+
+        if (body.containsKey("assigned_mis_member_submission") || body.containsKey("assignedMisMemberSubmission")) {
+            String val = (String) (body.containsKey("assigned_mis_member_submission") ? body.get("assigned_mis_member_submission") : body.get("assignedMisMemberSubmission"));
+            tender.setAssignedMisMemberSubmission(val);
+            logDetails.add("assigned MIS submission member updated to '" + val + "'");
+            syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.SUBMISSION_PENDING, val);
+            syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.WIN_LOSS_PENDING, val);
+        }
+
+        if (body.containsKey("assigned_mis_member_spec") || body.containsKey("assignedMisMemberSpec")) {
+            String val = (String) (body.containsKey("assigned_mis_member_spec") ? body.get("assigned_mis_member_spec") : body.get("assignedMisMemberSpec"));
+            tender.setAssignedMisMemberSpec(val);
+            logDetails.add("assigned Specification Team member updated to '" + val + "'");
+            syncPendingApprovalAssignee(tender.getId(), TenderWorkflowStage.SPEC_CLEARANCE, val);
         }
 
         if (body.containsKey("emd_amount_actual") || body.containsKey("emdAmountActual")) {
@@ -600,30 +639,69 @@ public class TenderController {
 
         if (body.containsKey("payment_status") || body.containsKey("paymentStatus")) {
             String val = (String) (body.containsKey("payment_status") ? body.get("payment_status") : body.get("paymentStatus"));
+            if (List.of("Approved", "Rejected").contains(val)) {
+                String targetAssignee = tender.getAssignedMisMemberEmd() != null && !tender.getAssignedMisMemberEmd().isBlank()
+                        ? tender.getAssignedMisMemberEmd() : tender.getAssignedMisMember();
+                if (!isUserAuthorizedForStage(userRole, username, targetAssignee, "misteam")) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "error", "Access denied: EMD payment approval is assigned to " + targetAssignee + ". You have view-only access."));
+                }
+            }
             tender.setPaymentStatus(val);
             logDetails.add("payment status updated to '" + val + "'");
         }
 
         if (body.containsKey("verification_status") || body.containsKey("verificationStatus")) {
             String val = (String) (body.containsKey("verification_status") ? body.get("verification_status") : body.get("verificationStatus"));
+            if (List.of("Approved", "Rejected").contains(val)) {
+                String targetAssignee = tender.getAssignedMisMemberDocs() != null && !tender.getAssignedMisMemberDocs().isBlank()
+                        ? tender.getAssignedMisMemberDocs() : tender.getAssignedMisMember();
+                if (!isUserAuthorizedForStage(userRole, username, targetAssignee, "misteam")) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "error", "Access denied: Document verification is assigned to " + targetAssignee + ". You have view-only access."));
+                }
+            }
             tender.setVerificationStatus(val);
             logDetails.add("verification status updated to '" + val + "'");
         }
 
         if (body.containsKey("submission_status") || body.containsKey("submissionStatus")) {
             String val = (String) (body.containsKey("submission_status") ? body.get("submission_status") : body.get("submissionStatus"));
+            if (List.of("Approved", "Rejected").contains(val)) {
+                String targetAssignee = tender.getAssignedMisMemberSubmission() != null && !tender.getAssignedMisMemberSubmission().isBlank()
+                        ? tender.getAssignedMisMemberSubmission() : tender.getAssignedMisMember();
+                if (!isUserAuthorizedForStage(userRole, username, targetAssignee, "misteam")) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "error", "Access denied: Tender submission approval is assigned to " + targetAssignee + ". You have view-only access."));
+                }
+            }
             tender.setSubmissionStatus(val);
             logDetails.add("submission status updated to '" + val + "'");
         }
 
         if (body.containsKey("outcome_status") || body.containsKey("outcomeStatus")) {
             String val = (String) (body.containsKey("outcome_status") ? body.get("outcome_status") : body.get("outcomeStatus"));
+            if (List.of("Won", "Lost").contains(val)) {
+                String targetAssignee = tender.getAssignedMisMemberSubmission() != null && !tender.getAssignedMisMemberSubmission().isBlank()
+                        ? tender.getAssignedMisMemberSubmission() : tender.getAssignedMisMember();
+                if (!isUserAuthorizedForStage(userRole, username, targetAssignee, "misteam")) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "error", "Access denied: Final outcome is assigned to " + targetAssignee + ". You have view-only access."));
+                }
+            }
             tender.setOutcomeStatus(val);
             logDetails.add("outcome status updated to '" + val + "'");
         }
 
         if (body.containsKey("spec_verification_status") || body.containsKey("specVerificationStatus")) {
             String val = (String) (body.containsKey("spec_verification_status") ? body.get("spec_verification_status") : body.get("specVerificationStatus"));
+            if (List.of("Approved", "Rejected").contains(val)) {
+                String targetAssignee = tender.getAssignedMisMemberSpec();
+                if (!isUserAuthorizedForStage(userRole, username, targetAssignee, "clearance")) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "error", "Access denied: Technical specification review is assigned to " + targetAssignee + ". You have view-only access."));
+                }
+            }
             tender.setSpecVerificationStatus(val);
             logDetails.add("spec verification status updated to '" + val + "'");
 
@@ -644,12 +722,6 @@ public class TenderController {
                     }
                 } catch (Exception e) {}
             }
-        }
-
-        if (body.containsKey("assigned_mis_member_spec") || body.containsKey("assignedMisMemberSpec")) {
-            String val = (String) (body.containsKey("assigned_mis_member_spec") ? body.get("assigned_mis_member_spec") : body.get("assignedMisMemberSpec"));
-            tender.setAssignedMisMemberSpec(val);
-            logDetails.add("assigned Specification Team member updated to '" + val + "'");
         }
 
         tender.setAiDetailsSummary(null);
@@ -1339,5 +1411,29 @@ public class TenderController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    private boolean isUserAuthorizedForStage(String userRole, String username, String assignedMember, String teamQueueName) {
+        if ("Admin".equalsIgnoreCase(userRole)) return true;
+        if (username == null || username.isBlank()) return false;
+        if (assignedMember == null || assignedMember.isBlank() || assignedMember.equalsIgnoreCase(teamQueueName)
+                || assignedMember.toLowerCase().contains("team")) {
+            return true;
+        }
+        return assignedMember.equalsIgnoreCase(username);
+    }
+
+    private void syncPendingApprovalAssignee(String tenderId, TenderWorkflowStage stage, String assignee) {
+        if (tenderId == null || stage == null) return;
+        try {
+            List<TenderApprovalRequest> requests = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tenderId, stage);
+            for (TenderApprovalRequest req : requests) {
+                if ("PENDING".equalsIgnoreCase(req.getStatus())) {
+                    req.setAssignedTo(assignee != null && !assignee.isBlank() ? assignee : null);
+                    req.setUpdatedAt(java.time.LocalDateTime.now());
+                    approvalRepository.save(req);
+                }
+            }
+        } catch (Exception ignored) {}
     }
 }

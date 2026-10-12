@@ -513,14 +513,18 @@ public class WorkflowController {
             }
         }
 
+        String assignedSub = tender.getAssignedMisMemberSubmission() != null && !tender.getAssignedMisMemberSubmission().isBlank()
+                ? tender.getAssignedMisMemberSubmission()
+                : (tender.getAssignedMisMember() != null && !tender.getAssignedMisMember().isBlank() ? tender.getAssignedMisMember() : "misteam");
+
         if (targetReq != null) {
             targetReq.setRequestedBy(username);
-            targetReq.setAssignedTo(tender.getAssignedMisExecutive());
+            targetReq.setAssignedTo(assignedSub);
             targetReq.setStatus("PENDING");
             targetReq.setUpdatedAt(java.time.LocalDateTime.now());
             approvalRepository.save(targetReq);
         } else {
-            TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.SUBMISSION_PENDING, username, tender.getAssignedMisExecutive(), "PENDING");
+            TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.SUBMISSION_PENDING, username, assignedSub, "PENDING");
             approvalRepository.save(req);
         }
 
@@ -566,15 +570,19 @@ public class WorkflowController {
             }
         }
 
+        String assignedSub = tender.getAssignedMisMemberSubmission() != null && !tender.getAssignedMisMemberSubmission().isBlank()
+                ? tender.getAssignedMisMemberSubmission()
+                : (tender.getAssignedMisMember() != null && !tender.getAssignedMisMember().isBlank() ? tender.getAssignedMisMember() : "misteam");
+
         if (targetReq != null) {
             targetReq.setRequestedBy(username);
-            targetReq.setAssignedTo(tender.getAssignedMisExecutive());
+            targetReq.setAssignedTo(assignedSub);
             targetReq.setLossReasonExecutive(lossReason);
             targetReq.setStatus("PENDING");
             targetReq.setUpdatedAt(java.time.LocalDateTime.now());
             approvalRepository.save(targetReq);
         } else {
-            TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.WIN_LOSS_PENDING, username, tender.getAssignedMisExecutive(), "PENDING");
+            TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.WIN_LOSS_PENDING, username, assignedSub, "PENDING");
             req.setLossReasonExecutive(lossReason);
             approvalRepository.save(req);
         }
@@ -618,11 +626,17 @@ public class WorkflowController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Latest approval request is already actioned (" + latest.getStatus() + ")"));
         }
 
-        // Ownership check: if not Admin, must be assigned to logged-in user
+        // Ownership check: if not Admin, must be assigned to logged-in user or unassigned queue
         if (!"Admin".equalsIgnoreCase(authRole)) {
-            if (latest.getAssignedTo() != null && !latest.getAssignedTo().equalsIgnoreCase(authUsername)) {
+            String assigned = latest.getAssignedTo();
+            boolean isAssignedToUser = authUsername != null && assigned != null && assigned.equalsIgnoreCase(authUsername);
+            boolean isTeamQueue = assigned == null || assigned.isBlank()
+                    || "misteam".equalsIgnoreCase(assigned) || "mis team".equalsIgnoreCase(assigned)
+                    || "clearance".equalsIgnoreCase(assigned) || "clearance team".equalsIgnoreCase(assigned) || "specification team".equalsIgnoreCase(assigned)
+                    || "tpc".equalsIgnoreCase(assigned) || "tpc team".equalsIgnoreCase(assigned) || "tpc pricing team".equalsIgnoreCase(assigned);
+            if (!isAssignedToUser && !isTeamQueue) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("success", false, "error", "Access denied: You can only review requests assigned to you"));
+                        .body(Map.of("success", false, "error", "Access denied: This approval request is assigned to " + assigned + ". You have view-only access."));
             }
         }
 
@@ -660,11 +674,14 @@ public class WorkflowController {
                     List<TenderApprovalRequest> existingOutcome = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.WIN_LOSS_PENDING);
                     boolean hasPendingOutcome = existingOutcome.stream().anyMatch(r -> "PENDING".equalsIgnoreCase(r.getStatus()));
                     if (!hasPendingOutcome) {
+                        String outcomeAssignee = tender.getAssignedMisMemberSubmission() != null && !tender.getAssignedMisMemberSubmission().isBlank()
+                                ? tender.getAssignedMisMemberSubmission()
+                                : (tender.getAssignedMisMember() != null && !tender.getAssignedMisMember().isBlank() ? tender.getAssignedMisMember() : "misteam");
                         TenderApprovalRequest outcomeReq = new TenderApprovalRequest(
                                 tender.getId(),
                                 TenderWorkflowStage.WIN_LOSS_PENDING,
                                 tender.getMisExecutive() != null ? tender.getMisExecutive() : authUsername,
-                                tender.getAssignedMisMember() != null ? tender.getAssignedMisMember() : "misteam",
+                                outcomeAssignee,
                                 "PENDING"
                         );
                         approvalRepository.save(outcomeReq);

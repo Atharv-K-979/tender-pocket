@@ -659,23 +659,29 @@ export default function Dashboard() {
     }
   };
 
-  const fetchTenders = async () => {
+  const fetchTenders = async (overrides?: { status?: string; search?: string; location?: string; sector?: string; mis_executive?: string }) => {
     try {
+      const activeStatus = overrides?.status !== undefined ? overrides.status : statusFilter;
+      const activeSearch = overrides?.search !== undefined ? overrides.search : searchQuery;
+      const activeLoc = overrides?.location !== undefined ? overrides.location : locationFilter;
+      const activeSec = overrides?.sector !== undefined ? overrides.sector : sectorFilter;
+      const activeExec = overrides?.mis_executive !== undefined ? overrides.mis_executive : misExecutiveFilter;
+
       const params = new URLSearchParams({
-        search: searchQuery,
-        status: statusFilter,
-        location: locationFilter,
-        sector: sectorFilter,
+        search: activeSearch,
+        status: activeStatus,
+        location: activeLoc,
+        sector: activeSec,
         sortBy,
         order: sortOrder,
-        mis_executive: misExecutiveFilter
+        mis_executive: activeExec
       });
       const response = await fetchWithAuth(`/api/tenders?${params.toString()}`);
       if (!response.ok) throw new Error('API Error');
       const data = await response.json();
-      if (data.success) {
+      if (data.success && data.tenders) {
         setTenders(data.tenders);
-        setFilters(data.filters);
+        if (data.filters) setFilters(data.filters);
       }
     } catch (e) {
       console.error(e);
@@ -1311,6 +1317,7 @@ export default function Dashboard() {
     setSectorFilter('');
     setStatusFilter(status);
     setActiveTab('tenders');
+    fetchTenders({ status, search: '', location: '', sector: '' });
   };
 
   const dbStatusToPlainEnglish = (status: string): string => {
@@ -2958,9 +2965,28 @@ export default function Dashboard() {
                 </div>
 
                 {(() => {
-                  const displayedTenders = corrigendumFilter 
-                    ? tenders.filter(t => t.corrigendum_remark === 'Yes' || (t.notes && t.notes.toLowerCase().includes('corrigendum')))
-                    : tenders;
+                  let filteredList = tenders;
+                  if (corrigendumFilter) {
+                    filteredList = filteredList.filter(t => t.corrigendum_remark === 'Yes' || (t.notes && t.notes.toLowerCase().includes('corrigendum')));
+                  }
+                  if (statusFilter && statusFilter.trim() !== '') {
+                    filteredList = filteredList.filter(t => {
+                      const s = (t.status || '').toLowerCase().trim();
+                      const f = statusFilter.toLowerCase().trim();
+                      if (f === 'participating') return s === 'participating';
+                      if (f === 'not participating') return s === 'not participating';
+                      if (f === 'new') return s === 'new' || s === 'issued';
+                      if (f === 'lapsed') return s === 'lapsed';
+                      if (f === 'submitted') return s === 'submitted' || s === 'filed';
+                      if (f === 'won') return s === 'won' || s === 'awarded';
+                      if (f === 'lost') return s === 'lost' || s === 'not awarded';
+                      if (f === 'pending') return (t.spec_verification_status || '').toLowerCase() === 'pending' || (t.current_stage || '').toLowerCase().includes('pending');
+                      if (f === 'approved') return (t.spec_verification_status || '').toLowerCase() === 'approved';
+                      if (f === 'rejected') return (t.spec_verification_status || '').toLowerCase() === 'rejected' || s === 'rejected';
+                      return s === f;
+                    });
+                  }
+                  const displayedTenders = filteredList;
 
                   if (displayedTenders.length === 0) {
                     return (
@@ -6368,7 +6394,7 @@ export default function Dashboard() {
                         value={selectedMisMember}
                         onChange={(e) => {
                           setSelectedMisMember(e.target.value);
-                          updateTenderField({ assigned_mis_member: e.target.value });
+                          updateTenderField({ assigned_mis_member: e.target.value, assigned_mis_member_docs: e.target.value });
                         }}
                         style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
                       >
@@ -6398,6 +6424,7 @@ export default function Dashboard() {
                             updateTenderField({ 
                               working_path: workingPath, 
                               assigned_mis_member: selectedMisMember, 
+                              assigned_mis_member_docs: selectedMisMember,
                               verification_status: 'Pending',
                               current_stage: 'DOC_VERIFICATION'
                             });
@@ -6601,7 +6628,7 @@ export default function Dashboard() {
                               value={selectedMisMember}
                               onChange={(e) => {
                                 setSelectedMisMember(e.target.value);
-                                updateTenderField({ assigned_mis_member: e.target.value });
+                                updateTenderField({ assigned_mis_member: e.target.value, assigned_mis_member_emd: e.target.value });
                               }}
                               style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
                             >
@@ -6629,7 +6656,8 @@ export default function Dashboard() {
                                 emd_amount_actual: emdAmountActual === '' ? null : Number(emdAmountActual),
                                 emd_payment_ref: emdPaymentRef,
                                 emd_payment_date: emdPaymentDate,
-                                assigned_mis_member: selectedMisMember
+                                assigned_mis_member: selectedMisMember,
+                                assigned_mis_member_emd: selectedMisMember
                               })}
                             >
                               💾 Save Details
@@ -6644,6 +6672,7 @@ export default function Dashboard() {
                                   emd_payment_ref: emdPaymentRef,
                                   emd_payment_date: emdPaymentDate,
                                   assigned_mis_member: selectedMisMember,
+                                  assigned_mis_member_emd: selectedMisMember,
                                   payment_status: 'Pending'
                                 })}
                               >
@@ -6759,7 +6788,7 @@ export default function Dashboard() {
                           value={selectedMisMember}
                           onChange={(e) => {
                             setSelectedMisMember(e.target.value);
-                            updateTenderField({ assigned_mis_member: e.target.value });
+                            updateTenderField({ assigned_mis_member: e.target.value, assigned_mis_member_submission: e.target.value });
                           }}
                           style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
                         >
@@ -6780,7 +6809,7 @@ export default function Dashboard() {
                       <button 
                         className="btn btn-primary" 
                         style={{ width: '100%', padding: '6px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px' }}
-                        onClick={() => updateTenderField({ assigned_mis_member: selectedMisMember, submission_status: 'Pending' })}
+                        onClick={() => updateTenderField({ assigned_mis_member: selectedMisMember, assigned_mis_member_submission: selectedMisMember, submission_status: 'Pending' })}
                       >
                         🚀 Request Submission Verification
                       </button>

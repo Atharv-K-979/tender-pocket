@@ -42,9 +42,9 @@ public class SyncScheduler {
                 System.out.println("[Scheduler] Email sync skipped or failed (check IMAP credentials): " + e.getMessage());
             }
 
-            // 2. Sync GeM portal bids (all active ongoing bids)
+            // 2. Sync GeM portal bids (published in the last 2 days)
             try {
-                int gemCount = geMScraperService.syncTenders(true, Collections.emptyList());
+                int gemCount = geMScraperService.syncTenders(false, Collections.emptyList());
                 System.out.println("[Scheduler] GeM Sync completed. Imported: " + gemCount);
             } catch (Exception e) {
                 String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
