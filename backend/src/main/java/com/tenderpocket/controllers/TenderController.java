@@ -23,9 +23,11 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -77,6 +79,36 @@ public class TenderController {
     private String geminiApiKey;
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    private void persistDocument(String tenderId, String fileName, byte[] data, String contentType) {
+        String objectKey = "tenders/" + tenderId + "/" + fileName;
+        if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
+            try (ByteArrayInputStream bais = new ByteArrayInputStream(data)) {
+                objectStorageService.upload(objectKey, bais, contentType, data.length);
+            } catch (Exception e) {
+                System.err.println("[TenderController] S3 upload failed for key " + objectKey + ": " + e.getMessage());
+                throw new RuntimeException("Failed to upload document to S3 storage (" + objectKey + "): " + e.getMessage(), e);
+            }
+        } else {
+            try {
+                Path dir = Paths.get("public/documents", tenderId);
+                Files.createDirectories(dir);
+                Path filePath = dir.resolve(fileName);
+                Files.write(filePath, data);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to save document to local storage (" + fileName + "): " + e.getMessage(), e);
+            }
+        }
+    }
+
+    private String resolveContentTypeByExtension(String fileName) {
+        String lower = fileName.toLowerCase();
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".zip")) return "application/zip";
+        return "application/octet-stream";
+    }
  
     /**
      * Resolves user role with defense-in-depth:
@@ -811,44 +843,29 @@ public class TenderController {
         }
 
         try {
-            String docDir = "public/documents/" + id;
-            Files.createDirectories(Paths.get(docDir));
-
             // Generate PDF
             byte[] pdfBytes = documentGeneratorService.generatePdf(body);
             String pdfFileName = "Bid_Documents_" + id + ".pdf";
-            String pdfFilePath = docDir + "/" + pdfFileName;
             String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
-            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
-                fos.write(pdfBytes);
-            }
+            persistDocument(id, pdfFileName, pdfBytes, "application/pdf");
 
             // Generate DOCX
             byte[] docxBytes = documentGeneratorService.generateDocx(body);
             String docFileName = "Bid_Documents_" + id + ".docx";
-            String docFilePath = docDir + "/" + docFileName;
             String docDownloadUrl = "/documents/" + id + "/" + docFileName;
-            try (FileOutputStream fos = new FileOutputStream(docFilePath)) {
-                fos.write(docxBytes);
-            }
+            persistDocument(id, docFileName, docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
             // Generate Technical Specification PDF
             byte[] techPdfBytes = documentGeneratorService.generateTechSpecPdf(body);
             String techPdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
-            String techPdfFilePath = docDir + "/" + techPdfFileName;
             String techPdfDownloadUrl = "/documents/" + id + "/" + techPdfFileName;
-            try (FileOutputStream fos = new FileOutputStream(techPdfFilePath)) {
-                fos.write(techPdfBytes);
-            }
+            persistDocument(id, techPdfFileName, techPdfBytes, "application/pdf");
 
             // Generate Technical Specification DOCX
             byte[] techDocxBytes = documentGeneratorService.generateTechSpecDocx(body);
             String techDocFileName = "Technical_Specification_Sheet_" + id + ".docx";
-            String techDocFilePath = docDir + "/" + techDocFileName;
             String techDocDownloadUrl = "/documents/" + id + "/" + techDocFileName;
-            try (FileOutputStream fos = new FileOutputStream(techDocFilePath)) {
-                fos.write(techDocxBytes);
-            }
+            persistDocument(id, techDocFileName, techDocxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
             // Update downloaded_docs field metadata without overwriting existing files (e.g. GeM Bid PDF)
             String createdDate = LocalDate.now().toString();
@@ -999,11 +1016,8 @@ public class TenderController {
             System.out.flush();
 
             // 1. Save uploaded input file as specification.pdf
-            String inputFilePath = docDir + "/specification.pdf";
             String inputDownloadUrl = "/documents/" + id + "/specification.pdf";
-            try (FileOutputStream fos = new FileOutputStream(inputFilePath)) {
-                fos.write(uploadedBytes);
-            }
+            persistDocument(id, "specification.pdf", uploadedBytes, "application/pdf");
             complianceProgressService.update(id, "UPLOADED",
                     "Upload saved. Inspecting " + originalFilename + ".", 3, 0, 0, 0);
 
@@ -1113,9 +1127,9 @@ public class TenderController {
             complianceProgressService.update(id, "RENDERING_XLSX", "Generating combined Excel workbook.",
                     92, 0, 0, totalClauses);
             byte[] xlsxBytes = documentGeneratorService.generateCombinedSheetXlsx(data, sheets);
-            Files.write(Paths.get(docDir, pdfFileName), pdfBytes);
-            Files.write(Paths.get(docDir, docxFileName), docxBytes);
-            Files.write(Paths.get(docDir, xlsxFileName), xlsxBytes);
+            persistDocument(id, pdfFileName, pdfBytes, "application/pdf");
+            persistDocument(id, docxFileName, docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            persistDocument(id, xlsxFileName, xlsxBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             File downloadsDir = new File(System.getProperty("user.home"), "Downloads");
             if (downloadsDir.isDirectory()) {
                 try {
@@ -1199,26 +1213,17 @@ public class TenderController {
         Tender tender = opt.get();
 
         try {
-            String docDir = "public/documents/" + id;
-            Files.createDirectories(Paths.get(docDir));
-
             // Generate Technical Specification PDF
             byte[] pdfBytes = documentGeneratorService.generateTechSpecPdf(body);
             String pdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
-            String pdfFilePath = docDir + "/" + pdfFileName;
             String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
-            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
-                fos.write(pdfBytes);
-            }
+            persistDocument(id, pdfFileName, pdfBytes, "application/pdf");
 
             // Generate Technical Specification DOCX
             byte[] docxBytes = documentGeneratorService.generateTechSpecDocx(body);
             String docFileName = "Technical_Specification_Sheet_" + id + ".docx";
-            String docFilePath = docDir + "/" + docFileName;
             String docDownloadUrl = "/documents/" + id + "/" + docFileName;
-            try (FileOutputStream fos = new FileOutputStream(docFilePath)) {
-                fos.write(docxBytes);
-            }
+            persistDocument(id, docFileName, docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
             // Update downloaded_docs metadata without overwriting existing files
             String createdDate = LocalDate.now().toString();
@@ -1384,31 +1389,40 @@ public class TenderController {
             @PathVariable("fileName") String fileName) {
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         try {
-            if (awsS3Enabled && objectStorageService != null) {
-                String objectKey = "tenders/" + id + "/" + fileName;
-                String presignedUrl = objectStorageService.generateDownloadUrl(objectKey);
-                return ResponseEntity.status(HttpStatus.FOUND)
-                        .location(java.net.URI.create(presignedUrl))
-                        .build();
+            String objectKey = "tenders/" + id + "/" + fileName;
+
+            // 1. If S3 is enabled, check if the object exists in S3
+            if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
+                if (objectStorageService.exists(objectKey)) {
+                    String presignedUrl = objectStorageService.generateDownloadUrl(objectKey);
+                    return ResponseEntity.status(HttpStatus.FOUND)
+                            .location(java.net.URI.create(presignedUrl))
+                            .build();
+                }
+                // Object not in S3: Check existing local documents compatibility fallback
+                System.out.println("[TenderController] Object " + objectKey + " not in S3, checking local storage compatibility fallback...");
             }
 
+            // 2. Safe compatibility / local file serving
             java.nio.file.Path filePath = java.nio.file.Paths.get("public/documents", id, fileName).toAbsolutePath().normalize();
             java.io.File file = filePath.toFile();
-            if (!file.exists()) {
-                return ResponseEntity.notFound().build();
+            if (file.exists() && file.isFile()) {
+                org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(filePath.toUri());
+                String contentType = java.nio.file.Files.probeContentType(filePath);
+                if (contentType == null) {
+                    contentType = resolveContentTypeByExtension(fileName);
+                }
+
+                return ResponseEntity.ok()
+                        .contentType(org.springframework.http.MediaType.parseMediaType(contentType))
+                        .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
+                        .body(resource);
             }
 
-            org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(filePath.toUri());
-            String contentType = java.nio.file.Files.probeContentType(filePath);
-            if (contentType == null) {
-                contentType = "application/octet-stream";
-            }
-
-            return ResponseEntity.ok()
-                    .contentType(org.springframework.http.MediaType.parseMediaType(contentType))
-                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
-                    .body(resource);
+            // 3. Not found in storage
+            return ResponseEntity.notFound().build();
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

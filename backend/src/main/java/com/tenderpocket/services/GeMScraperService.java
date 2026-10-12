@@ -16,6 +16,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
@@ -36,6 +37,12 @@ public class GeMScraperService {
 
     @Autowired
     private TenderRepository tenderRepository;
+
+    @Value("${aws.s3.enabled:false}")
+    private boolean awsS3Enabled;
+
+    @Autowired(required = false)
+    private ObjectStorageService objectStorageService;
 
     @Value("${gemini.api.key}")
     private String geminiApiKey;
@@ -323,6 +330,17 @@ public class GeMScraperService {
             System.out.println("  - Downloading Bid PDF to " + outputPath + "...");
             boolean success = downloadFile(downloadUrl, outputPath);
             if (success) {
+                if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
+                    try {
+                        String s3Key = "tenders/" + tenderId + "/" + localFileName;
+                        byte[] pdfBytes = Files.readAllBytes(Paths.get(outputPath));
+                        objectStorageService.upload(s3Key, new ByteArrayInputStream(pdfBytes), "application/pdf", pdfBytes.length);
+                        System.out.println("  - Successfully uploaded Bid PDF to S3: " + s3Key);
+                    } catch (Exception s3Ex) {
+                        System.err.println("  - Failed to upload Bid PDF to S3 for tender " + tenderId + ": " + s3Ex.getMessage());
+                    }
+                }
+
                 // Call external python parser
                 ProcessBuilder pb = new ProcessBuilder("python3", "scripts/parse-gem-pdf.py", outputPath);
                 Process process = pb.start();

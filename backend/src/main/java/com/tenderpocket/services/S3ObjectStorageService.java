@@ -1,11 +1,14 @@
 package com.tenderpocket.services;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -15,6 +18,7 @@ import java.io.InputStream;
 import java.time.Duration;
 
 @Service
+@ConditionalOnProperty(name = "aws.s3.enabled", havingValue = "true")
 public class S3ObjectStorageService implements ObjectStorageService {
 
     private final S3Client s3Client;
@@ -25,9 +29,12 @@ public class S3ObjectStorageService implements ObjectStorageService {
             S3Client s3Client,
             S3Presigner s3Presigner,
             @Value("${aws.s3.bucket-name:tender-pocket-prod-documents}") String bucketName) {
+        if (bucketName == null || bucketName.trim().isEmpty()) {
+            throw new IllegalArgumentException("AWS S3 is enabled but aws.s3.bucket-name is not configured or blank.");
+        }
         this.s3Client = s3Client;
         this.s3Presigner = s3Presigner;
-        this.bucketName = bucketName;
+        this.bucketName = bucketName.trim();
     }
 
     @Override
@@ -70,13 +77,39 @@ public class S3ObjectStorageService implements ObjectStorageService {
             return key;
 
         } catch (S3Exception e) {
+            String errorMsg = (e.awsErrorDetails() != null && e.awsErrorDetails().errorMessage() != null)
+                    ? e.awsErrorDetails().errorMessage()
+                    : e.getMessage();
             throw new RuntimeException(
-                    "Failed to upload file to S3: " + key, e
+                    "Failed to upload file to S3: " + key + " in bucket: " + bucketName + " (Status: " + e.statusCode() + "): " + errorMsg, e
             );
         } catch (Exception e) {
             throw new RuntimeException(
-                    "Error during S3 upload for key: " + key, e
+                    "Error during S3 upload for key: " + key + " in bucket: " + bucketName + ": " + e.getMessage(), e
             );
+        }
+    }
+
+    @Override
+    public boolean exists(String key) {
+        try {
+            HeadObjectRequest headObjectRequest = HeadObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+            s3Client.headObject(headObjectRequest);
+            return true;
+        } catch (NoSuchKeyException e) {
+            return false;
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
+                return false;
+            }
+            System.err.println("[S3ObjectStorageService] S3 headObject failed for key " + key + " in bucket " + bucketName + ": " + e.getMessage());
+            return false;
+        } catch (Exception e) {
+            System.err.println("[S3ObjectStorageService] Unexpected error checking existence for key " + key + ": " + e.getMessage());
+            return false;
         }
     }
 
@@ -106,5 +139,10 @@ public class S3ObjectStorageService implements ObjectStorageService {
                 .build();
 
         s3Client.deleteObject(request);
+    }
+
+    @Override
+    public boolean isRemote() {
+        return true;
     }
 }

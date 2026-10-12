@@ -24,12 +24,43 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return Response.json({ success: false, error: 'Invalid document path.' }, { status: 400 });
     }
 
-    // If file does not exist on local disk in frontend, check backend directory or attempt on-demand download/recovery
+    // If file does not exist on local disk in frontend, check backend directory or attempt backend/on-demand retrieval
     if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
       const backendPath = path.resolve(process.cwd(), '..', 'backend', 'public', 'documents', safeId, ...filenameSegments);
       if (fs.existsSync(backendPath) && fs.statSync(backendPath).isFile()) {
         targetPath = backendPath;
       } else {
+        // Query Spring Boot backend (supports S3 presigned URL 302 redirect and backend streaming)
+        const backendBaseUrl = process.env.BACKEND_URL || 'http://localhost:8090';
+        try {
+          const backendRes = await fetch(`${backendBaseUrl}/documents/${encodeURIComponent(safeId)}/${encodeURIComponent(filenameStr)}`, {
+            method: 'GET',
+            redirect: 'manual',
+            headers: {
+              'x-user-role': request.headers.get('x-user-role') || 'Admin',
+              'x-user-username': request.headers.get('x-user-username') || 'system',
+              ...(request.headers.get('authorization') ? { 'authorization': request.headers.get('authorization')! } : {})
+            }
+          });
+          if (backendRes.status === 302 || backendRes.status === 301 || backendRes.status === 307) {
+            const loc = backendRes.headers.get('location');
+            if (loc) {
+              return Response.redirect(loc, 302);
+            }
+          } else if (backendRes.ok) {
+            const ab = await backendRes.arrayBuffer();
+            return new Response(new Uint8Array(ab), {
+              headers: {
+                'Content-Type': backendRes.headers.get('content-type') || 'application/octet-stream',
+                'Content-Disposition': backendRes.headers.get('content-disposition') || `attachment; filename="${filenameSegments[filenameSegments.length - 1]}"`,
+                'Cache-Control': 'no-store'
+              }
+            });
+          }
+        } catch (backendFetchErr) {
+          // Backend unreachable or returned 404, continue to next fallback
+        }
+
         console.log(`[Document Download API] ${filenameStr} missing for Tender ${safeId}. Attempting on-demand retrieval...`);
 
         const targetDir = path.dirname(targetPath);
