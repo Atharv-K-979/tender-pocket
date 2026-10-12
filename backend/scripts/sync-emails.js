@@ -52,9 +52,14 @@ async function run() {
     console.log('Successfully locked INBOX. Searching for matching Tender247 emails...');
     
     try {
-      // Build search query: search for unread emails
+      // Build search query: search for unread emails within the last 2 days
+      const twoDaysAgo = new Date();
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 1);
+      twoDaysAgo.setHours(0, 0, 0, 0);
+
       const searchCriteria = {
-        seen: false
+        seen: false,
+        since: twoDaysAgo
       };
       
       if (subjectFilter) {

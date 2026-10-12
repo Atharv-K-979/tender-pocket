@@ -91,18 +91,51 @@ public class EmailSyncService {
             Folder inbox = store.getFolder("INBOX");
             inbox.open(Folder.READ_WRITE);
 
+            LocalDate todayIST = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+            LocalDate cutoffDate = todayIST.minusDays(1); // Last 2 days: today and yesterday
+            Date cutoffDateObj = Date.from(cutoffDate.atStartOfDay(java.time.ZoneId.of("Asia/Kolkata")).toInstant());
+
             SearchTerm unreadTerm = new FlagTerm(new Flags(Flags.Flag.SEEN), false);
             SearchTerm searchTerm = unreadTerm;
             if (senderFilter != null && !senderFilter.isEmpty()) {
                 searchTerm = new AndTerm(unreadTerm, new FromStringTerm(senderFilter));
             }
 
-            Message[] messages = inbox.search(searchTerm);
-            System.out.println(String.format("Found %d unread message(s) matching filter.", messages.length));
+            try {
+                SearchTerm dateTerm = new ReceivedDateTerm(ComparisonTerm.GE, cutoffDateObj);
+                searchTerm = new AndTerm(searchTerm, dateTerm);
+            } catch (Exception ignored) {}
+
+            Message[] messages;
+            try {
+                messages = inbox.search(searchTerm);
+            } catch (Exception e) {
+                System.out.println("[EmailSync] IMAP search with date term failed (" + e.getMessage() + "). Falling back to unread term search.");
+                SearchTerm fallbackSearch = unreadTerm;
+                if (senderFilter != null && !senderFilter.isEmpty()) {
+                    fallbackSearch = new AndTerm(unreadTerm, new FromStringTerm(senderFilter));
+                }
+                messages = inbox.search(fallbackSearch);
+            }
+
+            System.out.println(String.format("Found %d unread message(s) matching filter. Processing only last 2 days (since %s IST)...", messages.length, cutoffDate));
 
             for (Message msg : messages) {
                 String subject = msg.getSubject();
-                String from = msg.getFrom()[0].toString();
+                String from = (msg.getFrom() != null && msg.getFrom().length > 0) ? msg.getFrom()[0].toString() : "Unknown";
+
+                // Enforce 2-day cutoff (Asia/Kolkata) on message received / sent date
+                Date msgDate = msg.getReceivedDate() != null ? msg.getReceivedDate() : msg.getSentDate();
+                if (msgDate != null) {
+                    LocalDate emailLocalDate = msgDate.toInstant().atZone(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate();
+                    if (emailLocalDate.isBefore(cutoffDate)) {
+                        System.out.println(String.format("Email \"%s\" from %s dated %s is older than 2-day cutoff (%s). Marking as read and skipping.",
+                                subject, from, emailLocalDate, cutoffDate));
+                        msg.setFlag(Flags.Flag.SEEN, true);
+                        continue;
+                    }
+                }
+
                 System.out.println(String.format("Processing email: %s from %s", subject, from));
 
                 if (senderFilter != null && !senderFilter.isEmpty() && !from.toLowerCase().contains(senderFilter.toLowerCase())) {
@@ -117,17 +150,22 @@ public class EmailSyncService {
                 for (Map<String, String> tData : tenders) {
                     String id = tData.get("id");
                     String link = tData.get("url");
+                    String refNo = tData.getOrDefault("ref_no", "");
 
                     if (id == null || link == null) continue;
 
-                    Optional<Tender> existing = tenderRepository.findById(id);
-                    if (existing.isPresent()) {
+                    // Deduplication check: if tender already exists in the system (by ID, refNo, or sourceId), do not add it again
+                    boolean alreadyExists = tenderRepository.existsById(id)
+                            || (!refNo.isBlank() && tenderRepository.existsByRefNo(refNo))
+                            || tenderRepository.existsBySourceId(id);
+                    if (alreadyExists) {
                         continue;
                     }
 
                     Tender tender = new Tender();
                     tender.setId(id);
-                    tender.setRefNo(tData.getOrDefault("ref_no", ""));
+                    tender.setSourceId(id);
+                    tender.setRefNo(refNo);
                     tender.setTitle(tData.getOrDefault("title", "Tender " + id));
                     tender.setAuthority(tData.getOrDefault("authority", ""));
                     tender.setEstimatedCost(null);
