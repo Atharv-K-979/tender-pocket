@@ -31,8 +31,8 @@
     #compliance-progress-panel .cp-links{display:flex;flex-direction:column;gap:8px;margin-top:12px}#compliance-progress-panel .cp-links a{display:inline-block;margin:4px 8px 0 0;padding:6px;border-radius:4px;background:#2563eb;color:white;text-decoration:none;font-size:12px;font-weight:700}
     #compliance-progress-panel .cp-product{font-size:12px;border-top:1px solid #334155;padding-top:6px}
     #compliance-progress-panel .cp-warning{font-size:12px;color:#fbbf24;margin-top:8px}
-    #compliance-progress-panel .cp-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;margin-top:12px;padding:10px;border:1px solid #334155;border-radius:6px;background:#0b1220;font-size:11px;color:#cbd5e1}
-    #compliance-progress-panel .cp-metric-title{grid-column:1/-1;color:#f8fafc;font-weight:750;font-size:12px}
+    #compliance-progress-panel .cp-metrics{display:none!important}
+    #compliance-progress-panel .cp-metric-title{display:none!important}
     #compliance-progress-panel .cp-metric strong{display:block;color:#f8fafc;font-size:12px;margin-top:2px}
     #compliance-progress-panel .cp-metric-warnings{grid-column:1/-1;color:#fbbf24;line-height:1.35}
     #compliance-progress-panel .cp-review-actions{margin-top:12px}
@@ -369,50 +369,23 @@
 
   function renderMetrics(root, metrics) {
     const section = root.querySelector(".cp-metrics");
-    if (!metrics) {
+    if (section) {
       section.hidden = true;
+      section.style.display = "none";
       section.replaceChildren();
-      return;
     }
-    section.hidden = false;
-    section.replaceChildren();
-    const tokens = metrics.tokens || {};
-    const retries = metrics.retries || {};
-    const durations = metrics.durationsMs || {};
-    const documentCounts = metrics.document || {};
-    const values = [
-      ["Total tokens", Number(tokens.total || 0).toLocaleString("en-IN")],
-      ["Input tokens", `${Number(tokens.input || 0).toLocaleString("en-IN")} (${Number(tokens.cachedInput || 0).toLocaleString("en-IN")} cached)`],
-      ["Output tokens", `${Number(tokens.output || 0).toLocaleString("en-IN")} (${Number(tokens.reasoning || 0).toLocaleString("en-IN")} reasoning)`],
-      ["API calls", `${metrics.successfulModelResponses || 0}/${metrics.apiAttempts || 0} successful`],
-      ["Retries", `${retries.validation || 0} validation, ${retries.ocr || 0} OCR, ${retries.split || 0} split, ${retries.rateLimit || 0} rate limit`],
-      ["Document", `${documentCounts.pages || 0} pages, ${documentCounts.batches || 0} batches, ${documentCounts.products || 0} products, ${documentCounts.clauses || 0} clauses`],
-      ["AI time", formatDuration(durations.api)],
-      ["Extraction / rendering", `${formatDuration(durations.extraction)} / ${formatDuration(durations.rendering)}`],
-      ["Total time", formatDuration(durations.total)],
-      ["Estimated cost", metrics.estimatedCostInr == null ? "Unavailable" : new Intl.NumberFormat("en-IN", {style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 4}).format(metrics.estimatedCostInr)],
-      ["Model", metrics.model || "gpt-5-nano"]
-    ];
-    const title = document.createElement("div");
-    title.className = "cp-metric-title";
-    title.textContent = "AI usage and timing";
-    section.appendChild(title);
-    values.forEach(([label, value]) => {
-      const item = document.createElement("div");
-      item.className = "cp-metric";
-      item.append(document.createTextNode(label));
-      const strong = document.createElement("strong");
-      strong.textContent = value;
-      item.appendChild(strong);
-      section.appendChild(item);
-    });
-    const warnings = (metrics.warnings || []).filter(note => !isReviewNote(note));
-    if (warnings.length) {
-      const warning = document.createElement("div");
-      warning.className = "cp-metric-warnings";
-      warning.textContent = warnings.join(" ");
-      section.appendChild(warning);
-    }
+  }
+
+  function isInternalDebugLog(msg) {
+    if (!msg) return false;
+    return /^\s*\[AI\]/i.test(msg) ||
+           /azure openai/i.test(msg) ||
+           /gpt-5/i.test(msg) ||
+           /deployment/i.test(msg) ||
+           /source clauses/i.test(msg) ||
+           /bounded call/i.test(msg) ||
+           /rate limit/i.test(msg) ||
+           /retrying/i.test(msg);
   }
 
   function render(data) {
@@ -436,16 +409,22 @@
 
     const events = root.querySelector(".cp-events");
     events.replaceChildren();
-    (data.events || []).filter(event => !isReviewNote(event.message)).slice(-30).forEach(event => {
-      const row = document.createElement("div");
-      row.className = "cp-event";
-      const stage = document.createElement("span");
-      stage.className = "cp-stage";
-      stage.textContent = `[${String(event.stage || "WORKING").replaceAll("_", " ")}]`;
-      row.append(stage, document.createTextNode(` ${event.message || ""}`));
-      events.appendChild(row);
-    });
-    events.scrollTop = events.scrollHeight;
+    const visibleEvents = (data.events || []).filter(event => !isReviewNote(event.message) && !isInternalDebugLog(event.message));
+    if (visibleEvents.length === 0) {
+      events.style.display = "none";
+    } else {
+      events.style.display = "block";
+      visibleEvents.slice(-30).forEach(event => {
+        const row = document.createElement("div");
+        row.className = "cp-event";
+        const stage = document.createElement("span");
+        stage.className = "cp-stage";
+        stage.textContent = `[${String(event.stage || "WORKING").replaceAll("_", " ")}]`;
+        row.append(stage, document.createTextNode(` ${event.message || ""}`));
+        events.appendChild(row);
+      });
+      events.scrollTop = events.scrollHeight;
+    }
 
     const links = root.querySelector(".cp-links");
     links.replaceChildren();

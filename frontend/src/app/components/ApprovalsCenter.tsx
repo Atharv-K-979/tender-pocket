@@ -22,6 +22,7 @@ import {
   Users,
   Filter
 } from 'lucide-react';
+import { canReviewAssignment } from '@/lib/workflowAuthorization';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -398,6 +399,10 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
   // ── Review modal ──────────────────────────────────────────────────────────
 
   const openModal = (approval: ApprovalSummary, action: ReviewModalState['action']) => {
+    if (isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo)) {
+      showToast('You have view-only access to this approval request.', 'error');
+      return;
+    }
     setModal({
       open: true,
       approval,
@@ -413,6 +418,10 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
   };
 
   const openOutcomeModal = (approval: ApprovalSummary, outcome: 'Won' | 'Lost') => {
+    if (isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo)) {
+      showToast('You have view-only access to this approval request.', 'error');
+      return;
+    }
     setModal({
       open: true,
       approval,
@@ -1378,7 +1387,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                     <ChevronRight size={12} /> View Tender
                   </a>
 
-                  {isAdmin ? (
+                  {isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo) ? (
                     <div style={{
                       marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px',
                       padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '500',

@@ -72,6 +72,9 @@ public class ApprovalController {
 
     /** Returns true if the current user is allowed to access the approvals center. */
     private boolean isAuthorized(String role) {
+        if ("Admin".equalsIgnoreCase(WorkflowPermissions.canonicalRole(role))) {
+            return true;
+        }
         return WorkflowPermissions.allowed(role, REVIEW_BIDS) || WorkflowPermissions.allowed(role, APPROVE_SPEC)
                 || WorkflowPermissions.allowed(role, SET_TPC_PRICE);
     }

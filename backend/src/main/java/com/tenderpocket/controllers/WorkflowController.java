@@ -184,6 +184,17 @@ public class WorkflowController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
                     "error", "Specification clearance is not pending."));
         }
+
+        // Ownership safeguard: If assigned to a specific representative, only that representative can approve
+        String assignedSpec = tender.getAssignedMisMemberSpec();
+        if (assignedSpec != null && !assignedSpec.isBlank()) {
+            String canonicalAssigned = assignedSpec.trim().toLowerCase();
+            boolean isQueue = List.of("clearance", "clearance team", "specification", "specification team").contains(canonicalAssigned);
+            if (!isQueue && username != null && !canonicalAssigned.equalsIgnoreCase(username.trim())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false,
+                        "error", "Access denied: Specification clearance is assigned to " + assignedSpec));
+            }
+        }
         tender.setCurrentStage("TPC_PRICING");
         tender.setSpecVerificationStatus("Approved");
         tenderRepository.save(tender);

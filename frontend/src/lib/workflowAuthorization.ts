@@ -72,13 +72,14 @@ export function reviewAction(stage: string): WorkflowAction | null {
   }
 }
 
-export function canReviewAssignment(role: string, username: string, assigned: unknown): boolean {
+export function canReviewAssignment(role: string | null | undefined, username: string | null | undefined, assigned: unknown): boolean {
   const canonical = canonicalRole(role);
-  if (canonical === 'Admin') return false; // Admin has view-only access in approvals reviews
-  if (assigned == null) return true;
+  if (!canonical || canonical === 'Admin') return false; // Admin has view-only access in approvals reviews
+  if (!username) return false;
+  if (assigned == null || (typeof assigned === 'string' && assigned.trim() === '')) return true;
   if (typeof assigned !== 'string') return false;
-  const value = assigned.toLowerCase();
-  if (value === username.toLowerCase()) return true;
+  const value = assigned.trim().toLowerCase();
+  if (value === username.trim().toLowerCase()) return true;
   const queues: Record<string, string[]> = {
     'MIS Team': ['misteam', 'mis team', 'mis executive', 'mis'],
     'Clearance Team': ['clearance', 'clearance team', 'specification team', 'specification'],

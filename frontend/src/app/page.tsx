@@ -45,7 +45,8 @@ import {
   MapPin,
   Tag,
   BookOpen,
-  ClipboardCheck
+  ClipboardCheck,
+  Shield
 } from 'lucide-react';
 import {
   BarChart,
@@ -69,7 +70,7 @@ import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
-import { canPerform, canonicalRole } from '@/lib/workflowAuthorization';
+import { canPerform, canonicalRole, canReviewAssignment } from '@/lib/workflowAuthorization';
 
 
 type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
@@ -157,7 +158,7 @@ export default function Dashboard() {
     const response = await fetch(url, { cache: 'no-store', ...options, headers });
 
     // Automatically recover from expired or invalidated sessions on read/data endpoints
-    if ((response.status === 401 || response.status === 403) && currentUser) {
+    if (response.status === 401 && currentUser) {
       const isWorkflowAction = url.includes('/approve-') || url.includes('/tpc-') || url.includes('/mis-') || url.includes('/clearance-') || url.includes('/generate-bid-docs');
       if (!isWorkflowAction) {
         if (typeof window !== 'undefined') {
@@ -5950,43 +5951,50 @@ export default function Dashboard() {
                   )}
 
                   {/* Clearance Team Action Controls */}
-                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'Admin') && selectedTender.spec_verification_status === 'Pending' && (
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
-                      <button 
-                        className="btn btn-primary" 
-                        style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '11px', justifyContent: 'center', opacity: submittingApproveClearance ? 0.7 : 1 }}
-                        disabled={submittingApproveClearance}
-                        onClick={async () => {
-                          if (submittingApproveClearance) return;
-                          setSubmittingApproveClearance(true);
-                          try {
-                            const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/approve-clearance`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ comment: 'Technical specification verified and approved.' })
-                            });
-                            const data = await res.json();
-                            if (data.notification) {
-                              alert(data.notification);
+                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team') && selectedTender.spec_verification_status === 'Pending' && (
+                    canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_spec) ? (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
+                        <button 
+                          className="btn btn-primary" 
+                          style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '11px', justifyContent: 'center', opacity: submittingApproveClearance ? 0.7 : 1 }}
+                          disabled={submittingApproveClearance}
+                          onClick={async () => {
+                            if (submittingApproveClearance) return;
+                            setSubmittingApproveClearance(true);
+                            try {
+                              const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/approve-clearance`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ comment: 'Technical specification verified and approved.' })
+                              });
+                              const data = await res.json();
+                              if (data.notification) {
+                                alert(data.notification);
+                              }
+                            } catch (e) {
+                              console.error('Failed to notify backend on spec clearance:', e);
+                            } finally {
+                              setSubmittingApproveClearance(false);
                             }
-                          } catch (e) {
-                            console.error('Failed to notify backend on spec clearance:', e);
-                          } finally {
-                            setSubmittingApproveClearance(false);
-                          }
-                          await updateTenderField({ spec_verification_status: 'Approved' });
-                        }}
-                      >
-                        {submittingApproveClearance ? '⏳ Approving...' : '✅ Approve Tech Spec'}
-                      </button>
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{ flex: 1, color: 'var(--accent-red)', padding: '6px 12px', fontSize: '11px', justifyContent: 'center' }}
-                        onClick={() => updateTenderField({ spec_verification_status: 'Rejected' })}
-                      >
-                        ❌ Reject Tech Spec
-                      </button>
-                    </div>
+                            await updateTenderField({ spec_verification_status: 'Approved' });
+                          }}
+                        >
+                          {submittingApproveClearance ? '⏳ Approving...' : '✅ Approve Tech Spec'}
+                        </button>
+                        <button 
+                          className="btn btn-secondary" 
+                          style={{ flex: 1, color: 'var(--accent-red)', padding: '6px 12px', fontSize: '11px', justifyContent: 'center' }}
+                          onClick={() => updateTenderField({ spec_verification_status: 'Rejected' })}
+                        >
+                          ❌ Reject Tech Spec
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '500', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', color: 'var(--primary-light, #a5b4fc)', marginTop: '12px' }}>
+                        <Shield size={14} style={{ color: 'var(--primary)' }} />
+                        <span>View-Only Access · Assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_spec || 'Clearance Team'}</strong></span>
+                      </div>
+                    )
                   )}
                 </div>
 
@@ -6406,37 +6414,44 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {selectedTender.verification_status === 'Pending' && (currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
-                      <>
-                        {!hasWorkingPathSaved(selectedTender) ? (
-                          <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#ef4444', marginBottom: '12px' }}>
-                            ⚠️ <strong>Working Folder Path Required:</strong> The Tender Executive has not saved the Working Folder Path yet. Bid document approval will unlock once the Working Folder Path is saved.
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                            <button 
-                              className="btn btn-primary" 
-                              style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
-                              onClick={async () => {
-                                await updateTenderField({ verification_status: 'Approved', current_stage: 'PAYMENT_APPROVAL' });
-                                showToast('Bid documents approved! EMD Payment is now unblocked.', 'success');
-                              }}
-                            >
-                              ✅ Approve Bid Documents
-                            </button>
-                            <button 
-                              className="btn btn-secondary" 
-                              style={{ flex: 1, color: 'var(--accent-red)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
-                              onClick={async () => {
-                                await updateTenderField({ verification_status: 'Rejected' });
-                                showToast('Bid documents rejected / changes requested.', 'error');
-                              }}
-                            >
-                              ❌ Request Changes
-                            </button>
-                          </div>
-                        )}
-                      </>
+                    {selectedTender.verification_status === 'Pending' && (
+                      (canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_docs || selectedTender.assigned_mis_member) && currentUser?.role === 'MIS Team') ? (
+                        <>
+                          {!hasWorkingPathSaved(selectedTender) ? (
+                            <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#ef4444', marginBottom: '12px' }}>
+                              ⚠️ <strong>Working Folder Path Required:</strong> The Tender Executive has not saved the Working Folder Path yet. Bid document approval will unlock once the Working Folder Path is saved.
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                              <button 
+                                className="btn btn-primary" 
+                                style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                                onClick={async () => {
+                                  await updateTenderField({ verification_status: 'Approved', current_stage: 'PAYMENT_APPROVAL' });
+                                  showToast('Bid documents approved! EMD Payment is now unblocked.', 'success');
+                                }}
+                              >
+                                ✅ Approve Bid Documents
+                              </button>
+                              <button 
+                                className="btn btn-secondary" 
+                                style={{ flex: 1, color: 'var(--accent-red)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                                onClick={async () => {
+                                  await updateTenderField({ verification_status: 'Rejected' });
+                                  showToast('Bid documents rejected / changes requested.', 'error');
+                                }}
+                              >
+                                ❌ Request Changes
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      ) : currentUser?.role === 'MIS Team' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '500', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', color: 'var(--primary-light, #a5b4fc)', marginBottom: '12px' }}>
+                          <Shield size={14} style={{ color: 'var(--primary)' }} />
+                          <span>View-Only Access · Assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_docs || selectedTender.assigned_mis_member || 'MIS Team'}</strong></span>
+                        </div>
+                      ) : null
                     )}
 
                     {selectedTender.verification_status === 'Approved' && (
@@ -6639,23 +6654,30 @@ export default function Dashboard() {
                         )}
 
                         {/* MIS Verification Controls */}
-                        {selectedTender.payment_status === 'Pending' && (currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
-                          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                            <button 
-                              className="btn btn-primary" 
-                              style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
-                              onClick={() => updateTenderField({ payment_status: 'Approved' })}
-                            >
-                              ✅ Approve Payment
-                            </button>
-                            <button 
-                              className="btn btn-secondary" 
-                              style={{ flex: 1, color: 'var(--accent-red)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
-                              onClick={() => updateTenderField({ payment_status: 'Rejected' })}
-                            >
-                              ❌ Reject Payment
-                            </button>
-                          </div>
+                        {selectedTender.payment_status === 'Pending' && (
+                          (canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_emd || selectedTender.assigned_mis_member) && currentUser?.role === 'MIS Team') ? (
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                              <button 
+                                className="btn btn-primary" 
+                                style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
+                                onClick={() => updateTenderField({ payment_status: 'Approved' })}
+                              >
+                                ✅ Approve Payment
+                              </button>
+                              <button 
+                                className="btn btn-secondary" 
+                                style={{ flex: 1, color: 'var(--accent-red)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
+                                onClick={() => updateTenderField({ payment_status: 'Rejected' })}
+                              >
+                                ❌ Reject Payment
+                              </button>
+                            </div>
+                          ) : currentUser?.role === 'MIS Team' ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '500', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', color: 'var(--primary-light, #a5b4fc)', marginBottom: '12px' }}>
+                              <Shield size={14} style={{ color: 'var(--primary)' }} />
+                              <span>View-Only Access · Assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_emd || selectedTender.assigned_mis_member || 'MIS Team'}</strong></span>
+                            </div>
+                          ) : null
                         )}
 
                         {/* Comments section for EMD */}
@@ -6764,16 +6786,23 @@ export default function Dashboard() {
                       </button>
                     )}
 
-                    {selectedTender.submission_status === 'Pending' && (currentUser?.role === 'MIS Team' || currentUser?.username === selectedTender.assigned_mis_member) && (
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                        <button 
-                          className="btn btn-primary" 
-                          style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
-                          onClick={() => updateTenderField({ submission_status: 'Approved', outcome_status: 'Pending', current_stage: 'WIN_LOSS_PENDING', status: 'Submitted' })}
-                        >
-                          ✅ Confirm & Mark Submitted
-                        </button>
-                      </div>
+                    {selectedTender.submission_status === 'Pending' && (
+                      (canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_submission || selectedTender.assigned_mis_member) && currentUser?.role === 'MIS Team') ? (
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                          <button 
+                            className="btn btn-primary" 
+                            style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
+                            onClick={() => updateTenderField({ submission_status: 'Approved', outcome_status: 'Pending', current_stage: 'WIN_LOSS_PENDING', status: 'Submitted' })}
+                          >
+                            ✅ Confirm & Mark Submitted
+                          </button>
+                        </div>
+                      ) : currentUser?.role === 'MIS Team' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '500', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', color: 'var(--primary-light, #a5b4fc)', marginBottom: '12px' }}>
+                          <Shield size={14} style={{ color: 'var(--primary)' }} />
+                          <span>View-Only Access · Assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_submission || selectedTender.assigned_mis_member || 'MIS Team'}</strong></span>
+                        </div>
+                      ) : null
                     )}
 
                     {/* Comments section for Submission */}
@@ -6897,53 +6926,61 @@ export default function Dashboard() {
                       )}
 
                       {/* Pending Outcome Controls (only if neither won nor lost) */}
-                      {isMisRole && !isWon && !isLost && (
-                        <>
-                          {/* Loss Reason Input Box */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>
-                              Reason for Loss (Filled if Lost)
-                            </label>
-                            <textarea 
-                              value={lossReason}
-                              onChange={(e) => setLossReason(e.target.value)}
-                              placeholder="Enter details of outcome, or reason for loss (e.g. L1 pricing, technical disqualification...)"
-                              style={{ padding: '8px 10px', fontSize: '12px', height: '60px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', outline: 'none' }}
-                            />
-                            <button 
-                              className="btn btn-secondary" 
-                              style={{ padding: '6px 12px', fontSize: '11px', alignSelf: 'flex-end', marginTop: '4px' }}
-                              onClick={() => updateTenderField({ loss_reason: lossReason })}
-                            >
-                              💾 Save Reason
-                            </button>
-                          </div>
+                      {(() => {
+                        const canRecordOutcome = isMisRole && canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_submission || selectedTender.assigned_mis_member);
+                        if (canRecordOutcome && !isWon && !isLost) {
+                          return (
+                            <>
+                              {/* Loss Reason Input Box */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                                <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>
+                                  Reason for Loss (Filled if Lost)
+                                </label>
+                                <textarea 
+                                  value={lossReason}
+                                  onChange={(e) => setLossReason(e.target.value)}
+                                  placeholder="Enter details of outcome, or reason for loss (e.g. L1 pricing, technical disqualification...)"
+                                  style={{ padding: '8px 10px', fontSize: '12px', height: '60px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', outline: 'none' }}
+                                />
+                                <button 
+                                  className="btn btn-secondary" 
+                                  style={{ padding: '6px 12px', fontSize: '11px', alignSelf: 'flex-end', marginTop: '4px' }}
+                                  onClick={() => updateTenderField({ loss_reason: lossReason })}
+                                >
+                                  💾 Save Reason
+                                </button>
+                              </div>
 
-                          {/* Outcome Choice Action Buttons */}
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                            <button 
-                              className="btn btn-primary" 
-                              style={{ flex: 1, background: '#10b981', borderColor: '#10b981', color: '#ffffff', padding: '9px 16px', justifyContent: 'center', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
-                              onClick={() => updateTenderField({ status: 'Awarded', outcome_status: 'Won', current_stage: 'WON' })}
-                            >
-                              🏆 Mark as Won
-                            </button>
-                            <button 
-                              className="btn btn-secondary" 
-                              style={{ flex: 1, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.05)', padding: '9px 16px', justifyContent: 'center', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
-                              onClick={() => updateTenderField({ status: 'Not Awarded', outcome_status: 'Lost', current_stage: 'LOST', loss_reason: lossReason || 'Not Awarded' })}
-                            >
-                              ❌ Mark as Lost
-                            </button>
-                          </div>
-                        </>
-                      )}
-
-                      {!isMisRole && !isWon && !isLost && (
-                        <div style={{ padding: '12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Outcome pending. Final outcome selection is reserved for MIS Team.
-                        </div>
-                      )}
+                              {/* Outcome Choice Action Buttons */}
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                                <button 
+                                  className="btn btn-primary" 
+                                  style={{ flex: 1, background: '#10b981', borderColor: '#10b981', color: '#ffffff', padding: '9px 16px', justifyContent: 'center', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                  onClick={() => updateTenderField({ status: 'Awarded', outcome_status: 'Won', current_stage: 'WON' })}
+                                >
+                                  🏆 Mark as Won
+                                </button>
+                                <button 
+                                  className="btn btn-secondary" 
+                                  style={{ flex: 1, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.05)', padding: '9px 16px', justifyContent: 'center', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                  onClick={() => updateTenderField({ status: 'Not Awarded', outcome_status: 'Lost', current_stage: 'LOST', loss_reason: lossReason || 'Not Awarded' })}
+                                >
+                                  ❌ Mark as Lost
+                                </button>
+                              </div>
+                            </>
+                          );
+                        }
+                        if (!isWon && !isLost) {
+                          return (
+                            <div style={{ padding: '12px', background: 'rgba(99, 102, 241, 0.08)', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.25)', fontSize: '12px', color: 'var(--primary-light, #a5b4fc)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Shield size={14} style={{ color: 'var(--primary)' }} />
+                              <span>View-Only Access · Outcome pending. Final outcome selection is reserved for {selectedTender.assigned_mis_member_submission || selectedTender.assigned_mis_member ? `assigned MIS Representative: ${selectedTender.assigned_mis_member_submission || selectedTender.assigned_mis_member}` : 'MIS Team'}.</span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   );
                 })()}
