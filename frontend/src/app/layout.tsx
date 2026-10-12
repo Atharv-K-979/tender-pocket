@@ -16,7 +16,7 @@ export default function RootLayout({
     <html lang="en" data-theme="dark">
       <body>
         {children}
-        <Script src="/api/compliance-progress-client" strategy="beforeInteractive" />
+        <Script src="/api/compliance-progress-client?v=20261012-sanitize-2" strategy="beforeInteractive" />
       </body>
     </html>
   );

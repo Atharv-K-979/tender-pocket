@@ -385,7 +385,14 @@
            /source clauses/i.test(msg) ||
            /bounded call/i.test(msg) ||
            /rate limit/i.test(msg) ||
-           /retrying/i.test(msg);
+           /retrying/i.test(msg) ||
+           /\[uploading\]/i.test(msg) ||
+           /\[uploaded\]/i.test(msg) ||
+           /\[inspecting\]/i.test(msg) ||
+           /\[batching\]/i.test(msg) ||
+           /\[discovering/i.test(msg) ||
+           /\[extracting\]/i.test(msg) ||
+           /\[validating\]/i.test(msg);
   }
 
   function render(data) {

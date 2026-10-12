@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE)
 public class ComplianceProgressUiInjectionFilter extends OncePerRequestFilter {
-    private static final String SCRIPT = "<script src=\"/compliance-progress.js?v=20260929-clearance-1\" defer></script>";
+    private static final String SCRIPT = "<script src=\"/compliance-progress.js?v=20261012-sanitize-2\" defer></script>";
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

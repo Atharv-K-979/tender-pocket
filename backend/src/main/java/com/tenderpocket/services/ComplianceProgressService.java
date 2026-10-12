@@ -163,12 +163,40 @@ public class ComplianceProgressService {
             result.put("totalBatches", totalBatches);
             result.put("clauses", clauses);
             result.put("updatedAt", updatedAt);
-            result.put("events", new ArrayList<>(events));
-            result.put("metrics", metrics.snapshot());
+            // Client-safe metrics: strip cost, pricing, tokens, model, and retries
+            Map<String, Object> clientMetrics = new LinkedHashMap<>();
+            Map<String, Object> rawMetrics = metrics != null ? metrics.snapshot() : null;
+            if (rawMetrics != null) {
+                if (rawMetrics.containsKey("document")) clientMetrics.put("document", rawMetrics.get("document"));
+                if (rawMetrics.containsKey("warnings")) clientMetrics.put("warnings", rawMetrics.get("warnings"));
+            }
+            result.put("metrics", clientMetrics);
+
+            // Filter out internal pipeline logs (e.g. [INSPECTING], [BATCHING], [EXTRACTING], [AI], etc.)
+            java.util.List<Map<String, Object>> safeEvents = new ArrayList<>();
+            for (Map<String, Object> ev : events) {
+                String msg = (String) ev.get("message");
+                if (msg != null && !isInternalPipelineLog(msg)) {
+                    safeEvents.add(ev);
+                }
+            }
+            result.put("events", safeEvents);
             if (pdfUrl != null) result.put("pdfDownloadUrl", pdfUrl);
             if (docxUrl != null) result.put("docxDownloadUrl", docxUrl);
             if (xlsxUrl != null) result.put("xlsxDownloadUrl", xlsxUrl);
             return result;
+        }
+
+        private static boolean isInternalPipelineLog(String msg) {
+            if (msg == null) return false;
+            String lower = msg.toLowerCase();
+            return lower.contains("[uploading]") || lower.contains("[uploaded]") ||
+                   lower.contains("[inspecting]") || lower.contains("[batching]") ||
+                   lower.contains("[discovering") || lower.contains("[extracting]") ||
+                   lower.contains("[validating]") || lower.contains("[ai]") ||
+                   lower.contains("azure openai") || lower.contains("gpt-5") ||
+                   lower.contains("deployment") || lower.contains("bounded call") ||
+                   lower.contains("rate limit") || lower.contains("retrying");
         }
     }
 }
