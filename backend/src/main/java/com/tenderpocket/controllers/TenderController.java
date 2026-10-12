@@ -72,6 +72,9 @@ public class TenderController {
     @Value("${aws.s3.enabled:false}")
     private boolean awsS3Enabled;
 
+    @Value("${file.upload-dir:public/documents}")
+    private String uploadDir = "public/documents";
+
     @Autowired(required = false)
     private com.tenderpocket.services.ObjectStorageService objectStorageService;
 
@@ -79,6 +82,20 @@ public class TenderController {
     private String geminiApiKey;
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    private Path resolveSafeLocalPath(String id, String fileName) {
+        if (id == null || fileName == null || id.isBlank() || fileName.isBlank() ||
+                id.contains("..") || fileName.contains("..") ||
+                id.contains("/") || id.contains("\\") || fileName.contains("/") || fileName.contains("\\")) {
+            return null;
+        }
+        Path basePath = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path targetPath = basePath.resolve(id).resolve(fileName).normalize();
+        if (!targetPath.startsWith(basePath)) {
+            return null;
+        }
+        return targetPath;
+    }
 
     private void persistDocument(String tenderId, String fileName, byte[] data, String contentType) {
         String objectKey = "tenders/" + tenderId + "/" + fileName;
@@ -91,9 +108,13 @@ public class TenderController {
             }
         } else {
             try {
-                Path dir = Paths.get("public/documents", tenderId);
-                Files.createDirectories(dir);
-                Path filePath = dir.resolve(fileName);
+                Path filePath = resolveSafeLocalPath(tenderId, fileName);
+                if (filePath == null) {
+                    throw new IllegalArgumentException("Invalid path or traversal attempt: " + tenderId + "/" + fileName);
+                }
+                if (filePath.getParent() != null) {
+                    Files.createDirectories(filePath.getParent());
+                }
                 Files.write(filePath, data);
             } catch (Exception e) {
                 throw new RuntimeException("Failed to save document to local storage (" + fileName + "): " + e.getMessage(), e);
@@ -1002,8 +1023,8 @@ public class TenderController {
         ComplianceConversionMetrics conversionMetrics = complianceProgressService.metricsFor(id);
 
         try {
-            String docDir = "public/documents/" + id;
-            Files.createDirectories(Paths.get(docDir));
+            Path docDir = Paths.get(uploadDir, id);
+            Files.createDirectories(docDir);
 
             byte[] uploadedBytes = file.getBytes();
             String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "specification.pdf";
@@ -1388,24 +1409,39 @@ public class TenderController {
             @PathVariable("id") String id,
             @PathVariable("fileName") String fileName) {
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        Path filePath = resolveSafeLocalPath(id, fileName);
+        if (filePath == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
         try {
             String objectKey = "tenders/" + id + "/" + fileName;
 
             // 1. If S3 is enabled, check if the object exists in S3
             if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
-                if (objectStorageService.exists(objectKey)) {
-                    String presignedUrl = objectStorageService.generateDownloadUrl(objectKey);
-                    return ResponseEntity.status(HttpStatus.FOUND)
-                            .location(java.net.URI.create(presignedUrl))
-                            .build();
+                try {
+                    if (objectStorageService.exists(objectKey)) {
+                        String presignedUrl = objectStorageService.generateDownloadUrl(objectKey);
+                        return ResponseEntity.status(HttpStatus.FOUND)
+                                .location(java.net.URI.create(presignedUrl))
+                                .build();
+                    }
+                    // Object not in S3: Check existing local documents compatibility fallback
+                    System.out.println("[TenderController] Object " + objectKey + " not in S3, checking local storage compatibility fallback...");
+                } catch (Exception s3Ex) {
+                    System.err.println("[TenderController] S3 error checking existence for key " + objectKey + ": " + s3Ex.getMessage());
+                    File localFile = filePath.toFile();
+                    if (!localFile.exists() || !localFile.isFile()) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                .body(Map.of("success", false, "error", "S3 document storage error: " + s3Ex.getMessage()));
+                    }
+                    System.out.println("[TenderController] Serving historical local file for " + objectKey + " despite S3 failure.");
                 }
-                // Object not in S3: Check existing local documents compatibility fallback
-                System.out.println("[TenderController] Object " + objectKey + " not in S3, checking local storage compatibility fallback...");
             }
 
             // 2. Safe compatibility / local file serving
-            java.nio.file.Path filePath = java.nio.file.Paths.get("public/documents", id, fileName).toAbsolutePath().normalize();
-            java.io.File file = filePath.toFile();
+            File file = filePath.toFile();
             if (file.exists() && file.isFile()) {
                 org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(filePath.toUri());
                 String contentType = java.nio.file.Files.probeContentType(filePath);

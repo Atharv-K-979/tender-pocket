@@ -137,12 +137,33 @@ public class S3ObjectStorageServiceTest {
     }
 
     @Test
-    void testExistsReturnsFalseOnBucketNotFoundOrError() {
+    void testExistsThrowsOnNoSuchBucketException() {
         String key = "tenders/123/doc.pdf";
         when(s3Client.headObject(any(HeadObjectRequest.class)))
                 .thenThrow(NoSuchBucketException.builder().message("Bucket not found").statusCode(404).build());
 
-        assertFalse(storageService.exists(key));
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> storageService.exists(key));
+        assertTrue(ex.getMessage().contains("S3 bucket does not exist"));
+    }
+
+    @Test
+    void testExistsThrowsOnAccessDenied403() {
+        String key = "tenders/123/doc.pdf";
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).message("Forbidden").build());
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> storageService.exists(key));
+        assertTrue(ex.getMessage().contains("Access denied"));
+    }
+
+    @Test
+    void testExistsThrowsOnNetworkOrClientFailure() {
+        String key = "tenders/123/doc.pdf";
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(software.amazon.awssdk.core.exception.SdkClientException.create("Connection timed out"));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> storageService.exists(key));
+        assertTrue(ex.getMessage().contains("Network or unexpected failure"));
     }
 
     @Test

@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -101,15 +102,27 @@ public class S3ObjectStorageService implements ObjectStorageService {
             return true;
         } catch (NoSuchKeyException e) {
             return false;
+        } catch (NoSuchBucketException e) {
+            System.err.println("[S3ObjectStorageService] S3 bucket does not exist: " + bucketName + " when checking key " + key + ": " + e.getMessage());
+            throw new RuntimeException("S3 bucket does not exist: " + bucketName, e);
         } catch (S3Exception e) {
+            String errorCode = (e.awsErrorDetails() != null) ? e.awsErrorDetails().errorCode() : null;
+            if ("NoSuchBucket".equalsIgnoreCase(errorCode)) {
+                System.err.println("[S3ObjectStorageService] S3 bucket does not exist: " + bucketName + " when checking key " + key + ": " + e.getMessage());
+                throw new RuntimeException("S3 bucket does not exist: " + bucketName, e);
+            }
             if (e.statusCode() == 404) {
                 return false;
             }
-            System.err.println("[S3ObjectStorageService] S3 headObject failed for key " + key + " in bucket " + bucketName + ": " + e.getMessage());
-            return false;
+            if (e.statusCode() == 403 || "AccessDenied".equalsIgnoreCase(errorCode)) {
+                System.err.println("[S3ObjectStorageService] Access denied checking object existence for key " + key + " in bucket " + bucketName + ": " + e.getMessage());
+                throw new RuntimeException("Access denied checking S3 object existence for key: " + key + " in bucket: " + bucketName, e);
+            }
+            System.err.println("[S3ObjectStorageService] S3 headObject failed for key " + key + " in bucket " + bucketName + " (Status: " + e.statusCode() + "): " + e.getMessage());
+            throw new RuntimeException("S3 error checking existence for key: " + key + " in bucket: " + bucketName + " (Status: " + e.statusCode() + "): " + e.getMessage(), e);
         } catch (Exception e) {
-            System.err.println("[S3ObjectStorageService] Unexpected error checking existence for key " + key + ": " + e.getMessage());
-            return false;
+            System.err.println("[S3ObjectStorageService] Unexpected error or network failure checking existence for key " + key + ": " + e.getMessage());
+            throw new RuntimeException("Network or unexpected failure checking S3 object existence for key: " + key + ": " + e.getMessage(), e);
         }
     }
 

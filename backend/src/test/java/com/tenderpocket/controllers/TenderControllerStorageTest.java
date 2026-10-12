@@ -243,4 +243,73 @@ public class TenderControllerStorageTest {
         assertTrue(Files.exists(testDocsDir.resolve("Technical_Specification_Sheet_" + tenderId + ".pdf")));
         assertTrue(Files.exists(testDocsDir.resolve("Technical_Specification_Sheet_" + tenderId + ".docx")));
     }
+
+    @Test
+    void testPathTraversalRejectedWithBadRequest() {
+        // Path traversal in ID
+        ResponseEntity<?> resp1 = tenderController.downloadDocumentFile("../etc", "passwd");
+        assertEquals(HttpStatus.BAD_REQUEST, resp1.getStatusCode());
+
+        // Path traversal in filename
+        ResponseEntity<?> resp2 = tenderController.downloadDocumentFile(tenderId, "../../../secret.txt");
+        assertEquals(HttpStatus.BAD_REQUEST, resp2.getStatusCode());
+
+        // Slash or backslash in path segment
+        ResponseEntity<?> resp3 = tenderController.downloadDocumentFile(tenderId, "sub/file.pdf");
+        assertEquals(HttpStatus.BAD_REQUEST, resp3.getStatusCode());
+    }
+
+    @Test
+    void testUnauthenticatedAccessRejected() {
+        SecurityContextHolder.clearContext();
+        ResponseEntity<?> resp = tenderController.downloadDocumentFile(tenderId, "doc.pdf");
+        assertEquals(HttpStatus.FORBIDDEN, resp.getStatusCode());
+    }
+
+    @Test
+    void testS3ExistsFailureWithoutLocalFileReturns500() {
+        ReflectionTestUtils.setField(tenderController, "awsS3Enabled", true);
+        when(objectStorageService.isRemote()).thenReturn(true);
+        when(objectStorageService.exists("tenders/" + tenderId + "/broken.pdf"))
+                .thenThrow(new RuntimeException("Access denied checking S3 object existence for key: tenders/" + tenderId + "/broken.pdf in bucket: my-bucket"));
+
+        ResponseEntity<?> response = tenderController.downloadDocumentFile(tenderId, "broken.pdf");
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertTrue(response.getBody().toString().contains("S3 document storage error"));
+    }
+
+    @Test
+    void testS3ExistsFailureWithHistoricalLocalFileFallsBackSafely() throws Exception {
+        ReflectionTestUtils.setField(tenderController, "awsS3Enabled", true);
+        when(objectStorageService.isRemote()).thenReturn(true);
+        when(objectStorageService.exists("tenders/" + tenderId + "/resilient.pdf"))
+                .thenThrow(new RuntimeException("Network or unexpected failure checking S3 object existence"));
+
+        Path localFile = testDocsDir.resolve("resilient.pdf");
+        Files.write(localFile, "Historical local document data".getBytes());
+
+        ResponseEntity<?> response = tenderController.downloadDocumentFile(tenderId, "resilient.pdf");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+    }
+
+    @Test
+    void testLocalStoragePathCompatibilityWithDeploymentLayout() throws Exception {
+        ReflectionTestUtils.setField(tenderController, "awsS3Enabled", false);
+        ReflectionTestUtils.setField(tenderController, "uploadDir", "public/documents");
+
+        com.tenderpocket.services.LocalStorageService localStorageService =
+                new com.tenderpocket.services.LocalStorageService("public/documents");
+
+        byte[] payload = "Deployment Mount Shared Content".getBytes();
+        localStorageService.upload("tenders/" + tenderId + "/shared.pdf", new java.io.ByteArrayInputStream(payload), "application/pdf", payload.length);
+
+        // Verify tenderController serves the exact same file created by LocalStorageService
+        ResponseEntity<?> response = tenderController.downloadDocumentFile(tenderId, "shared.pdf");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+    }
 }
