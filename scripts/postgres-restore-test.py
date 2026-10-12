@@ -22,6 +22,7 @@ DB_USER = os.getenv("POSTGRES_USER", "postgres")
 SOURCE_DB = os.getenv("POSTGRES_DB", "tender_pocket")
 TEST_DB = os.getenv("POSTGRES_RESTORE_TEST_DB", "tender_pocket_restore_test")
 LOCAL_BACKUP_DIR = os.getenv("POSTGRES_BACKUP_LOCAL_DIR", "backups/postgresql")
+S3_BUCKET = os.getenv("POSTGRES_BACKUP_S3_BUCKET", os.getenv("S3_BACKUP_BUCKET", "tender-pocket-postgres-backups"))
 
 SMTP_HOST = os.getenv("SPRING_MAIL_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SPRING_MAIL_PORT", "465"))
@@ -137,14 +138,20 @@ def read_backup_metadata(backup_path):
         except Exception as e:
             raise RuntimeError(f"Corrupt or unreadable metadata file {meta_path}: {e}")
 
-    # Attempt fetch from S3 if s3 path or bucket is available
-    s3_bucket = os.getenv("S3_BACKUP_BUCKET", "tender-pocket-postgres-backups")
+    # Attempt fetch from S3 if configured
     rel_path = backup_path
-    if "backups/postgresql/" in backup_path:
+    if backup_path.startswith("backups/postgresql/"):
+        rel_path = backup_path
+    elif "backups/postgresql/" in backup_path:
         rel_path = backup_path[backup_path.index("backups/postgresql/"):]
-    s3_meta_key = f"{rel_path}.meta.json"
+    else:
+        try:
+            rel_path = f"backups/postgresql/{os.path.relpath(backup_path, LOCAL_BACKUP_DIR)}"
+        except Exception:
+            rel_path = f"backups/postgresql/{os.path.basename(backup_path)}"
+    s3_meta_key = f"{rel_path}.meta.json".replace("\\", "/")
     try:
-        res = subprocess.run(["aws", "s3", "cp", f"s3://{s3_bucket}/{s3_meta_key}", meta_path], capture_output=True, text=True)
+        res = subprocess.run(["aws", "s3", "cp", f"s3://{S3_BUCKET}/{s3_meta_key}", meta_path], capture_output=True, text=True)
         if res.returncode == 0 and os.path.exists(meta_path):
             with open(meta_path, "r") as f:
                 return json.load(f)
@@ -337,6 +344,8 @@ Options:
                              'historical': ensures restored counts are positive and <= live DB counts.
   --strict                   Alias for --mode=fresh.
   --historical               Alias for --mode=historical.
+  --test-db=NAME             Target disposable test database (must match approved prefix).
+  --require-metadata         Fail restore verification if companion .meta.json sidecar is missing.
   --expected-users=N         Explicit expected user count.
   --expected-tenders=N       Explicit expected tender count.
   -h, --help                 Show this help message.
@@ -345,6 +354,8 @@ Options:
 
     backup_file = None
     mode = "fresh"
+    target_db = TEST_DB
+    require_metadata = os.getenv("POSTGRES_RESTORE_REQUIRE_METADATA", "0").lower() in ("1", "true", "yes")
     expected_users = None
     expected_tenders = None
 
@@ -355,6 +366,10 @@ Options:
             mode = "historical"
         elif arg == "--strict" or arg == "--fresh":
             mode = "fresh"
+        elif arg.startswith("--test-db="):
+            target_db = arg.split("=", 1)[1].strip()
+        elif arg == "--require-metadata":
+            require_metadata = True
         elif arg.startswith("--expected-users="):
             expected_users = int(arg.split("=", 1)[1])
         elif arg.startswith("--expected-tenders="):
@@ -369,17 +384,20 @@ Options:
         print(f"[❌] No backup file provided or found to restore: {backup_file}")
         sys.exit(1)
 
-    print(f"[*] Starting Isolated PostgreSQL Restore Verification Test")
-    print(f"    Backup Target : {backup_file}")
-    print(f"    Isolated DB   : {TEST_DB}")
-    print(f"    Mode          : {mode}")
-
     try:
-        # Enforce safety guardrail against live database
-        validate_safety_guardrails(TEST_DB, SOURCE_DB)
+        # Immediately validate target database safety against production/protected targets
+        validate_safety_guardrails(target_db, SOURCE_DB)
+
+        print(f"[*] Starting Isolated PostgreSQL Restore Verification Test")
+        print(f"    Backup Target : {backup_file}")
+        print(f"    Isolated DB   : {target_db}")
+        print(f"    Mode          : {mode}")
+        print(f"    Require Meta  : {require_metadata}")
 
         # Check for companion metadata snapshot and verify SHA-256 & size integrity
         meta = read_backup_metadata(backup_file)
+        if require_metadata and not meta:
+            raise RuntimeError(f"Required metadata missing: Companion metadata sidecar (.meta.json) not found for '{backup_file}'.")
         if meta:
             verify_backup_file_integrity(backup_file, meta)
 
@@ -395,25 +413,25 @@ Options:
             print(f"[✓] Found companion backup metadata sidecar with snapshot counts: {expected_counts}")
 
         # 1. Ensure test database is clean and recreate
-        validate_safety_guardrails(TEST_DB, SOURCE_DB)
-        run_psql("postgres", f"DROP DATABASE IF EXISTS {TEST_DB};")
-        validate_safety_guardrails(TEST_DB, SOURCE_DB)
-        run_psql("postgres", f"CREATE DATABASE {TEST_DB};")
-        print(f"[✓] Isolated test database '{TEST_DB}' created.")
+        validate_safety_guardrails(target_db, SOURCE_DB)
+        run_psql("postgres", f"DROP DATABASE IF EXISTS {target_db};")
+        validate_safety_guardrails(target_db, SOURCE_DB)
+        run_psql("postgres", f"CREATE DATABASE {target_db};")
+        print(f"[✓] Isolated test database '{target_db}' created.")
 
         # 2. Decompress and pipe dump into test DB with -v ON_ERROR_STOP=1
-        print(f"[*] Decompressing and restoring {backup_file} into {TEST_DB} (-v ON_ERROR_STOP=1)...")
-        restore_dump_file(backup_file, TEST_DB)
+        print(f"[*] Decompressing and restoring {backup_file} into {target_db} (-v ON_ERROR_STOP=1)...")
+        restore_dump_file(backup_file, target_db)
         print("[✓] Backup dump successfully applied to isolated test database (0 SQL errors).")
 
         # 3. Comprehensive verification
-        validate_safety_guardrails(TEST_DB, SOURCE_DB)
-        stats = verify_restored_database(TEST_DB, expected_counts=expected_counts, mode=mode, source_db=SOURCE_DB)
+        validate_safety_guardrails(target_db, SOURCE_DB)
+        stats = verify_restored_database(target_db, expected_counts=expected_counts, mode=mode, source_db=SOURCE_DB)
 
         # 4. Clean up temporary test database strictly with safety verification
-        validate_safety_guardrails(TEST_DB, SOURCE_DB)
-        run_psql("postgres", f"DROP DATABASE IF EXISTS {TEST_DB};")
-        print(f"[✓] Destroyed isolated test database '{TEST_DB}'.")
+        validate_safety_guardrails(target_db, SOURCE_DB)
+        run_psql("postgres", f"DROP DATABASE IF EXISTS {target_db};")
+        print(f"[✓] Destroyed isolated test database '{target_db}'.")
 
         print("==================================================")
         print("RESTORE VERIFICATION TEST: PASSED")
@@ -428,8 +446,8 @@ Options:
         err_msg = str(e)
         print(f"[❌] RESTORE VERIFICATION FAILED: {err_msg}")
         try:
-            validate_safety_guardrails(TEST_DB, SOURCE_DB)
-            run_psql("postgres", f"DROP DATABASE IF EXISTS {TEST_DB};")
+            validate_safety_guardrails(target_db, SOURCE_DB)
+            run_psql("postgres", f"DROP DATABASE IF EXISTS {target_db};")
         except Exception:
             pass
         send_alert_email("RESTORE_VERIFICATION", err_msg)

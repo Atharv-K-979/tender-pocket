@@ -215,7 +215,12 @@ def verify_s3_object(bucket, key, expected_size):
         raise Exception(f"S3 size mismatch for s3://{bucket}/{key}: expected {expected_size} bytes, got {s3_size} bytes")
 
 def enforce_local_retention():
-    """Removes monthly backups older than 180 days (6 months)."""
+    """
+    Removes monthly backups older than 180 days (6 months).
+    Safety invariants:
+    1. Only removes files strictly matching the tier filename prefix (backup-monthly-* in monthly/).
+    2. NEVER deletes the latest known-good local recovery point, preserving disaster recovery capability.
+    """
     now = datetime.now()
     cutoff = now - timedelta(days=180)
 
@@ -223,20 +228,26 @@ def enforce_local_retention():
     if not os.path.exists(monthly_dir):
         return
 
+    monthly_files = []
     for root, dirs, files in os.walk(monthly_dir):
         for file in files:
-            if file.endswith(".sql.gz"):
-                path = os.path.join(root, file)
-                mtime = datetime.fromtimestamp(os.path.getmtime(path))
-                if mtime < cutoff:
-                    print(f"[*] Removing expired monthly backup: {path}")
-                    try:
-                        os.remove(path)
-                        meta_f = path + ".meta.json"
-                        if os.path.exists(meta_f):
-                            os.remove(meta_f)
-                    except Exception as e:
-                        print(f"[!] Warning: Could not remove {path}: {e}")
+            if file.startswith("backup-monthly-") and file.endswith(".sql.gz") and not file.endswith(".tmp"):
+                p = os.path.join(root, file)
+                monthly_files.append((os.path.getmtime(p), p))
+    monthly_files.sort(reverse=True)
+
+    if len(monthly_files) > 1:
+        for mtime_ts, path in monthly_files[1:]:
+            mtime = datetime.fromtimestamp(mtime_ts)
+            if mtime < cutoff:
+                print(f"[*] Removing expired monthly backup: {path}")
+                try:
+                    os.remove(path)
+                    meta_f = path + ".meta.json"
+                    if os.path.exists(meta_f):
+                        os.remove(meta_f)
+                except Exception as e:
+                    print(f"[!] Warning: Could not remove {path}: {e}")
 
 def send_alert_email(stage, error_msg):
     subject = f"[Tender Pocket] PostgreSQL Monthly Backup FAILED ({stage})"
@@ -364,11 +375,10 @@ def main():
         # Upload metadata sidecar to S3 and verify
         meta_s3_key = f"{s3_key}.meta.json"
         meta_upload_proc = subprocess.run(["aws", "s3", "cp", meta_path, f"s3://{S3_BUCKET}/{meta_s3_key}"], capture_output=True, text=True)
-        if meta_upload_proc.returncode == 0:
-            verify_s3_object(S3_BUCKET, meta_s3_key, os.path.getsize(meta_path))
-            print(f"[✓] Metadata sidecar stored and verified in S3: s3://{S3_BUCKET}/{meta_s3_key}")
-        else:
-            print(f"[!] Warning: Could not upload metadata sidecar to S3: {meta_upload_proc.stderr.strip()}")
+        if meta_upload_proc.returncode != 0:
+            raise Exception(f"AWS S3 metadata sidecar upload failed (code {meta_upload_proc.returncode}): {meta_upload_proc.stderr.strip()}")
+        verify_s3_object(S3_BUCKET, meta_s3_key, os.path.getsize(meta_path))
+        print(f"[✓] Metadata sidecar stored and verified in S3: s3://{S3_BUCKET}/{meta_s3_key}")
 
         uploaded_to_s3 = True
         print(f"[✓] S3 upload verified: s3://{S3_BUCKET}/{s3_key} ({file_size} bytes)")

@@ -29,6 +29,7 @@ import fcntl
 import hashlib
 import json
 import subprocess
+import uuid
 from datetime import datetime
 from unittest.mock import patch, MagicMock
 
@@ -294,6 +295,124 @@ COPY public.tenders (id, title) FROM stdin;
                 restore_test.verify_backup_file_integrity(tf.name, {"sha256": correct_sha, "file_size": 999999})
             self.assertIn("File size mismatch", str(cm_size.exception))
 
+    def test_retention_preserves_newest_recovery_point_and_isolates_tiers(self):
+        """
+        Verify retention logic:
+        1. Never deletes the latest/only recovery point in a tier even if older than cutoff.
+        2. Strictly prunes only matching tier prefix (backup-daily- in daily, backup-monthly- in monthly).
+        3. Pruning also removes companion .meta.json file.
+        """
+        import time
+        with tempfile.TemporaryDirectory() as temp_dir:
+            daily_dir = os.path.join(temp_dir, "daily")
+            os.makedirs(daily_dir, exist_ok=True)
+
+            old_daily = os.path.join(daily_dir, "backup-daily-old.sql.gz")
+            old_meta = old_daily + ".meta.json"
+            with open(old_daily, "w") as f: f.write("old-daily")
+            with open(old_meta, "w") as f: f.write("{}")
+
+            # Set mtime to 30 days ago
+            thirty_days_ago = time.time() - (30 * 86400)
+            os.utime(old_daily, (thirty_days_ago, thirty_days_ago))
+            os.utime(old_meta, (thirty_days_ago, thirty_days_ago))
+
+            # Non-tier file that must NOT be touched
+            alien_file = os.path.join(daily_dir, "backup-weekly-wrong-folder.sql.gz")
+            with open(alien_file, "w") as f: f.write("keep-me")
+            os.utime(alien_file, (thirty_days_ago, thirty_days_ago))
+
+            with patch.object(backup_daily, "LOCAL_BACKUP_DIR", temp_dir):
+                # Run retention with only one daily backup: MUST NOT be deleted
+                backup_daily.enforce_local_retention()
+                self.assertTrue(os.path.exists(old_daily), "Sole daily recovery point must NOT be pruned")
+                self.assertTrue(os.path.exists(alien_file), "Non-tier file must NOT be pruned")
+
+                # Add a newer daily backup
+                new_daily = os.path.join(daily_dir, "backup-daily-new.sql.gz")
+                with open(new_daily, "w") as f: f.write("new-daily")
+
+                # Now old daily should be safely pruned, preserving new daily
+                backup_daily.enforce_local_retention()
+                self.assertFalse(os.path.exists(old_daily), "Expired daily backup must be pruned when newer backup exists")
+                self.assertFalse(os.path.exists(old_meta), "Companion .meta.json must be pruned when expired backup is pruned")
+                self.assertTrue(os.path.exists(new_daily), "New daily backup must be preserved")
+                self.assertTrue(os.path.exists(alien_file), "Non-tier file must remain intact")
+
+    @patch("subprocess.run")
+    def test_daily_s3_metadata_upload_failure_fails_safely(self, mock_run):
+        """Verify daily backup raises Exception and alerts if metadata sidecar upload fails."""
+        mock_dump = MagicMock(returncode=0, stdout=b"CREATE TABLE test (id int);\n" * 50)
+        mock_s3_dump = MagicMock(returncode=0, stdout="")
+        mock_s3_meta = MagicMock(returncode=1, stderr="S3 metadata upload AccessDenied")
+
+        mock_run.side_effect = [mock_dump, mock_s3_dump, mock_s3_meta]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(backup_daily, "LOCAL_BACKUP_DIR", temp_dir):
+                with patch.object(backup_daily, "acquire_lock", return_value=MagicMock()):
+                    with patch.object(backup_daily, "ensure_backup_runs_table"):
+                        with patch.object(backup_daily, "get_source_table_counts", return_value={"users": 1, "tenders": 1}):
+                            with patch.object(backup_daily, "verify_s3_object"):
+                                with patch.object(backup_daily, "send_alert_email") as mock_alert:
+                                    with self.assertRaises(SystemExit) as cm:
+                                        backup_daily.main()
+                                    self.assertEqual(cm.exception.code, 1)
+                                    mock_alert.assert_called_with("DAILY_BACKUP_EXECUTION", unittest.mock.ANY)
+
+    @patch("subprocess.run")
+    def test_monthly_s3_metadata_upload_failure_fails_safely(self, mock_run):
+        """Verify monthly backup raises Exception and alerts if metadata sidecar upload fails."""
+        mock_dump = MagicMock(returncode=0, stdout=b"CREATE TABLE test (id int);\n" * 50)
+        mock_s3_dump = MagicMock(returncode=0, stdout="")
+        mock_s3_meta = MagicMock(returncode=1, stderr="S3 metadata upload AccessDenied")
+
+        mock_run.side_effect = [mock_dump, mock_s3_dump, mock_s3_meta]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(backup_monthly, "LOCAL_BACKUP_DIR", temp_dir):
+                with patch.object(backup_monthly, "acquire_lock", return_value=MagicMock()):
+                    with patch.object(backup_monthly, "ensure_backup_runs_table"):
+                        with patch.object(backup_monthly, "get_source_table_counts", return_value={"users": 1, "tenders": 1}):
+                            with patch.object(backup_monthly, "verify_s3_object"):
+                                with patch.object(backup_monthly, "send_alert_email") as mock_alert:
+                                    with patch.object(sys, "argv", ["postgres-backup-monthly.py", "2026-10"]):
+                                        with self.assertRaises(SystemExit) as cm:
+                                            backup_monthly.main()
+                                        self.assertEqual(cm.exception.code, 1)
+                                        mock_alert.assert_called_with("MONTHLY_BACKUP_EXECUTION", unittest.mock.ANY)
+
+    def test_restore_rejects_test_db_override_to_production_or_invalid_names(self):
+        """Verify restore script rejects attempts to target production via --test-db."""
+        dummy_backup = tempfile.mktemp(suffix=".sql.gz")
+        with gzip.open(dummy_backup, "wb") as f:
+            f.write(b"SELECT 1;")
+
+        try:
+            for forbidden_db in ("tender_pocket", "postgres", "template0", "template1", "my_production_db", "prod_db"):
+                with patch.object(sys, "argv", ["postgres-restore-test.py", dummy_backup, f"--test-db={forbidden_db}"]):
+                    with self.assertRaises(SystemExit) as cm:
+                        restore_test.main()
+                    self.assertEqual(cm.exception.code, 1)
+        finally:
+            if os.path.exists(dummy_backup):
+                os.remove(dummy_backup)
+
+    def test_restore_fails_when_metadata_required_and_missing(self):
+        """Verify restore script fails immediately when --require-metadata is set but .meta.json is missing."""
+        dummy_backup = tempfile.mktemp(suffix=".sql.gz")
+        with gzip.open(dummy_backup, "wb") as f:
+            f.write(b"SELECT 1;")
+
+        try:
+            with patch.object(sys, "argv", ["postgres-restore-test.py", dummy_backup, "--require-metadata"]):
+                with self.assertRaises(SystemExit) as cm:
+                    restore_test.main()
+                self.assertEqual(cm.exception.code, 1)
+        finally:
+            if os.path.exists(dummy_backup):
+                os.remove(dummy_backup)
+
 
 class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
     """
@@ -302,7 +421,7 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
     Exercises the actual production helper functions.
     """
 
-    TEST_INTEG_DB = "tp_test_backup_integ"
+    TEST_INTEG_DB = f"tp_test_integ_{uuid.uuid4().hex[:8]}"
 
     @classmethod
     def setUpClass(cls):
@@ -414,8 +533,8 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
         all required business tables, generates dump, writes snapshot metadata,
         restores into isolated test DB (-v ON_ERROR_STOP=1), and verifies integrity.
         """
-        source_db = "tp_test_data_source"
-        target_db = "tp_test_data_restore"
+        source_db = f"tp_test_src_{uuid.uuid4().hex[:8]}"
+        target_db = f"tp_test_dst_{uuid.uuid4().hex[:8]}"
 
         try:
             exec_psql("postgres", f"DROP DATABASE IF EXISTS {source_db};")
@@ -479,7 +598,7 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
         A backup dump containing a bad SQL statement must fail the restore command
         rather than reporting success.
         """
-        target_db = "tp_test_sql_fail_db"
+        target_db = f"tp_test_sql_{uuid.uuid4().hex[:8]}"
         try:
             exec_psql("postgres", f"DROP DATABASE IF EXISTS {target_db};")
             exec_psql("postgres", f"CREATE DATABASE {target_db};")
@@ -507,7 +626,7 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
 
     def test_08_restore_fails_on_count_mismatch(self):
         """Verify restore verification fails when expected snapshot counts do not match."""
-        test_db = "tp_test_mismatch_db"
+        test_db = f"tp_test_cnt_{uuid.uuid4().hex[:8]}"
         try:
             exec_psql("postgres", f"DROP DATABASE IF EXISTS {test_db};")
             exec_psql("postgres", f"CREATE DATABASE {test_db};")
@@ -530,7 +649,7 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
 
     def test_09_restore_fails_on_missing_required_business_tables(self):
         """Verify restore verification fails when required business tables are missing."""
-        test_db = "tp_test_missing_tbls_db"
+        test_db = f"tp_test_tbl_{uuid.uuid4().hex[:8]}"
         try:
             exec_psql("postgres", f"DROP DATABASE IF EXISTS {test_db};")
             exec_psql("postgres", f"CREATE DATABASE {test_db};")

@@ -215,44 +215,63 @@ def verify_s3_object(bucket, key, expected_size):
         raise Exception(f"S3 size mismatch for s3://{bucket}/{key}: expected {expected_size} bytes, got {s3_size} bytes")
 
 def enforce_local_retention():
-    """Removes daily backups older than 14 days and weekly backups older than 56 days (8 weeks)."""
+    """
+    Removes daily backups older than 14 days and weekly backups older than 56 days (8 weeks).
+    Safety invariants:
+    1. Only removes files strictly matching the tier filename prefix (backup-daily-* in daily/, backup-weekly-* in weekly/).
+    2. NEVER deletes the latest known-good local recovery point in either tier, preserving disaster recovery capability.
+    """
     now = datetime.now()
     daily_cutoff = now - timedelta(days=14)
     weekly_cutoff = now - timedelta(days=56)
 
+    # 1. Prune daily backups (keeping at least the newest known-good recovery point)
     daily_dir = os.path.join(LOCAL_BACKUP_DIR, "daily")
     if os.path.exists(daily_dir):
+        daily_files = []
         for root, dirs, files in os.walk(daily_dir):
             for file in files:
-                if file.endswith(".sql.gz"):
-                    path = os.path.join(root, file)
-                    mtime = datetime.fromtimestamp(os.path.getmtime(path))
-                    if mtime < daily_cutoff:
-                        print(f"[*] Removing expired daily backup: {path}")
-                        try:
-                            os.remove(path)
-                            meta_f = path + ".meta.json"
-                            if os.path.exists(meta_f):
-                                os.remove(meta_f)
-                        except Exception as e:
-                            print(f"[!] Warning: Could not remove {path}: {e}")
+                if file.startswith("backup-daily-") and file.endswith(".sql.gz") and not file.endswith(".tmp"):
+                    p = os.path.join(root, file)
+                    daily_files.append((os.path.getmtime(p), p))
+        daily_files.sort(reverse=True)
 
+        if len(daily_files) > 1:
+            for mtime_ts, path in daily_files[1:]:
+                mtime = datetime.fromtimestamp(mtime_ts)
+                if mtime < daily_cutoff:
+                    print(f"[*] Removing expired daily backup: {path}")
+                    try:
+                        os.remove(path)
+                        meta_f = path + ".meta.json"
+                        if os.path.exists(meta_f):
+                            os.remove(meta_f)
+                    except Exception as e:
+                        print(f"[!] Warning: Could not remove {path}: {e}")
+
+    # 2. Prune weekly backups (keeping at least the newest known-good recovery point)
     weekly_dir = os.path.join(LOCAL_BACKUP_DIR, "weekly")
     if os.path.exists(weekly_dir):
+        weekly_files = []
         for root, dirs, files in os.walk(weekly_dir):
             for file in files:
-                if file.endswith(".sql.gz"):
-                    path = os.path.join(root, file)
-                    mtime = datetime.fromtimestamp(os.path.getmtime(path))
-                    if mtime < weekly_cutoff:
-                        print(f"[*] Removing expired weekly backup: {path}")
-                        try:
-                            os.remove(path)
-                            meta_f = path + ".meta.json"
-                            if os.path.exists(meta_f):
-                                os.remove(meta_f)
-                        except Exception as e:
-                            print(f"[!] Warning: Could not remove {path}: {e}")
+                if file.startswith("backup-weekly-") and file.endswith(".sql.gz") and not file.endswith(".tmp"):
+                    p = os.path.join(root, file)
+                    weekly_files.append((os.path.getmtime(p), p))
+        weekly_files.sort(reverse=True)
+
+        if len(weekly_files) > 1:
+            for mtime_ts, path in weekly_files[1:]:
+                mtime = datetime.fromtimestamp(mtime_ts)
+                if mtime < weekly_cutoff:
+                    print(f"[*] Removing expired weekly backup: {path}")
+                    try:
+                        os.remove(path)
+                        meta_f = path + ".meta.json"
+                        if os.path.exists(meta_f):
+                            os.remove(meta_f)
+                    except Exception as e:
+                        print(f"[!] Warning: Could not remove {path}: {e}")
 
 def send_alert_email(stage, error_msg):
     subject = f"[Tender Pocket] PostgreSQL Daily Backup FAILED ({stage})"
@@ -382,11 +401,10 @@ def main():
         # Upload metadata sidecar to S3 and verify
         meta_s3_key = f"{s3_key}.meta.json"
         meta_upload_proc = subprocess.run(["aws", "s3", "cp", meta_path, f"s3://{S3_BUCKET}/{meta_s3_key}"], capture_output=True, text=True)
-        if meta_upload_proc.returncode == 0:
-            verify_s3_object(S3_BUCKET, meta_s3_key, os.path.getsize(meta_path))
-            print(f"[✓] Metadata sidecar stored and verified in S3: s3://{S3_BUCKET}/{meta_s3_key}")
-        else:
-            print(f"[!] Warning: Could not upload metadata sidecar to S3: {meta_upload_proc.stderr.strip()}")
+        if meta_upload_proc.returncode != 0:
+            raise Exception(f"AWS S3 metadata sidecar upload failed (code {meta_upload_proc.returncode}): {meta_upload_proc.stderr.strip()}")
+        verify_s3_object(S3_BUCKET, meta_s3_key, os.path.getsize(meta_path))
+        print(f"[✓] Metadata sidecar stored and verified in S3: s3://{S3_BUCKET}/{meta_s3_key}")
 
         uploaded_to_s3 = True
         print(f"[✓] S3 upload verified: s3://{S3_BUCKET}/{s3_key} ({file_size} bytes)")
@@ -421,8 +439,9 @@ def main():
                 # Upload weekly metadata sidecar
                 weekly_meta_s3_key = f"{weekly_s3_key}.meta.json"
                 weekly_meta_proc = subprocess.run(["aws", "s3", "cp", weekly_meta_path, f"s3://{S3_BUCKET}/{weekly_meta_s3_key}"], capture_output=True, text=True)
-                if weekly_meta_proc.returncode == 0:
-                    verify_s3_object(S3_BUCKET, weekly_meta_s3_key, os.path.getsize(weekly_meta_path))
+                if weekly_meta_proc.returncode != 0:
+                    raise Exception(f"AWS S3 weekly metadata sidecar upload failed (code {weekly_meta_proc.returncode}): {weekly_meta_proc.stderr.strip()}")
+                verify_s3_object(S3_BUCKET, weekly_meta_s3_key, os.path.getsize(weekly_meta_path))
 
                 record_backup_success("WEEKLY", start_time, S3_BUCKET, weekly_s3_key, file_size, record_count=counts.get("tenders", 0))
                 print(f"[✓] Weekly recovery point archived & verified: s3://{S3_BUCKET}/{weekly_s3_key}")
