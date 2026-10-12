@@ -44,10 +44,15 @@ def acquire_lock():
 
 def run_psql(query):
     """Executes a query against the PostgreSQL database."""
-    cmd = [
-        "docker", "exec", "-i", DB_CONTAINER,
-        "psql", "-U", DB_USER, "-d", DB_NAME, "-t", "-A", "-c", query
-    ]
+    if os.getenv("USE_DIRECT_PSQL") == "1":
+        host = os.getenv("POSTGRES_HOST", "localhost")
+        port = os.getenv("POSTGRES_PORT", "5432")
+        cmd = ["psql", "-h", host, "-p", port, "-U", DB_USER, "-d", DB_NAME, "-t", "-A", "-c", query]
+    else:
+        cmd = [
+            "docker", "exec", "-i", DB_CONTAINER,
+            "psql", "-U", DB_USER, "-d", DB_NAME, "-t", "-A", "-c", query
+        ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
         raise Exception(f"psql error: {res.stderr.strip()}")
@@ -61,8 +66,8 @@ def ensure_backup_runs_table():
         backup_type VARCHAR(20) NOT NULL,
         started_at TIMESTAMPTZ NOT NULL,
         completed_at TIMESTAMPTZ,
-        checkpoint_from_id BIGINT DEFAULT 0,
-        checkpoint_to_id BIGINT DEFAULT 0,
+        checkpoint_from_id BIGINT NOT NULL DEFAULT 0,
+        checkpoint_to_id BIGINT NOT NULL DEFAULT 0,
         s3_bucket VARCHAR(255),
         s3_key VARCHAR(512),
         status VARCHAR(20) NOT NULL,
@@ -175,6 +180,7 @@ def main():
     s3_key = f"backups/postgresql/monthly/{year}/{filename}"
     local_path = os.path.join(LOCAL_BACKUP_DIR, "monthly", year, filename)
     temp_path = local_path + ".tmp"
+    uploaded_to_s3 = False
 
     try:
         print(f"[*] Starting PostgreSQL Full Monthly Backup for Tender Pocket ({target_ym})...")
@@ -183,12 +189,21 @@ def main():
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
         # 1. Execute full pg_dump
-        dump_cmd = [
-            "docker", "exec", "-i", DB_CONTAINER,
-            "pg_dump", "-U", DB_USER, "-d", DB_NAME,
-            "--clean", "--if-exists", "--no-owner", "--no-privileges"
-        ]
-        print(f"[*] Executing pg_dump on container '{DB_CONTAINER}'...")
+        if os.getenv("USE_DIRECT_PSQL") == "1":
+            host = os.getenv("POSTGRES_HOST", "localhost")
+            port = os.getenv("POSTGRES_PORT", "5432")
+            dump_cmd = [
+                "pg_dump", "-h", host, "-p", port, "-U", DB_USER, "-d", DB_NAME,
+                "--clean", "--if-exists", "--no-owner", "--no-privileges"
+            ]
+            print(f"[*] Executing pg_dump on host '{host}:{port}'...")
+        else:
+            dump_cmd = [
+                "docker", "exec", "-i", DB_CONTAINER,
+                "pg_dump", "-U", DB_USER, "-d", DB_NAME,
+                "--clean", "--if-exists", "--no-owner", "--no-privileges"
+            ]
+            print(f"[*] Executing pg_dump on container '{DB_CONTAINER}'...")
         dump_proc = subprocess.run(dump_cmd, capture_output=True)
 
         if dump_proc.returncode != 0:
@@ -228,12 +243,13 @@ def main():
         # 5. Verify upload in S3 via head-object
         print("[*] Verifying S3 object existence and size...")
         verify_s3_object(S3_BUCKET, s3_key, file_size)
+        uploaded_to_s3 = True
         print(f"[✓] S3 upload verified: s3://{S3_BUCKET}/{s3_key} ({file_size} bytes)")
 
-        # 6. Record SUCCESS in backup_runs
+        # 6. Record SUCCESS in backup_runs (checkpoint_from_id=0, checkpoint_to_id=0 signifies full snapshot)
         ins_success = f"""
-        INSERT INTO backup_runs (backup_type, started_at, completed_at, s3_bucket, s3_key, status, size_bytes, record_count)
-        VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), '{S3_BUCKET}', '{s3_key}', 'SUCCESS', {file_size}, 0);
+        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, size_bytes, record_count)
+        VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 0, 0, '{S3_BUCKET}', '{s3_key}', 'SUCCESS', {file_size}, 0);
         """
         run_psql(ins_success)
 
@@ -249,7 +265,7 @@ def main():
 
     except Exception as e:
         err_msg = str(e)
-        print(f"[❌] MONTHLY BACKUP FAILED: {err_msg}")
+        escaped_err = err_msg.replace("'", "''")
 
         if os.path.exists(temp_path):
             try:
@@ -257,16 +273,30 @@ def main():
             except Exception:
                 pass
 
-        try:
-            ins_fail = f"""
-            INSERT INTO backup_runs (backup_type, started_at, completed_at, status, error_message)
-            VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 'FAILED', '{err_msg.replace("'", "''")}');
-            """
-            run_psql(ins_fail)
-        except Exception:
-            pass
+        if uploaded_to_s3:
+            # S3 upload succeeded; failure occurred during database recording or retention
+            print(f"[❌] MONTHLY BACKUP LOGGING FAILED: Backup verified in S3 ({s3_key}), but post-backup recording failed: {err_msg}")
+            try:
+                ins_fail = f"""
+                INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, error_message, size_bytes, record_count)
+                VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 0, 0, '{S3_BUCKET}', '{s3_key}', 'FAILED', '{escaped_err}', {file_size}, 0);
+                """
+                run_psql(ins_fail)
+            except Exception:
+                pass
+            send_alert_email("MONTHLY_BACKUP_LOGGING", f"Backup verified in S3 ({s3_key}) but recording failed: {err_msg}")
+        else:
+            print(f"[❌] MONTHLY BACKUP FAILED: {err_msg}")
+            try:
+                ins_fail = f"""
+                INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, status, error_message)
+                VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 0, 0, 'FAILED', '{escaped_err}');
+                """
+                run_psql(ins_fail)
+            except Exception:
+                pass
+            send_alert_email("MONTHLY_BACKUP_EXECUTION", err_msg)
 
-        send_alert_email("MONTHLY_BACKUP_EXECUTION", err_msg)
         sys.exit(1)
 
 if __name__ == "__main__":

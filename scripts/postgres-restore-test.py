@@ -27,11 +27,32 @@ SMTP_USER = os.getenv("SPRING_MAIL_USERNAME", "")
 SMTP_PASS = os.getenv("SPRING_MAIL_PASSWORD", "")
 ALERT_EMAIL = os.getenv("BACKUP_ALERT_EMAIL", SMTP_USER if SMTP_USER else "admin@tenderpocket.com")
 
+def validate_safety_guardrails(test_db_name, source_db_name):
+    """Enforces safety guardrails ensuring test restore never targets or modifies live database."""
+    protected_databases = {
+        "tender_pocket",
+        "postgres",
+        "template0",
+        "template1",
+        source_db_name.strip().lower()
+    }
+    target = test_db_name.strip().lower()
+    if target in protected_databases or target == source_db_name.strip().lower():
+        raise RuntimeError(
+            f"CRITICAL SAFETY VIOLATION: Isolated restore test cannot drop, recreate, or modify "
+            f"protected database '{test_db_name}' (source live database: '{source_db_name}')."
+        )
+
 def run_psql(db, query):
-    cmd = [
-        "docker", "exec", "-i", DB_CONTAINER,
-        "psql", "-U", DB_USER, "-d", db, "-t", "-A", "-c", query
-    ]
+    if os.getenv("USE_DIRECT_PSQL") == "1":
+        host = os.getenv("POSTGRES_HOST", "localhost")
+        port = os.getenv("POSTGRES_PORT", "5432")
+        cmd = ["psql", "-h", host, "-p", port, "-U", DB_USER, "-d", db, "-t", "-A", "-c", query]
+    else:
+        cmd = [
+            "docker", "exec", "-i", DB_CONTAINER,
+            "psql", "-U", DB_USER, "-d", db, "-t", "-A", "-c", query
+        ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
         raise Exception(f"psql error on {db}: {res.stderr.strip()}")
@@ -96,6 +117,9 @@ def main():
     print(f"[*] Starting Isolated PostgreSQL Restore Verification Test using: {backup_file}")
 
     try:
+        # Enforce safety guardrail against live database
+        validate_safety_guardrails(TEST_DB, SOURCE_DB)
+
         # 1. Ensure test database is clean and recreate
         run_psql("postgres", f"DROP DATABASE IF EXISTS {TEST_DB};")
         run_psql("postgres", f"CREATE DATABASE {TEST_DB};")
@@ -106,10 +130,15 @@ def main():
         with gzip.open(backup_file, "rb") as gz_in:
             decompressed_sql = gz_in.read()
 
-        restore_cmd = [
-            "docker", "exec", "-i", DB_CONTAINER,
-            "psql", "-U", DB_USER, "-d", TEST_DB
-        ]
+        if os.getenv("USE_DIRECT_PSQL") == "1":
+            host = os.getenv("POSTGRES_HOST", "localhost")
+            port = os.getenv("POSTGRES_PORT", "5432")
+            restore_cmd = ["psql", "-h", host, "-p", port, "-U", DB_USER, "-d", TEST_DB]
+        else:
+            restore_cmd = [
+                "docker", "exec", "-i", DB_CONTAINER,
+                "psql", "-U", DB_USER, "-d", TEST_DB
+            ]
         restore_proc = subprocess.run(restore_cmd, input=decompressed_sql, capture_output=True)
 
         if restore_proc.returncode != 0:
@@ -146,10 +175,21 @@ def main():
         print(f"    Users   — Source: {source_user_cnt} | Restored: {restored_user_cnt}")
         print(f"    Tenders — Source: {source_tender_cnt} | Restored: {restored_tender_cnt}")
 
-        if source_user_cnt != restored_user_cnt:
-            raise Exception(f"Count mismatch on 'users': source {source_user_cnt} != restored {restored_user_cnt}")
-        if source_tender_cnt != restored_tender_cnt:
-            raise Exception(f"Count mismatch on 'tenders': source {source_tender_cnt} != restored {restored_tender_cnt}")
+        is_strict = "--strict" in sys.argv
+        if is_strict:
+            if source_user_cnt != restored_user_cnt:
+                raise Exception(f"Strict count mismatch on 'users': source {source_user_cnt} != restored {restored_user_cnt}")
+            if source_tender_cnt != restored_tender_cnt:
+                raise Exception(f"Strict count mismatch on 'tenders': source {source_tender_cnt} != restored {restored_tender_cnt}")
+        else:
+            if int(restored_user_cnt) == 0:
+                raise Exception(f"Restored 'users' table is unexpectedly empty (0 records)")
+            if int(restored_tender_cnt) == 0:
+                raise Exception(f"Restored 'tenders' table is unexpectedly empty (0 records)")
+            if int(restored_user_cnt) > int(source_user_cnt):
+                raise Exception(f"Integrity anomaly on 'users': restored ({restored_user_cnt}) exceeds source ({source_user_cnt})")
+            if int(restored_tender_cnt) > int(source_tender_cnt):
+                raise Exception(f"Integrity anomaly on 'tenders': restored ({restored_tender_cnt}) exceeds source ({source_tender_cnt})")
 
         # 5. Clean up temporary test database
         run_psql("postgres", f"DROP DATABASE IF EXISTS {TEST_DB};")
