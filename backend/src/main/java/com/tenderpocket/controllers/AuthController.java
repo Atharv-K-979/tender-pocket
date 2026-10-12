@@ -94,7 +94,11 @@ public class AuthController {
             Map<String, Object> resp = new HashMap<>();
             resp.put("success", true);
             resp.put("token", token);
-            resp.put("user", Map.of("username", user.getUsername(), "role", user.getRole()));
+            Map<String, String> userMap = new HashMap<>();
+            userMap.put("username", user.getUsername());
+            userMap.put("role", user.getRole());
+            userMap.put("email", user.getEmail() != null ? user.getEmail() : "");
+            resp.put("user", userMap);
             return ResponseEntity.ok(resp);
         }
 
@@ -110,7 +114,13 @@ public class AuthController {
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         if (!WorkflowPermissions.allowed(MANAGE_USERS)) {
             List<Map<String, String>> directory = (userRepository != null ? userRepository.findAll() : Collections.<User>emptyList()).stream()
-                    .map(user -> Map.of("username", user.getUsername(), "role", user.getRole())).toList();
+                    .map(user -> {
+                        Map<String, String> m = new HashMap<>();
+                        m.put("username", user.getUsername());
+                        m.put("role", user.getRole());
+                        m.put("email", user.getEmail() != null ? user.getEmail() : "");
+                        return m;
+                    }).toList();
             return ResponseEntity.ok(Map.of("success", true, "users", directory));
         }
         userRole = WorkflowPermissions.role();
@@ -145,6 +155,7 @@ public class AuthController {
             Map<String, Object> uMap = new HashMap<>();
             uMap.put("username", user.getUsername());
             uMap.put("role", user.getRole());
+            uMap.put("email", user.getEmail() != null ? user.getEmail() : "");
 
             if ("MIS Executive".equalsIgnoreCase(user.getRole()) || "Tender Executive".equalsIgnoreCase(user.getRole())) {
                 List<Tender> tenders = tendersByExec.getOrDefault(user.getUsername(), Collections.emptyList());
