@@ -10,11 +10,14 @@ Tests:
 6. Distinguishing database logging failure when S3 upload has already succeeded
 7. Live database safety guardrail enforcement in restore test
 8. Reproduction of actual UAT constraint violation (omitting checkpoint_from_id)
-9. Daily success logging against PostgreSQL table with NOT NULL checkpoints
-10. Weekly success logging against PostgreSQL table with NOT NULL checkpoints
-11. Monthly success logging against PostgreSQL table with NOT NULL checkpoints
-12. Failure logging against PostgreSQL table with NOT NULL checkpoints
-13. Complete isolated backup-and-restore test using disposable test database
+9. Daily success logging using production helper against NOT NULL checkpoints
+10. Weekly success logging using production helper against NOT NULL checkpoints
+11. Monthly success logging using production helper against NOT NULL checkpoints
+12. Failure logging using production helpers against NOT NULL checkpoints
+13. Complete isolated backup-and-restore test with metadata sidecar verification
+14. SQL restore error-stopping (-v ON_ERROR_STOP=1) regression test
+15. Restored count mismatch failure test
+16. Missing required business tables failure test
 """
 
 import os
@@ -24,6 +27,7 @@ import unittest
 import gzip
 import fcntl
 import hashlib
+import json
 import subprocess
 from datetime import datetime
 from unittest.mock import patch, MagicMock
@@ -44,15 +48,15 @@ restore_test = load_module("restore_test", os.path.join(os.path.dirname(__file__
 
 
 def exec_psql(db, query):
-    """Executes psql query via Docker or direct connection depending on environment."""
+    """Executes psql query via Docker or direct connection with -v ON_ERROR_STOP=1."""
     if os.getenv("USE_DIRECT_PSQL") == "1":
         host = os.getenv("POSTGRES_HOST", "localhost")
         port = os.getenv("POSTGRES_PORT", "5432")
-        cmd = ["psql", "-h", host, "-p", port, "-U", "postgres", "-d", db, "-t", "-A", "-c", query]
+        cmd = ["psql", "-v", "ON_ERROR_STOP=1", "-h", host, "-p", port, "-U", "postgres", "-d", db, "-t", "-A", "-c", query]
     else:
         cmd = [
             "docker", "exec", "-i", "tender-pocket-postgres",
-            "psql", "-U", "postgres", "-d", db, "-t", "-A", "-c", query
+            "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db, "-t", "-A", "-c", query
         ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
@@ -115,29 +119,31 @@ class PostgresBackupUnitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.object(backup_daily, "LOCAL_BACKUP_DIR", temp_dir):
                 with patch.object(backup_daily, "acquire_lock", return_value=MagicMock()):
-                    with patch.object(backup_daily, "send_alert_email"):
-                        with self.assertRaises(SystemExit) as cm:
-                            backup_daily.main()
-                        self.assertEqual(cm.exception.code, 1)
+                    with patch.object(backup_daily, "ensure_backup_runs_table"):
+                        with patch.object(backup_daily, "get_source_table_counts", return_value={"users": 0, "tenders": 0}):
+                            with patch.object(backup_daily, "send_alert_email"):
+                                with self.assertRaises(SystemExit) as cm:
+                                    backup_daily.main()
+                                self.assertEqual(cm.exception.code, 1)
 
     @patch("subprocess.run")
     def test_s3_upload_failure_does_not_record_success(self, mock_run):
         """Test that an S3 upload failure exits non-zero and triggers failure alerting."""
-        mock_ensure = MagicMock(returncode=0, stdout="")
         mock_dump = MagicMock(returncode=0, stdout=b"CREATE TABLE test (id int);\n" * 50)
         mock_s3 = MagicMock(returncode=1, stderr="AccessDenied: PutObject failed")
 
-        mock_run.side_effect = [mock_ensure, mock_dump, mock_s3]
+        mock_run.side_effect = [mock_dump, mock_s3]
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.object(backup_daily, "LOCAL_BACKUP_DIR", temp_dir):
                 with patch.object(backup_daily, "acquire_lock", return_value=MagicMock()):
-                    with patch.object(backup_daily, "send_alert_email") as mock_alert:
-                        with self.assertRaises(SystemExit) as cm:
-                            backup_daily.main()
-                        self.assertEqual(cm.exception.code, 1)
-                        # Ensure failure alert was sent with EXECUTION stage
-                        mock_alert.assert_called_with("DAILY_BACKUP_EXECUTION", unittest.mock.ANY)
+                    with patch.object(backup_daily, "ensure_backup_runs_table"):
+                        with patch.object(backup_daily, "get_source_table_counts", return_value={"users": 2, "tenders": 3}):
+                            with patch.object(backup_daily, "send_alert_email") as mock_alert:
+                                with self.assertRaises(SystemExit) as cm:
+                                    backup_daily.main()
+                                self.assertEqual(cm.exception.code, 1)
+                                mock_alert.assert_called_with("DAILY_BACKUP_EXECUTION", unittest.mock.ANY)
 
     @patch("subprocess.run")
     def test_logging_failure_distinguished_when_s3_upload_succeeded(self, mock_run):
@@ -150,15 +156,15 @@ class PostgresBackupUnitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.object(backup_daily, "LOCAL_BACKUP_DIR", temp_dir):
                 with patch.object(backup_daily, "acquire_lock", return_value=MagicMock()):
-                    with patch.object(backup_daily, "verify_s3_object"):
-                        # Simulate database logging throwing an exception (e.g. constraint error)
-                        with patch.object(backup_daily, "run_psql", side_effect=[None, Exception("psql error: constraint violation"), None]):
-                            with patch.object(backup_daily, "send_alert_email") as mock_alert:
-                                with self.assertRaises(SystemExit) as cm:
-                                    backup_daily.main()
-                                self.assertEqual(cm.exception.code, 1)
-                                # Must distinguish LOGGING failure from EXECUTION failure
-                                mock_alert.assert_called_with("DAILY_BACKUP_LOGGING", unittest.mock.ANY)
+                    with patch.object(backup_daily, "ensure_backup_runs_table"):
+                        with patch.object(backup_daily, "get_source_table_counts", return_value={"users": 2, "tenders": 3}):
+                            with patch.object(backup_daily, "verify_s3_object"):
+                                with patch.object(backup_daily, "record_backup_success", side_effect=Exception("psql error: constraint violation")):
+                                    with patch.object(backup_daily, "send_alert_email") as mock_alert:
+                                        with self.assertRaises(SystemExit) as cm:
+                                            backup_daily.main()
+                                        self.assertEqual(cm.exception.code, 1)
+                                        mock_alert.assert_called_with("DAILY_BACKUP_LOGGING", unittest.mock.ANY)
 
     def test_restore_safety_guardrails_blocks_live_databases(self):
         """Verify restore script strictly rejects targeting live or system databases."""
@@ -174,22 +180,27 @@ class PostgresBackupUnitTests(unittest.TestCase):
             restore_test.validate_safety_guardrails("template1", "tender_pocket")
         self.assertIn("CRITICAL SAFETY VIOLATION", str(cm3.exception))
 
-        # Safe isolated target database should not raise
+        with self.assertRaises(RuntimeError) as cm4:
+            restore_test.validate_safety_guardrails("arbitrary_production_db", "tender_pocket")
+        self.assertIn("disposable test database naming pattern", str(cm4.exception))
+
+        # Approved disposable test database should pass without error
         restore_test.validate_safety_guardrails("tender_pocket_restore_test", "tender_pocket")
+        restore_test.validate_safety_guardrails("tp_test_temp_db", "tender_pocket")
 
 
 class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
     """
-    Integration tests against a PostgreSQL instance using the strict
+    Integration tests against a PostgreSQL 16 instance using the strict
     schema from schema-backup-triggers.sql (checkpoint_from_id and checkpoint_to_id NOT NULL).
+    Exercises the actual production helper functions.
     """
 
-    TEST_INTEG_DB = "tender_pocket_integ_test"
+    TEST_INTEG_DB = "tp_test_backup_integ"
 
     @classmethod
     def setUpClass(cls):
         try:
-            # Check if PostgreSQL is available
             exec_psql("postgres", "SELECT 1;")
         except Exception as e:
             raise unittest.SkipTest(f"PostgreSQL service not reachable for integration tests: {e}")
@@ -199,7 +210,6 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
         exec_psql("postgres", f"CREATE DATABASE {cls.TEST_INTEG_DB};")
 
         # Initialize backup_runs table strictly matching schema-backup-triggers.sql
-        # Note: checkpoint_from_id and checkpoint_to_id are BIGINT NOT NULL without defaults
         init_sql = """
         CREATE TABLE backup_runs (
             id BIGSERIAL PRIMARY KEY,
@@ -239,72 +249,64 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
         self.assertIn("null value in column \"checkpoint_from_id\"", str(cm.exception))
         self.assertIn("violates not-null constraint", str(cm.exception))
 
-    def test_02_daily_success_logging_with_strict_schema(self):
-        """Verify the corrected daily success INSERT succeeds and records checkpoint 0, 0."""
+    def test_02_daily_success_logging_via_production_helper(self):
+        """Verify production record_backup_success helper works for DAILY backups."""
         start_time = datetime.now()
-        sql = f"""
-        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, size_bytes, record_count)
-        VALUES ('DAILY', '{start_time.isoformat()}', NOW(), 0, 0, 'test-bucket', 'backups/daily.sql.gz', 'SUCCESS', 2048, 0);
-        """
-        exec_psql(self.TEST_INTEG_DB, sql)
+        with patch.object(backup_daily, "DB_NAME", self.TEST_INTEG_DB):
+            backup_daily.record_backup_success("DAILY", start_time, "test-bucket", "backups/daily.sql.gz", 2048, record_count=12)
 
-        row = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, size_bytes FROM backup_runs WHERE backup_type='DAILY' AND status='SUCCESS' ORDER BY id DESC LIMIT 1;")
-        self.assertEqual(row, "DAILY|SUCCESS|0|0|2048")
+        row = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, size_bytes, record_count FROM backup_runs WHERE backup_type='DAILY' AND status='SUCCESS' ORDER BY id DESC LIMIT 1;")
+        self.assertEqual(row, "DAILY|SUCCESS|0|0|2048|12")
 
-    def test_03_weekly_success_logging_with_strict_schema(self):
-        """Verify the corrected weekly success INSERT succeeds and records checkpoint 0, 0."""
+    def test_03_weekly_success_logging_via_production_helper(self):
+        """Verify production record_backup_success helper works for WEEKLY recovery points."""
         start_time = datetime.now()
-        sql = f"""
-        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, size_bytes, record_count)
-        VALUES ('WEEKLY', '{start_time.isoformat()}', NOW(), 0, 0, 'test-bucket', 'backups/weekly.sql.gz', 'SUCCESS', 4096, 0);
-        """
-        exec_psql(self.TEST_INTEG_DB, sql)
+        with patch.object(backup_daily, "DB_NAME", self.TEST_INTEG_DB):
+            backup_daily.record_backup_success("WEEKLY", start_time, "test-bucket", "backups/weekly.sql.gz", 4096, record_count=12)
 
-        row = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, size_bytes FROM backup_runs WHERE backup_type='WEEKLY' AND status='SUCCESS' ORDER BY id DESC LIMIT 1;")
-        self.assertEqual(row, "WEEKLY|SUCCESS|0|0|4096")
+        row = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, size_bytes, record_count FROM backup_runs WHERE backup_type='WEEKLY' AND status='SUCCESS' ORDER BY id DESC LIMIT 1;")
+        self.assertEqual(row, "WEEKLY|SUCCESS|0|0|4096|12")
 
-    def test_04_monthly_success_logging_with_strict_schema(self):
-        """Verify the corrected monthly success INSERT succeeds and records checkpoint 0, 0."""
+    def test_04_monthly_success_logging_via_production_helper(self):
+        """Verify production record_backup_success helper works for MONTHLY consolidation."""
         start_time = datetime.now()
-        sql = f"""
-        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, size_bytes, record_count)
-        VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 0, 0, 'test-bucket', 'backups/monthly.sql.gz', 'SUCCESS', 8192, 0);
-        """
-        exec_psql(self.TEST_INTEG_DB, sql)
+        with patch.object(backup_monthly, "DB_NAME", self.TEST_INTEG_DB):
+            backup_monthly.record_backup_success("MONTHLY", start_time, "test-bucket", "backups/monthly.sql.gz", 8192, record_count=15)
 
-        row = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, size_bytes FROM backup_runs WHERE backup_type='MONTHLY' AND status='SUCCESS' ORDER BY id DESC LIMIT 1;")
-        self.assertEqual(row, "MONTHLY|SUCCESS|0|0|8192")
+        row = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, size_bytes, record_count FROM backup_runs WHERE backup_type='MONTHLY' AND status='SUCCESS' ORDER BY id DESC LIMIT 1;")
+        self.assertEqual(row, "MONTHLY|SUCCESS|0|0|8192|15")
 
-    def test_05_failure_logging_with_strict_schema(self):
-        """Verify both daily and monthly failure logging INSERTs succeed with checkpoints 0, 0."""
+    def test_05_failure_logging_via_production_helpers(self):
+        """Verify production record_backup_failure helpers work and store checkpoints 0, 0."""
         start_time = datetime.now()
         err_msg = "pg_dump: connection timed out"
 
-        # Daily failure insert
-        sql_daily_fail = f"""
-        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, status, error_message)
-        VALUES ('DAILY', '{start_time.isoformat()}', NOW(), 0, 0, 'FAILED', '{err_msg.replace("'", "''")}');
-        """
-        exec_psql(self.TEST_INTEG_DB, sql_daily_fail)
+        # Daily failure without S3 upload
+        with patch.object(backup_daily, "DB_NAME", self.TEST_INTEG_DB):
+            backup_daily.record_backup_failure("DAILY", start_time, err_msg)
 
         row_daily = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, error_message FROM backup_runs WHERE backup_type='DAILY' AND status='FAILED' ORDER BY id DESC LIMIT 1;")
         self.assertEqual(row_daily, f"DAILY|FAILED|0|0|{err_msg}")
 
-        # Monthly failure insert
-        sql_monthly_fail = f"""
-        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, status, error_message)
-        VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 0, 0, 'FAILED', '{err_msg.replace("'", "''")}');
-        """
-        exec_psql(self.TEST_INTEG_DB, sql_monthly_fail)
+        # Daily failure AFTER S3 upload (preserving S3 key and size)
+        with patch.object(backup_daily, "DB_NAME", self.TEST_INTEG_DB):
+            backup_daily.record_backup_failure("DAILY", start_time, "db recording failed", s3_bucket="test-bucket", s3_key="daily-key", file_size=1024)
+
+        row_s3_fail = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, s3_key, size_bytes FROM backup_runs WHERE s3_key='daily-key' ORDER BY id DESC LIMIT 1;")
+        self.assertEqual(row_s3_fail, "DAILY|FAILED|0|0|daily-key|1024")
+
+        # Monthly failure
+        with patch.object(backup_monthly, "DB_NAME", self.TEST_INTEG_DB):
+            backup_monthly.record_backup_failure("MONTHLY", start_time, "monthly dump failed")
 
         row_monthly = exec_psql(self.TEST_INTEG_DB, "SELECT backup_type, status, checkpoint_from_id, checkpoint_to_id, error_message FROM backup_runs WHERE backup_type='MONTHLY' AND status='FAILED' ORDER BY id DESC LIMIT 1;")
-        self.assertEqual(row_monthly, f"MONTHLY|FAILED|0|0|{err_msg}")
+        self.assertEqual(row_monthly, "MONTHLY|FAILED|0|0|monthly dump failed")
 
-    def test_06_complete_isolated_backup_and_restore_cycle(self):
+    def test_06_complete_isolated_backup_and_restore_cycle_with_metadata(self):
         """
-        End-to-end integration test: Creates disposable test source database,
-        dumps via pg_dump, compresses, verifies sha256, restores into isolated test DB,
-        and verifies row count integrity without modifying any production database.
+        End-to-end integration test: Creates disposable test source database with
+        all required business tables, generates dump, writes snapshot metadata,
+        restores into isolated test DB (-v ON_ERROR_STOP=1), and verifies integrity.
         """
         source_db = "tp_test_data_source"
         target_db = "tp_test_data_restore"
@@ -314,13 +316,17 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
             exec_psql("postgres", f"DROP DATABASE IF EXISTS {target_db};")
             exec_psql("postgres", f"CREATE DATABASE {source_db};")
 
-            # Seed non-production test tables
-            exec_psql(source_db, "CREATE TABLE test_users (id serial primary key, name text);")
-            exec_psql(source_db, "INSERT INTO test_users (name) VALUES ('Alice'), ('Bob'), ('Charlie');")
-            exec_psql(source_db, "CREATE TABLE test_tenders (id serial primary key, title text, amount numeric);")
-            exec_psql(source_db, "INSERT INTO test_tenders (title, amount) VALUES ('Tender 1', 50000), ('Tender 2', 75000);")
+            # Seed all 9 required business tables
+            for tbl in restore_test.REQUIRED_BUSINESS_TABLES:
+                if tbl in ("users", "user_signatures"):
+                    exec_psql(source_db, f"CREATE TABLE {tbl} (username text primary key, role text);")
+                else:
+                    exec_psql(source_db, f"CREATE TABLE {tbl} (id serial primary key, name text);")
 
-            # Dump
+            exec_psql(source_db, "INSERT INTO users (username, role) VALUES ('admin', 'ADMIN'), ('exec1', 'EXECUTIVE');")
+            exec_psql(source_db, "INSERT INTO tenders (name) VALUES ('Tender A'), ('Tender B'), ('Tender C');")
+
+            # Execute pg_dump
             if os.getenv("USE_DIRECT_PSQL") == "1":
                 host = os.getenv("POSTGRES_HOST", "localhost")
                 port = os.getenv("POSTGRES_PORT", "5432")
@@ -330,44 +336,108 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
 
             dump_res = subprocess.run(dump_cmd, capture_output=True)
             self.assertEqual(dump_res.returncode, 0)
-            self.assertTrue(len(dump_res.stdout) > 200)
 
-            # Compress
+            # Compress and write sidecar metadata
             compressed_data = gzip.compress(dump_res.stdout)
             with tempfile.NamedTemporaryFile(suffix=".sql.gz", delete=False) as tf:
                 tf.write(compressed_data)
                 temp_backup_file = tf.name
 
-            # Verify gzip and SHA-256
-            self.assertTrue(backup_daily.verify_gzip_file(temp_backup_file))
-            calc_sha = backup_daily.calculate_sha256(temp_backup_file)
-            self.assertEqual(len(calc_sha), 64)
+            counts = {"users": 2, "tenders": 3}
+            meta_file = backup_daily.write_backup_metadata(temp_backup_file, "test/key", len(compressed_data), "testsha", counts, "DAILY")
+            self.assertTrue(os.path.exists(meta_file))
 
-            # Restore into isolated target_db
+            # Recreate isolated restore DB
             exec_psql("postgres", f"CREATE DATABASE {target_db};")
-            with gzip.open(temp_backup_file, "rb") as gz:
-                restore_sql = gz.read()
 
-            if os.getenv("USE_DIRECT_PSQL") == "1":
-                host = os.getenv("POSTGRES_HOST", "localhost")
-                port = os.getenv("POSTGRES_PORT", "5432")
-                rest_cmd = ["psql", "-h", host, "-p", port, "-U", "postgres", "-d", target_db]
-            else:
-                rest_cmd = ["docker", "exec", "-i", "tender-pocket-postgres", "psql", "-U", "postgres", "-d", target_db]
+            # Restore using production restore_dump_file with -v ON_ERROR_STOP=1
+            restore_ok = restore_test.restore_dump_file(temp_backup_file, target_db)
+            self.assertTrue(restore_ok)
 
-            rest_res = subprocess.run(rest_cmd, input=restore_sql, capture_output=True)
-            self.assertEqual(rest_res.returncode, 0)
-
-            # Integrity checks: compare row counts
-            users_count = exec_psql(target_db, "SELECT count(*) FROM test_users;")
-            tenders_count = exec_psql(target_db, "SELECT count(*) FROM test_tenders;")
-            self.assertEqual(users_count, "3")
-            self.assertEqual(tenders_count, "2")
+            # Validate using production verify_restored_database
+            stats = restore_test.verify_restored_database(target_db, expected_counts=counts, mode="fresh", source_db=source_db)
+            self.assertEqual(stats["users"], 2)
+            self.assertEqual(stats["tenders"], 3)
+            self.assertEqual(stats["tables_verified"], 9)
 
             os.remove(temp_backup_file)
+            if os.path.exists(meta_file):
+                os.remove(meta_file)
         finally:
             exec_psql("postgres", f"DROP DATABASE IF EXISTS {source_db};")
             exec_psql("postgres", f"DROP DATABASE IF EXISTS {target_db};")
+
+    def test_07_restore_fails_when_sql_statement_errors_on_error_stop(self):
+        """
+        REGRESSION PROOF FOR -v ON_ERROR_STOP=1:
+        A backup dump containing a bad SQL statement must fail the restore command
+        rather than reporting success.
+        """
+        target_db = "tp_test_sql_fail_db"
+        try:
+            exec_psql("postgres", f"DROP DATABASE IF EXISTS {target_db};")
+            exec_psql("postgres", f"CREATE DATABASE {target_db};")
+
+            # Deliberate bad SQL syntax in the dump
+            bad_sql = b"""
+            CREATE TABLE test_table (id int);
+            THIS IS DELIBERATELY INVALID SQL STATEMENT;
+            """
+            bad_compressed = gzip.compress(bad_sql)
+            with tempfile.NamedTemporaryFile(suffix=".sql.gz", delete=False) as tf:
+                tf.write(bad_compressed)
+                bad_backup_file = tf.name
+
+            # Must raise Exception with non-zero exit code due to ON_ERROR_STOP=1
+            with self.assertRaises(Exception) as cm:
+                restore_test.restore_dump_file(bad_backup_file, target_db)
+
+            self.assertIn("ON_ERROR_STOP=1", str(cm.exception))
+            self.assertIn("Database restore failed with exit code", str(cm.exception))
+
+            os.remove(bad_backup_file)
+        finally:
+            exec_psql("postgres", f"DROP DATABASE IF EXISTS {target_db};")
+
+    def test_08_restore_fails_on_count_mismatch(self):
+        """Verify restore verification fails when expected snapshot counts do not match."""
+        test_db = "tp_test_mismatch_db"
+        try:
+            exec_psql("postgres", f"DROP DATABASE IF EXISTS {test_db};")
+            exec_psql("postgres", f"CREATE DATABASE {test_db};")
+
+            for tbl in restore_test.REQUIRED_BUSINESS_TABLES:
+                if tbl in ("users", "user_signatures"):
+                    exec_psql(test_db, f"CREATE TABLE {tbl} (username text primary key);")
+                else:
+                    exec_psql(test_db, f"CREATE TABLE {tbl} (id serial primary key);")
+
+            exec_psql(test_db, "INSERT INTO users (username) VALUES ('u1');")
+            exec_psql(test_db, "INSERT INTO tenders (id) VALUES (1);")
+
+            # Expected 50 tenders, restored has 1
+            with self.assertRaises(Exception) as cm:
+                restore_test.verify_restored_database(test_db, expected_counts={"users": 1, "tenders": 50}, mode="fresh")
+            self.assertIn("Count mismatch on 'tenders': expected snapshot 50 != restored 1", str(cm.exception))
+        finally:
+            exec_psql("postgres", f"DROP DATABASE IF EXISTS {test_db};")
+
+    def test_09_restore_fails_on_missing_required_business_tables(self):
+        """Verify restore verification fails when required business tables are missing."""
+        test_db = "tp_test_missing_tbls_db"
+        try:
+            exec_psql("postgres", f"DROP DATABASE IF EXISTS {test_db};")
+            exec_psql("postgres", f"CREATE DATABASE {test_db};")
+
+            # Create only users and tenders, leaving 7 tables missing
+            exec_psql(test_db, "CREATE TABLE users (username text primary key);")
+            exec_psql(test_db, "CREATE TABLE tenders (id serial primary key);")
+
+            with self.assertRaises(Exception) as cm:
+                restore_test.verify_restored_database(test_db, expected_counts={"users": 1, "tenders": 1}, mode="fresh")
+            self.assertIn("Missing required tables in restored DB", str(cm.exception))
+        finally:
+            exec_psql("postgres", f"DROP DATABASE IF EXISTS {test_db};")
 
 
 if __name__ == "__main__":

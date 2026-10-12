@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Tender Pocket — Standalone PostgreSQL Monthly Backup Script
-Takes a complete, independently restorable PostgreSQL dump via pg_dump,
-compresses it with gzip, verifies integrity and SHA-256 checksum,
-uploads to dedicated S3 bucket under the monthly prefix, verifies S3 upload,
-records run state in backup_runs, enforces local retention (180 days / 6 months),
+Consolidates and generates a full verified PostgreSQL snapshot for the target month,
+compresses via gzip, verifies SHA-256 and integrity, uploads to dedicated S3 bucket,
+records run state in backup_runs with checkpoint_from_id=0 and checkpoint_to_id=0,
+records snapshot verification metadata, enforces 180-day local retention,
 and alerts on failure.
 """
 
@@ -43,15 +43,21 @@ def acquire_lock():
         sys.exit(1)
 
 def run_psql(query):
-    """Executes a query against the PostgreSQL database."""
+    """Executes a query against the PostgreSQL database with -v ON_ERROR_STOP=1."""
     if os.getenv("USE_DIRECT_PSQL") == "1":
         host = os.getenv("POSTGRES_HOST", "localhost")
         port = os.getenv("POSTGRES_PORT", "5432")
-        cmd = ["psql", "-h", host, "-p", port, "-U", DB_USER, "-d", DB_NAME, "-t", "-A", "-c", query]
+        cmd = [
+            "psql", "-v", "ON_ERROR_STOP=1",
+            "-h", host, "-p", port, "-U", DB_USER, "-d", DB_NAME,
+            "-t", "-A", "-c", query
+        ]
     else:
         cmd = [
             "docker", "exec", "-i", DB_CONTAINER,
-            "psql", "-U", DB_USER, "-d", DB_NAME, "-t", "-A", "-c", query
+            "psql", "-v", "ON_ERROR_STOP=1",
+            "-U", DB_USER, "-d", DB_NAME,
+            "-t", "-A", "-c", query
         ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
@@ -81,6 +87,64 @@ def ensure_backup_runs_table():
     except Exception as e:
         print(f"[!] Warning: Could not verify/create backup_runs table: {e}")
 
+def record_backup_success(backup_type, start_time, s3_bucket, s3_key, file_size, record_count=0):
+    """
+    Records a SUCCESS run in backup_runs.
+    For full snapshots (MONTHLY), checkpoint_from_id=0 and checkpoint_to_id=0
+    satisfy NOT NULL constraints while denoting non-incremental backups.
+    """
+    ins_sql = f"""
+    INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, size_bytes, record_count)
+    VALUES ('{backup_type}', '{start_time.isoformat()}', NOW(), 0, 0, '{s3_bucket}', '{s3_key}', 'SUCCESS', {file_size}, {record_count});
+    """
+    return run_psql(ins_sql)
+
+def record_backup_failure(backup_type, start_time, err_msg, s3_bucket=None, s3_key=None, file_size=None, record_count=0):
+    """
+    Records a FAILED run in backup_runs.
+    Populates checkpoint_from_id=0, checkpoint_to_id=0 to satisfy NOT NULL constraints.
+    Preserves S3 bucket/key/size if upload succeeded before logging/retention failure.
+    """
+    escaped_err = str(err_msg).replace("'", "''")
+    if s3_bucket and s3_key and file_size is not None:
+        ins_sql = f"""
+        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, error_message, size_bytes, record_count)
+        VALUES ('{backup_type}', '{start_time.isoformat()}', NOW(), 0, 0, '{s3_bucket}', '{s3_key}', 'FAILED', '{escaped_err}', {file_size}, {record_count});
+        """
+    else:
+        ins_sql = f"""
+        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, status, error_message)
+        VALUES ('{backup_type}', '{start_time.isoformat()}', NOW(), 0, 0, 'FAILED', '{escaped_err}');
+        """
+    return run_psql(ins_sql)
+
+def get_source_table_counts():
+    """Queries current counts of business tables to record backup snapshot metadata."""
+    counts = {}
+    for tbl in ("users", "tenders"):
+        try:
+            res = run_psql(f"SELECT COUNT(*) FROM {tbl};")
+            counts[tbl] = int(res)
+        except Exception:
+            counts[tbl] = 0
+    return counts
+
+def write_backup_metadata(local_path, s3_key, file_size, sha256_checksum, counts, backup_type):
+    """Writes sidecar JSON metadata recording table counts at backup time."""
+    meta_path = local_path + ".meta.json"
+    meta = {
+        "backup_type": backup_type,
+        "backup_file": os.path.basename(local_path),
+        "s3_key": s3_key,
+        "file_size": file_size,
+        "sha256": sha256_checksum,
+        "created_at": datetime.now().isoformat(),
+        "counts": counts
+    }
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+    return meta_path
+
 def calculate_sha256(filepath):
     """Calculates SHA-256 checksum of a file."""
     sha256_hash = hashlib.sha256()
@@ -101,54 +165,56 @@ def verify_gzip_file(filepath):
         return False
 
 def verify_s3_object(bucket, key, expected_size):
-    """Verifies that an uploaded object exists in S3 and matches expected size."""
+    """Verifies that the object exists in S3 and its size matches the local file."""
     cmd = ["aws", "s3api", "head-object", "--bucket", bucket, "--key", key]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
         raise Exception(f"S3 head-object verification failed for s3://{bucket}/{key}: {res.stderr.strip()}")
-    try:
-        meta = json.loads(res.stdout)
-        remote_size = meta.get("ContentLength", 0)
-        if remote_size != expected_size:
-            raise Exception(f"S3 size mismatch for s3://{bucket}/{key}: expected {expected_size}, got {remote_size}")
-        return True
-    except json.JSONDecodeError:
-        raise Exception(f"Failed to parse S3 head-object response for s3://{bucket}/{key}")
+
+    obj_metadata = json.loads(res.stdout)
+    s3_size = obj_metadata.get("ContentLength")
+    if s3_size != expected_size:
+        raise Exception(f"S3 size mismatch for s3://{bucket}/{key}: expected {expected_size} bytes, got {s3_size} bytes")
 
 def enforce_local_retention():
-    """Retains monthly backups for 180 days (6 months)."""
+    """Removes monthly backups older than 180 days (6 months)."""
     now = datetime.now()
     cutoff = now - timedelta(days=180)
-    monthly_base = os.path.join(LOCAL_BACKUP_DIR, "monthly")
 
-    if os.path.exists(monthly_base):
-        for root, dirs, files in os.walk(monthly_base):
-            for file in files:
-                if file.startswith("backup-monthly-") and file.endswith(".sql.gz"):
-                    file_path = os.path.join(root, file)
+    monthly_dir = os.path.join(LOCAL_BACKUP_DIR, "monthly")
+    if not os.path.exists(monthly_dir):
+        return
+
+    for root, dirs, files in os.walk(monthly_dir):
+        for file in files:
+            if file.endswith(".sql.gz"):
+                path = os.path.join(root, file)
+                mtime = datetime.fromtimestamp(os.path.getmtime(path))
+                if mtime < cutoff:
+                    print(f"[*] Removing expired monthly backup: {path}")
                     try:
-                        mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
-                        if mtime < cutoff:
-                            os.remove(file_path)
-                            print(f"[✓] Local retention: Removed aged monthly backup {file_path}")
+                        os.remove(path)
+                        meta_f = path + ".meta.json"
+                        if os.path.exists(meta_f):
+                            os.remove(meta_f)
                     except Exception as e:
-                        print(f"[!] Warning cleaning {file_path}: {e}")
+                        print(f"[!] Warning: Could not remove {path}: {e}")
 
 def send_alert_email(stage, error_msg):
-    subject = "[Tender Pocket] PostgreSQL Monthly Backup FAILED"
+    subject = f"[Tender Pocket] PostgreSQL Monthly Backup FAILED ({stage})"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     body = f"""
 ==================================================
-POSTGRESQL MONTHLY BACKUP FAILURE ALERT
+POSTGRESQL MONTHLY BACKUP EXECUTION FAILURE ALERT
 ==================================================
 Timestamp: {timestamp}
 Failure Stage: {stage}
 Error Details: {error_msg}
 
 RECOMMENDED ACTION:
-Inspect PostgreSQL logs, disk space, and S3 bucket permissions.
-Backup run was marked FAILED.
+1. Check disk space on server.
+2. Verify AWS IAM permissions on bucket: {S3_BUCKET}.
+3. Inspect PostgreSQL container status: {DB_CONTAINER}.
 ==================================================
 """
     print(f"================ EMAIL ALERT ================\n{body}\n=============================================")
@@ -181,12 +247,17 @@ def main():
     local_path = os.path.join(LOCAL_BACKUP_DIR, "monthly", year, filename)
     temp_path = local_path + ".tmp"
     uploaded_to_s3 = False
+    counts = {}
 
     try:
         print(f"[*] Starting PostgreSQL Full Monthly Backup for Tender Pocket ({target_ym})...")
         ensure_backup_runs_table()
 
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+        # 0. Capture business table snapshot counts
+        counts = get_source_table_counts()
+        print(f"[*] Pre-backup snapshot counts: {counts}")
 
         # 1. Execute full pg_dump
         if os.getenv("USE_DIRECT_PSQL") == "1":
@@ -228,6 +299,9 @@ def main():
         file_size = os.path.getsize(local_path)
         sha256_checksum = calculate_sha256(local_path)
 
+        # Write sidecar snapshot verification metadata
+        write_backup_metadata(local_path, s3_key, file_size, sha256_checksum, counts, "MONTHLY")
+
         print(f"[✓] Monthly backup created successfully: {local_path}")
         print(f"    Size: {file_size} bytes ({file_size / 1024:.2f} KB)")
         print(f"    SHA-256: {sha256_checksum}")
@@ -246,12 +320,8 @@ def main():
         uploaded_to_s3 = True
         print(f"[✓] S3 upload verified: s3://{S3_BUCKET}/{s3_key} ({file_size} bytes)")
 
-        # 6. Record SUCCESS in backup_runs (checkpoint_from_id=0, checkpoint_to_id=0 signifies full snapshot)
-        ins_success = f"""
-        INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, size_bytes, record_count)
-        VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 0, 0, '{S3_BUCKET}', '{s3_key}', 'SUCCESS', {file_size}, 0);
-        """
-        run_psql(ins_success)
+        # 6. Record SUCCESS in backup_runs using production helper
+        record_backup_success("MONTHLY", start_time, S3_BUCKET, s3_key, file_size, record_count=counts.get("tenders", 0))
 
         # 7. Local retention enforcement (180 days / 6 months)
         enforce_local_retention()
@@ -265,7 +335,6 @@ def main():
 
     except Exception as e:
         err_msg = str(e)
-        escaped_err = err_msg.replace("'", "''")
 
         if os.path.exists(temp_path):
             try:
@@ -277,22 +346,14 @@ def main():
             # S3 upload succeeded; failure occurred during database recording or retention
             print(f"[❌] MONTHLY BACKUP LOGGING FAILED: Backup verified in S3 ({s3_key}), but post-backup recording failed: {err_msg}")
             try:
-                ins_fail = f"""
-                INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, s3_bucket, s3_key, status, error_message, size_bytes, record_count)
-                VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 0, 0, '{S3_BUCKET}', '{s3_key}', 'FAILED', '{escaped_err}', {file_size}, 0);
-                """
-                run_psql(ins_fail)
+                record_backup_failure("MONTHLY", start_time, err_msg, S3_BUCKET, s3_key, file_size, record_count=counts.get("tenders", 0))
             except Exception:
                 pass
             send_alert_email("MONTHLY_BACKUP_LOGGING", f"Backup verified in S3 ({s3_key}) but recording failed: {err_msg}")
         else:
             print(f"[❌] MONTHLY BACKUP FAILED: {err_msg}")
             try:
-                ins_fail = f"""
-                INSERT INTO backup_runs (backup_type, started_at, completed_at, checkpoint_from_id, checkpoint_to_id, status, error_message)
-                VALUES ('MONTHLY', '{start_time.isoformat()}', NOW(), 0, 0, 'FAILED', '{escaped_err}');
-                """
-                run_psql(ins_fail)
+                record_backup_failure("MONTHLY", start_time, err_msg)
             except Exception:
                 pass
             send_alert_email("MONTHLY_BACKUP_EXECUTION", err_msg)

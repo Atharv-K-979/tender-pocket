@@ -21,6 +21,11 @@
 #      (Paste the block below, verifying PROJECT_DIR matches deployment path)
 #   6. Verify installation:
 #      crontab -l
+#
+# IMPORTANT OPERATIONAL NOTE:
+#   This file is a reference sample only. Having this sample file present in the
+#   repository is NOT proof that automatic scheduling is installed or active on EC2.
+#   Scheduling is only active after manual installation via `crontab -e` on the host.
 # ==============================================================================
 
 SHELL=/bin/bash
