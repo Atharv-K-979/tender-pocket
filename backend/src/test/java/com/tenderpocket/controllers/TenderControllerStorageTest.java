@@ -46,6 +46,9 @@ public class TenderControllerStorageTest {
     private DocumentGeneratorService documentGeneratorService;
 
     @Mock
+    private com.tenderpocket.services.ComplianceProgressService complianceProgressService;
+
+    @Mock
     private ObjectStorageService objectStorageService;
 
     @InjectMocks
@@ -207,5 +210,37 @@ public class TenderControllerStorageTest {
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
         assertTrue(response.getBody().toString().contains("Failed to generate documents"));
         assertTrue(response.getBody().toString().contains("S3 bucket tender-pocket-uat-documents does not exist"));
+    }
+
+    @Test
+    void testGenerateBidDocsWritesLocallyWhenS3Disabled() throws Exception {
+        ReflectionTestUtils.setField(tenderController, "awsS3Enabled", false);
+
+        Tender tender = new Tender();
+        tender.setId(tenderId);
+        tender.setTitle("Medical Procurement");
+        tender.setSpecVerificationStatus("Approved");
+        tender.setMisFinalPrice(75000.0);
+        tender.setDownloadedDocs("[{\"name\":\"Technical Specification Sheet (PDF)\"}]");
+
+        when(tenderRepository.findById(tenderId)).thenReturn(Optional.of(tender));
+        when(documentGeneratorService.generatePdf(anyMap())).thenReturn("PDF local data".getBytes());
+        when(documentGeneratorService.generateDocx(anyMap())).thenReturn("DOCX local data".getBytes());
+        when(documentGeneratorService.generateTechSpecPdf(anyMap())).thenReturn("Tech PDF local data".getBytes());
+        when(documentGeneratorService.generateTechSpecDocx(anyMap())).thenReturn("Tech DOCX local data".getBytes());
+
+        Map<String, String> body = Map.of("bidNumber", "BID-100");
+        ResponseEntity<?> response = tenderController.generateBidDocs("Tender Executive", "executive", tenderId, body);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        // Verify S3 upload was NEVER called
+        verify(objectStorageService, never()).upload(anyString(), any(InputStream.class), anyString(), anyLong());
+
+        // Verify files exist locally
+        assertTrue(Files.exists(testDocsDir.resolve("Bid_Documents_" + tenderId + ".pdf")));
+        assertTrue(Files.exists(testDocsDir.resolve("Bid_Documents_" + tenderId + ".docx")));
+        assertTrue(Files.exists(testDocsDir.resolve("Technical_Specification_Sheet_" + tenderId + ".pdf")));
+        assertTrue(Files.exists(testDocsDir.resolve("Technical_Specification_Sheet_" + tenderId + ".docx")));
     }
 }

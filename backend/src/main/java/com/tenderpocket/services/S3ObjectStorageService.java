@@ -28,7 +28,7 @@ public class S3ObjectStorageService implements ObjectStorageService {
     public S3ObjectStorageService(
             S3Client s3Client,
             S3Presigner s3Presigner,
-            @Value("${aws.s3.bucket-name:tender-pocket-prod-documents}") String bucketName) {
+            @Value("${aws.s3.bucket-name:}") String bucketName) {
         if (bucketName == null || bucketName.trim().isEmpty()) {
             throw new IllegalArgumentException("AWS S3 is enabled but aws.s3.bucket-name is not configured or blank.");
         }
