@@ -35,29 +35,49 @@ REQUIRED_BUSINESS_TABLES = [
     "tender_workflow_comments", "email_notification_logs"
 ]
 
-def validate_safety_guardrails(test_db_name, source_db_name):
+DISPOSABLE_TEST_DB_PREFIXES = (
+    "tender_pocket_restore_test",
+    "tp_test_",
+)
+
+PROTECTED_SYSTEM_DATABASES = {
+    "tender_pocket",
+    "postgres",
+    "template0",
+    "template1",
+}
+
+def validate_safety_guardrails(test_db_name, source_db_name=SOURCE_DB):
     """
-    Enforces safety guardrails ensuring test restore never targets, drops,
-    recreates, or modifies the live application or system databases.
+    Enforces strict safety guardrails ensuring test restore operations never target, drop,
+    recreate, or modify live application or system databases.
+
+    Strict Rules:
+    1. test_db_name must be a non-empty string.
+    2. Must NOT match any protected system database (postgres, template0, template1).
+    3. Must NOT match the live source database (tender_pocket or source_db_name).
+    4. Must strictly match approved disposable test naming conventions:
+       - Starts with 'tender_pocket_restore_test'
+       - Starts with 'tp_test_'
+       Permissive substring matching (such as 'test' anywhere in the name) is strictly forbidden.
     """
-    protected_databases = {
-        "tender_pocket",
-        "postgres",
-        "template0",
-        "template1",
-        source_db_name.strip().lower()
-    }
+    if not test_db_name or not isinstance(test_db_name, str):
+        raise RuntimeError("CRITICAL SAFETY VIOLATION: Target database name must be a non-empty string.")
+
     target = test_db_name.strip().lower()
-    if target in protected_databases or target == source_db_name.strip().lower():
+    source = (source_db_name or "").strip().lower()
+
+    if target in PROTECTED_SYSTEM_DATABASES or (source and target == source):
         raise RuntimeError(
             f"CRITICAL SAFETY VIOLATION: Isolated restore test cannot drop, recreate, or modify "
             f"protected database '{test_db_name}' (source live database: '{source_db_name}')."
         )
-    # Also verify target database matches an approved disposable test pattern
-    if not (target.startswith("tender_pocket_restore_test") or target.startswith("tp_test_") or "test" in target):
+
+    # Strictly check approved disposable test prefixes
+    if not any(target.startswith(prefix) for prefix in DISPOSABLE_TEST_DB_PREFIXES):
         raise RuntimeError(
-            f"CRITICAL SAFETY VIOLATION: Target database '{test_db_name}' does not match "
-            f"disposable test database naming pattern."
+            f"CRITICAL SAFETY VIOLATION: Target database '{test_db_name}' is not an authorized disposable test database. "
+            f"Must start with one of: {DISPOSABLE_TEST_DB_PREFIXES}"
         )
 
 def run_psql(db, query):
@@ -95,16 +115,69 @@ def find_latest_backup():
     candidates.sort(reverse=True)
     return candidates[0][1]
 
+def calculate_sha256(filepath):
+    """Calculates SHA-256 checksum of a file."""
+    import hashlib
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for byte_block in iter(lambda: f.read(65536), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
+
 def read_backup_metadata(backup_path):
-    """Attempts to read companion .meta.json sidecar file for expected snapshot counts."""
+    """
+    Attempts to read companion .meta.json sidecar file for expected snapshot counts,
+    file size, and SHA-256 checksum. If not found locally, attempts to fetch from S3 if configured.
+    """
     meta_path = backup_path + ".meta.json"
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"[!] Warning: Could not read metadata file {meta_path}: {e}")
+            raise RuntimeError(f"Corrupt or unreadable metadata file {meta_path}: {e}")
+
+    # Attempt fetch from S3 if s3 path or bucket is available
+    s3_bucket = os.getenv("S3_BACKUP_BUCKET", "tender-pocket-postgres-backups")
+    rel_path = backup_path
+    if "backups/postgresql/" in backup_path:
+        rel_path = backup_path[backup_path.index("backups/postgresql/"):]
+    s3_meta_key = f"{rel_path}.meta.json"
+    try:
+        res = subprocess.run(["aws", "s3", "cp", f"s3://{s3_bucket}/{s3_meta_key}", meta_path], capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(meta_path):
+            with open(meta_path, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+
     return None
+
+def verify_backup_file_integrity(backup_path, meta):
+    """
+    Verifies the backup file's SHA-256 checksum and file size against its metadata.
+    Fails immediately if either check fails.
+    """
+    if not meta:
+        return
+
+    actual_size = os.path.getsize(backup_path)
+    expected_size = meta.get("file_size")
+    if expected_size is not None and actual_size != expected_size:
+        raise RuntimeError(
+            f"Backup integrity check FAILED: File size mismatch for '{backup_path}'. "
+            f"Expected {expected_size} bytes from metadata, found {actual_size} bytes."
+        )
+
+    actual_sha = calculate_sha256(backup_path)
+    expected_sha = meta.get("sha256")
+    if expected_sha is not None and actual_sha.lower() != expected_sha.lower():
+        raise RuntimeError(
+            f"Backup integrity check FAILED: SHA-256 checksum mismatch for '{backup_path}'. "
+            f"Expected {expected_sha} from metadata, calculated {actual_sha}."
+        )
+
+    print(f"[✓] Metadata Verification: SHA-256 ({actual_sha[:16]}...) and file size ({actual_size} bytes) match metadata.")
 
 def send_alert_email(stage, error_msg):
     subject = "[Tender Pocket] PostgreSQL Restore Verification FAILED"
@@ -144,7 +217,9 @@ def restore_dump_file(backup_file, target_db):
     """
     Decompresses and applies a .sql.gz dump to target_db using -v ON_ERROR_STOP=1.
     Any SQL statement failure causes the restore to abort with non-zero exit code.
+    Validates safety guardrails before executing restore.
     """
+    validate_safety_guardrails(target_db, SOURCE_DB)
     with gzip.open(backup_file, "rb") as gz_in:
         decompressed_sql = gz_in.read()
 
@@ -303,8 +378,11 @@ Options:
         # Enforce safety guardrail against live database
         validate_safety_guardrails(TEST_DB, SOURCE_DB)
 
-        # Check for companion metadata snapshot
+        # Check for companion metadata snapshot and verify SHA-256 & size integrity
         meta = read_backup_metadata(backup_file)
+        if meta:
+            verify_backup_file_integrity(backup_file, meta)
+
         expected_counts = None
         if expected_users is not None or expected_tenders is not None:
             expected_counts = {}
@@ -317,7 +395,9 @@ Options:
             print(f"[✓] Found companion backup metadata sidecar with snapshot counts: {expected_counts}")
 
         # 1. Ensure test database is clean and recreate
+        validate_safety_guardrails(TEST_DB, SOURCE_DB)
         run_psql("postgres", f"DROP DATABASE IF EXISTS {TEST_DB};")
+        validate_safety_guardrails(TEST_DB, SOURCE_DB)
         run_psql("postgres", f"CREATE DATABASE {TEST_DB};")
         print(f"[✓] Isolated test database '{TEST_DB}' created.")
 
@@ -327,6 +407,7 @@ Options:
         print("[✓] Backup dump successfully applied to isolated test database (0 SQL errors).")
 
         # 3. Comprehensive verification
+        validate_safety_guardrails(TEST_DB, SOURCE_DB)
         stats = verify_restored_database(TEST_DB, expected_counts=expected_counts, mode=mode, source_db=SOURCE_DB)
 
         # 4. Clean up temporary test database strictly with safety verification

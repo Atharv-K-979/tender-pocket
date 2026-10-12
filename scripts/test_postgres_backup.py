@@ -150,8 +150,9 @@ class PostgresBackupUnitTests(unittest.TestCase):
         """Test that when S3 upload succeeds but database logging fails, logging failure is distinguished."""
         mock_dump = MagicMock(returncode=0, stdout=b"CREATE TABLE test (id int);\n" * 50)
         mock_s3 = MagicMock(returncode=0, stdout="")
+        mock_meta_s3 = MagicMock(returncode=0, stdout="")
 
-        mock_run.side_effect = [mock_dump, mock_s3]
+        mock_run.side_effect = [mock_dump, mock_s3, mock_meta_s3]
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.object(backup_daily, "LOCAL_BACKUP_DIR", temp_dir):
@@ -166,8 +167,75 @@ class PostgresBackupUnitTests(unittest.TestCase):
                                         self.assertEqual(cm.exception.code, 1)
                                         mock_alert.assert_called_with("DAILY_BACKUP_LOGGING", unittest.mock.ANY)
 
-    def test_restore_safety_guardrails_blocks_live_databases(self):
-        """Verify restore script strictly rejects targeting live or system databases."""
+    @patch("subprocess.run")
+    def test_weekly_failure_reported_accurately_without_falsifying_daily(self, mock_run):
+        """
+        Verify weekly archive failure reports WEEKLY_BACKUP_EXECUTION and does not
+        falsely log or alert the daily backup as failed.
+        """
+        mock_dump = MagicMock(returncode=0, stdout=b"CREATE TABLE test (id int);\n" * 50)
+        mock_daily_s3 = MagicMock(returncode=0, stdout="")
+        mock_daily_meta = MagicMock(returncode=0, stdout="")
+        mock_weekly_s3 = MagicMock(returncode=1, stderr="AccessDenied: weekly upload failed")
+
+        mock_run.side_effect = [mock_dump, mock_daily_s3, mock_daily_meta, mock_weekly_s3]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(backup_daily, "LOCAL_BACKUP_DIR", temp_dir):
+                with patch.object(backup_daily, "acquire_lock", return_value=MagicMock()):
+                    with patch.object(backup_daily, "ensure_backup_runs_table"):
+                        with patch.object(backup_daily, "get_source_table_counts", return_value={"users": 2, "tenders": 3}):
+                            with patch.object(backup_daily, "verify_s3_object"):
+                                with patch.object(backup_daily, "record_backup_success") as mock_record_success:
+                                    with patch.object(backup_daily, "record_backup_failure") as mock_record_failure:
+                                        with patch.object(backup_daily, "send_alert_email") as mock_alert:
+                                            with patch.object(sys, "argv", ["postgres-backup-daily.py", "--weekly"]):
+                                                with self.assertRaises(SystemExit) as cm:
+                                                    backup_daily.main()
+                                                self.assertEqual(cm.exception.code, 1)
+                                                # Daily success was recorded
+                                                mock_record_success.assert_any_call("DAILY", unittest.mock.ANY, unittest.mock.ANY, unittest.mock.ANY, unittest.mock.ANY, record_count=3)
+                                                # Weekly failure was recorded and alerted
+                                                mock_record_failure.assert_called_with("WEEKLY", unittest.mock.ANY, unittest.mock.ANY, unittest.mock.ANY, unittest.mock.ANY, unittest.mock.ANY, record_count=3)
+                                                mock_alert.assert_called_with("WEEKLY_BACKUP_EXECUTION", unittest.mock.ANY)
+
+    def test_ensure_backup_runs_table_does_not_swallow_errors(self):
+        """Verify ensure_backup_runs_table does not swallow errors when SQL execution fails."""
+        with patch.object(backup_daily, "run_psql", side_effect=Exception("Database connection terminated")):
+            with self.assertRaises(Exception) as cm:
+                backup_daily.ensure_backup_runs_table()
+            self.assertIn("Database connection terminated", str(cm.exception))
+
+    def test_get_source_table_counts_fails_clearly_when_query_fails(self):
+        """Verify get_source_table_counts does not swallow errors or default to 0 on failure."""
+        with patch.object(backup_daily, "run_psql", side_effect=Exception("permission denied for relation users")):
+            with self.assertRaises(RuntimeError) as cm:
+                backup_daily.get_source_table_counts()
+            self.assertIn("Failed to query table count", str(cm.exception))
+
+    def test_extract_snapshot_counts_from_dump(self):
+        """Verify extract_snapshot_counts_from_dump accurately parses plain SQL pg_dump stream."""
+        sample_dump = b"""
+-- PostgreSQL database dump
+COPY public.users (username, email) FROM stdin;
+admin\tadmin@example.com
+user1\tuser1@example.com
+\\.
+COPY public.tenders (id, title) FROM stdin;
+1\tTender Alpha
+2\tTender Beta
+3\tTender Gamma
+\\.
+"""
+        counts = backup_daily.extract_snapshot_counts_from_dump(sample_dump)
+        self.assertEqual(counts, {"users": 2, "tenders": 3})
+
+    def test_restore_safety_guardrails_blocks_live_and_permissive_databases(self):
+        """
+        Verify restore script strictly rejects targeting live, system, or permissively named databases.
+        Only explicit approved prefixes ('tender_pocket_restore_test', 'tp_test_') are permitted.
+        """
+        # Protected databases
         with self.assertRaises(RuntimeError) as cm1:
             restore_test.validate_safety_guardrails("tender_pocket", "tender_pocket")
         self.assertIn("CRITICAL SAFETY VIOLATION", str(cm1.exception))
@@ -181,12 +249,50 @@ class PostgresBackupUnitTests(unittest.TestCase):
         self.assertIn("CRITICAL SAFETY VIOLATION", str(cm3.exception))
 
         with self.assertRaises(RuntimeError) as cm4:
-            restore_test.validate_safety_guardrails("arbitrary_production_db", "tender_pocket")
-        self.assertIn("disposable test database naming pattern", str(cm4.exception))
+            restore_test.validate_safety_guardrails("template0", "tender_pocket")
+        self.assertIn("CRITICAL SAFETY VIOLATION", str(cm4.exception))
 
-        # Approved disposable test database should pass without error
+        # Permissive substring checks must be rejected
+        with self.assertRaises(RuntimeError) as cm5:
+            restore_test.validate_safety_guardrails("production_test_db", "tender_pocket")
+        self.assertIn("not an authorized disposable test database", str(cm5.exception))
+
+        with self.assertRaises(RuntimeError) as cm6:
+            restore_test.validate_safety_guardrails("fastest_prod", "tender_pocket")
+        self.assertIn("not an authorized disposable test database", str(cm6.exception))
+
+        with self.assertRaises(RuntimeError) as cm7:
+            restore_test.validate_safety_guardrails("tender_pocket_test", "tender_pocket")
+        self.assertIn("not an authorized disposable test database", str(cm7.exception))
+
+        with self.assertRaises(RuntimeError):
+            restore_test.validate_safety_guardrails("", "tender_pocket")
+
+        # Approved disposable test databases must pass
         restore_test.validate_safety_guardrails("tender_pocket_restore_test", "tender_pocket")
+        restore_test.validate_safety_guardrails("tender_pocket_restore_test_run1", "tender_pocket")
         restore_test.validate_safety_guardrails("tp_test_temp_db", "tender_pocket")
+
+    def test_backup_metadata_sha256_and_size_integrity_verification(self):
+        """Verify restore testing verifies SHA-256 checksum and file size against metadata."""
+        with tempfile.NamedTemporaryFile(suffix=".sql.gz") as tf:
+            tf.write(b"SAMPLE DATA FOR RESTORE INTEGRITY VERIFICATION")
+            tf.flush()
+            correct_sha = restore_test.calculate_sha256(tf.name)
+            correct_size = os.path.getsize(tf.name)
+
+            # Valid metadata passes
+            restore_test.verify_backup_file_integrity(tf.name, {"sha256": correct_sha, "file_size": correct_size})
+
+            # Tampered SHA-256 fails immediately
+            with self.assertRaises(RuntimeError) as cm_sha:
+                restore_test.verify_backup_file_integrity(tf.name, {"sha256": "tampered_sha_checksum_value", "file_size": correct_size})
+            self.assertIn("SHA-256 checksum mismatch", str(cm_sha.exception))
+
+            # Mismatched file size fails immediately
+            with self.assertRaises(RuntimeError) as cm_size:
+                restore_test.verify_backup_file_integrity(tf.name, {"sha256": correct_sha, "file_size": 999999})
+            self.assertIn("File size mismatch", str(cm_size.exception))
 
 
 class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):

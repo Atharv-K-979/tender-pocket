@@ -65,7 +65,7 @@ def run_psql(query):
     return res.stdout.strip()
 
 def ensure_backup_runs_table():
-    """Ensures the backup_runs table exists for tracking execution state."""
+    """Ensures the backup_runs table exists for tracking execution state. Does not silently swallow errors."""
     create_sql = """
     CREATE TABLE IF NOT EXISTS backup_runs (
         id BIGSERIAL PRIMARY KEY,
@@ -82,10 +82,8 @@ def ensure_backup_runs_table():
         record_count BIGINT
     );
     """
-    try:
-        run_psql(create_sql)
-    except Exception as e:
-        print(f"[!] Warning: Could not verify/create backup_runs table: {e}")
+    res = run_psql(create_sql)
+    return res
 
 def record_backup_success(backup_type, start_time, s3_bucket, s3_key, file_size, record_count=0):
     """
@@ -119,14 +117,54 @@ def record_backup_failure(backup_type, start_time, err_msg, s3_bucket=None, s3_k
     return run_psql(ins_sql)
 
 def get_source_table_counts():
-    """Queries current counts of business tables to record backup snapshot metadata."""
+    """
+    Queries current counts of business tables to record backup snapshot metadata.
+    Fails clearly if any query fails, rather than silently defaulting to zero.
+    """
     counts = {}
     for tbl in ("users", "tenders"):
         try:
             res = run_psql(f"SELECT COUNT(*) FROM {tbl};")
-            counts[tbl] = int(res)
-        except Exception:
-            counts[tbl] = 0
+            counts[tbl] = int(res.strip())
+        except Exception as e:
+            raise RuntimeError(f"Failed to query table count for '{tbl}': {e}")
+    return counts
+
+def extract_snapshot_counts_from_dump(raw_sql):
+    """
+    Parses table row counts directly from the pg_dump SQL stream (COPY public.<table> ... \\.).
+    This guarantees that the recorded counts reflect the exact point-in-time snapshot
+    captured in the backup dump, avoiding race conditions from concurrent modifications.
+    """
+    counts = {}
+    target_tables = {"users", "tenders"}
+    current_table = None
+    table_lines = {tbl: 0 for tbl in target_tables}
+    found_tables = set()
+
+    for line in raw_sql.splitlines():
+        if line.startswith(b"COPY public.") or line.startswith(b"COPY "):
+            parts = line.split()
+            if len(parts) >= 2:
+                tbl_part = parts[1].decode("utf-8", errors="ignore").replace('"', '')
+                if tbl_part.startswith("public."):
+                    tbl_name = tbl_part.split(".", 1)[1]
+                else:
+                    tbl_name = tbl_part
+                if tbl_name in target_tables:
+                    current_table = tbl_name
+                    found_tables.add(tbl_name)
+                    continue
+        elif current_table:
+            if line.strip() == b"\\.":
+                current_table = None
+            else:
+                table_lines[current_table] += 1
+
+    for tbl in target_tables:
+        if tbl in found_tables:
+            counts[tbl] = table_lines[tbl]
+
     return counts
 
 def write_backup_metadata(local_path, s3_key, file_size, sha256_checksum, counts, backup_type):
@@ -255,10 +293,6 @@ def main():
 
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
-        # 0. Capture business table snapshot counts
-        counts = get_source_table_counts()
-        print(f"[*] Pre-backup snapshot counts: {counts}")
-
         # 1. Execute full pg_dump
         if os.getenv("USE_DIRECT_PSQL") == "1":
             host = os.getenv("POSTGRES_HOST", "localhost")
@@ -285,13 +319,22 @@ def main():
         if not raw_sql or len(raw_sql) < 100:
             raise Exception("pg_dump generated empty or suspiciously small output (< 100 bytes)")
 
-        # 2. Compress with gzip and write to temp file
+        # 2. Extract snapshot table counts directly from dump for 100% point-in-time consistency
+        dump_counts = extract_snapshot_counts_from_dump(raw_sql)
+        if len(dump_counts) == 2:
+            counts = dump_counts
+            print(f"[*] Consistent point-in-time snapshot counts extracted from dump: {counts}")
+        else:
+            counts = get_source_table_counts()
+            print(f"[*] Pre-backup snapshot counts queried from database: {counts}")
+
+        # 3. Compress with gzip and write to temp file
         print(f"[*] Compressing {len(raw_sql)} bytes of SQL dump with gzip...")
         compressed = gzip.compress(raw_sql, compresslevel=9)
         with open(temp_path, "wb") as f:
             f.write(compressed)
 
-        # 3. Verify gzip integrity
+        # 4. Verify gzip integrity
         if not verify_gzip_file(temp_path):
             raise Exception("Generated backup failed gzip integrity verification")
 
@@ -300,13 +343,13 @@ def main():
         sha256_checksum = calculate_sha256(local_path)
 
         # Write sidecar snapshot verification metadata
-        write_backup_metadata(local_path, s3_key, file_size, sha256_checksum, counts, "MONTHLY")
+        meta_path = write_backup_metadata(local_path, s3_key, file_size, sha256_checksum, counts, "MONTHLY")
 
         print(f"[✓] Monthly backup created successfully: {local_path}")
         print(f"    Size: {file_size} bytes ({file_size / 1024:.2f} KB)")
         print(f"    SHA-256: {sha256_checksum}")
 
-        # 4. Upload to S3
+        # 5. Upload backup and metadata sidecar to S3
         print(f"[*] Uploading to s3://{S3_BUCKET}/{s3_key}...")
         aws_cmd = ["aws", "s3", "cp", local_path, f"s3://{S3_BUCKET}/{s3_key}"]
         upload_proc = subprocess.run(aws_cmd, capture_output=True, text=True)
@@ -314,9 +357,19 @@ def main():
         if upload_proc.returncode != 0:
             raise Exception(f"AWS S3 upload failed (code {upload_proc.returncode}): {upload_proc.stderr.strip()}")
 
-        # 5. Verify upload in S3 via head-object
+        # Verify upload in S3 via head-object
         print("[*] Verifying S3 object existence and size...")
         verify_s3_object(S3_BUCKET, s3_key, file_size)
+
+        # Upload metadata sidecar to S3 and verify
+        meta_s3_key = f"{s3_key}.meta.json"
+        meta_upload_proc = subprocess.run(["aws", "s3", "cp", meta_path, f"s3://{S3_BUCKET}/{meta_s3_key}"], capture_output=True, text=True)
+        if meta_upload_proc.returncode == 0:
+            verify_s3_object(S3_BUCKET, meta_s3_key, os.path.getsize(meta_path))
+            print(f"[✓] Metadata sidecar stored and verified in S3: s3://{S3_BUCKET}/{meta_s3_key}")
+        else:
+            print(f"[!] Warning: Could not upload metadata sidecar to S3: {meta_upload_proc.stderr.strip()}")
+
         uploaded_to_s3 = True
         print(f"[✓] S3 upload verified: s3://{S3_BUCKET}/{s3_key} ({file_size} bytes)")
 
