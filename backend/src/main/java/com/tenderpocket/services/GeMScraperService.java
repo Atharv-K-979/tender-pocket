@@ -16,6 +16,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
@@ -24,6 +25,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -36,6 +38,15 @@ public class GeMScraperService {
 
     @Autowired
     private TenderRepository tenderRepository;
+
+    @Value("${aws.s3.enabled:false}")
+    private boolean awsS3Enabled;
+
+    @Value("${file.upload-dir:public/documents}")
+    private String uploadDir = "public/documents";
+
+    @Autowired(required = false)
+    private ObjectStorageService objectStorageService;
 
     @Value("${gemini.api.key}")
     private String geminiApiKey;
@@ -164,6 +175,9 @@ public class GeMScraperService {
                             || tenderRepository.existsByRefNo(bidNo)
                             || tenderRepository.existsBySourceId(bidNo);
                     if (alreadyExists) {
+                        if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
+                            retryPendingS3UploadIfPresent(bId);
+                        }
                         consecutiveKnown++;
                         if (consecutiveKnown >= stopAfterKnown) {
                             System.out.println(String.format(
@@ -311,9 +325,32 @@ public class GeMScraperService {
         return importCount;
     }
 
+    private void retryPendingS3UploadIfPresent(String tenderId) {
+        try {
+            Optional<Tender> opt = tenderRepository.findById(tenderId);
+            if (opt.isPresent()) {
+                Tender t = opt.get();
+                if (t.getNotes() != null && t.getNotes().contains("[S3_UPLOAD_PENDING:")) {
+                    String localFileName = "Bid_Document_" + tenderId + ".pdf";
+                    Path localFilePath = Paths.get(uploadDir, tenderId, localFileName);
+                    if (Files.exists(localFilePath)) {
+                        String s3Key = "tenders/" + tenderId + "/" + localFileName;
+                        byte[] pdfBytes = Files.readAllBytes(localFilePath);
+                        objectStorageService.upload(s3Key, new ByteArrayInputStream(pdfBytes), "application/pdf", pdfBytes.length);
+                        t.setNotes(t.getNotes().replaceAll("\\[S3_UPLOAD_PENDING:[^\\]]+\\]\\s*", ""));
+                        tenderRepository.save(t);
+                        System.out.println("  - [GeM Scraper] Successfully retried S3 upload for tender: " + tenderId);
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("  - [GeM Scraper] Retry S3 upload failed for tender " + tenderId + ": " + ex.getMessage());
+        }
+    }
+
     private void downloadAndParseGemPdf(String tenderId, String downloadUrl, String bidNo, JsonNode doc) {
         try {
-            String localDir = "public/documents/" + tenderId;
+            String localDir = Paths.get(uploadDir, tenderId).toString();
             String localFileName = "Bid_Document_" + tenderId + ".pdf";
             String outputPath = localDir + "/" + localFileName;
             String localPath = "/documents/" + tenderId + "/" + localFileName;
@@ -323,6 +360,21 @@ public class GeMScraperService {
             System.out.println("  - Downloading Bid PDF to " + outputPath + "...");
             boolean success = downloadFile(downloadUrl, outputPath);
             if (success) {
+                boolean s3UploadSuccess = true;
+                String s3ErrorMessage = null;
+                if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
+                    try {
+                        String s3Key = "tenders/" + tenderId + "/" + localFileName;
+                        byte[] pdfBytes = Files.readAllBytes(Paths.get(outputPath));
+                        objectStorageService.upload(s3Key, new ByteArrayInputStream(pdfBytes), "application/pdf", pdfBytes.length);
+                        System.out.println("  - Successfully uploaded Bid PDF to S3: " + s3Key);
+                    } catch (Exception s3Ex) {
+                        s3UploadSuccess = false;
+                        s3ErrorMessage = s3Ex.getMessage();
+                        System.err.println("  - [GeM Scraper] Cloud S3 upload failed for tender " + tenderId + " (local copy preserved at " + outputPath + "): " + s3ErrorMessage);
+                    }
+                }
+
                 // Call external python parser
                 ProcessBuilder pb = new ProcessBuilder("python3", "scripts/parse-gem-pdf.py", outputPath);
                 Process process = pb.start();
@@ -335,28 +387,28 @@ public class GeMScraperService {
                 }
                 
                 int exitCode = process.waitFor();
-                if (exitCode == 0) {
-                    JsonNode parsed = objectMapper.readTree(sb.toString());
-                    String place = parsed.has("place") ? parsed.get("place").asText() : "N/A";
-                    String state = parsed.has("state") ? parsed.get("state").asText() : "N/A";
-                    String dueDate = parsed.has("due_date") ? parsed.get("due_date").asText() : null;
-                    String dueTime = parsed.has("due_time") ? parsed.get("due_time").asText() : null;
-                    Double emdAmount = parsed.has("emd_amount") && !parsed.get("emd_amount").isNull() ? parsed.get("emd_amount").asDouble() : null;
+                Optional<Tender> opt = tenderRepository.findById(tenderId);
+                if (opt.isPresent()) {
+                    Tender t = opt.get();
+                    t.setDocumentUrl(localPath);
+                    if (!s3UploadSuccess && s3ErrorMessage != null) {
+                        String warningNote = "[S3_UPLOAD_PENDING: " + s3ErrorMessage + " | Local copy preserved at " + localPath + "]";
+                        String currentNotes = t.getNotes();
+                        t.setNotes(currentNotes != null && !currentNotes.isBlank() ? warningNote + " " + currentNotes : warningNote);
+                    }
+                    if (exitCode == 0) {
+                        JsonNode parsed = objectMapper.readTree(sb.toString());
+                        String place = parsed.has("place") ? parsed.get("place").asText() : "N/A";
+                        String state = parsed.has("state") ? parsed.get("state").asText() : "N/A";
+                        String dueDate = parsed.has("due_date") ? parsed.get("due_date").asText() : null;
+                        String dueTime = parsed.has("due_time") ? parsed.get("due_time").asText() : null;
+                        Double emdAmount = parsed.has("emd_amount") && !parsed.get("emd_amount").isNull() ? parsed.get("emd_amount").asDouble() : null;
 
-                    Optional<Tender> opt = tenderRepository.findById(tenderId);
-                    if (opt.isPresent()) {
-                        Tender t = opt.get();
-                        t.setDocumentUrl(localPath);
                         if (!"N/A".equals(place)) {
                             t.setPlace(place);
                             t.setLocation(place + ", " + state);
                         }
                         if (!"N/A".equals(state)) t.setState(state);
-                        // The search API's final_end_date_sort is live, and GeM extends it by
-                        // corrigendum. The saved bid document is a snapshot from publication day,
-                        // so its date goes stale: tender 10017569 was given a due date of
-                        // 2026-10-07 - four days in the past - while GeM still listed it as an
-                        // ongoing bid. Let the PDF fill a gap, never overwrite a real API value.
                         String storedDueDate = t.getDueDate();
                         boolean storedUsable = storedDueDate != null
                                 && !storedDueDate.isBlank()
@@ -370,9 +422,9 @@ public class GeMScraperService {
                         }
                         t.setDownloadedDocs(String.format("[{\"name\":\"Bid Document\",\"filename\":\"%s\",\"local_path\":\"%s\",\"created_date\":\"%s\"}]", 
                                 localFileName, localPath, LocalDate.now().toString()));
-                        tenderRepository.save(t);
-                        System.out.println("  - Successfully updated PDF metadata for tender " + tenderId);
                     }
+                    tenderRepository.save(t);
+                    System.out.println("  - Successfully updated PDF metadata for tender " + tenderId);
                 }
             }
         } catch (Exception e) {
