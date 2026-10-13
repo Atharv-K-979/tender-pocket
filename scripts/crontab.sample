@@ -1,26 +1,46 @@
 # ==============================================================================
-# Tender Pocket — PostgreSQL Backup & Restore Cron Job Configuration
+# Tender Pocket — PostgreSQL Backup & Automated Restore Verification Crontab
 # ==============================================================================
-# Dedicated S3 Bucket: POSTGRES_BACKUP_S3_BUCKET (e.g. tender-pocket-postgres-backups)
+# Target Environment: AWS EC2 Ubuntu Host (/home/ubuntu/tender-pocket)
 # Timezone: Asia/Kolkata (IST)
+# Dedicated S3 Bucket: POSTGRES_BACKUP_S3_BUCKET (e.g. tender-pocket-postgres-backups)
 #
-# Installation instructions:
-#   crontab -e
-#   (Paste the lines below, adjusting the project path if necessary)
-# Confirm active schedule:
-#   crontab -l
+# Pre-requisites on EC2 host before installation:
+#   1. Ensure logs directory exists and is writable:
+#      mkdir -p /home/ubuntu/tender-pocket/logs
+#      chmod 755 /home/ubuntu/tender-pocket/logs
+#   2. Ensure backup scripts are executable:
+#      chmod +x /home/ubuntu/tender-pocket/scripts/postgres-backup-*.py
+#   3. Verify Docker container 'tender-pocket-postgres' is accessible:
+#      docker exec -i tender-pocket-postgres pg_isready -U postgres
+#   4. Verify AWS IAM Instance Profile / CLI credentials have PutObject & HeadObject
+#      permissions on the destination S3 bucket:
+#      aws s3 ls s3://tender-pocket-postgres-backups/
+#   5. Install into active user crontab:
+#      crontab -e
+#      (Paste the block below, verifying PROJECT_DIR matches deployment path)
+#   6. Verify installation:
+#      crontab -l
+#
+# IMPORTANT OPERATIONAL NOTE:
+#   This file is a reference sample only. Having this sample file present in the
+#   repository is NOT proof that automatic scheduling is installed or active on EC2.
+#   Scheduling is only active after manual installation via `crontab -e` on the host.
 # ==============================================================================
 
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin
 CRON_TZ=Asia/Kolkata
+PROJECT_DIR=/home/ubuntu/tender-pocket
 
-# 1. Daily Full PostgreSQL Backup (includes weekly recovery point archiving on Sundays)
-# Executes every night at 02:00 AM IST
-0 2 * * * /home/atharv/Internship26/tender-pocket/scripts/postgres-backup-daily.py >> /home/atharv/Internship26/tender-pocket/logs/backup-daily.log 2>&1
+# 1. Daily Full PostgreSQL Backup (Includes weekly recovery point archiving on Sundays)
+# Executes every night at 02:00 AM IST (02:00 Asia/Kolkata)
+0 2 * * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-backup-daily.py >> $PROJECT_DIR/logs/backup-daily.log 2>&1
 
 # 2. Monthly Full PostgreSQL Backup
-# Executes on the 1st of every month at 03:00 AM IST
-0 3 1 * * /home/atharv/Internship26/tender-pocket/scripts/postgres-backup-monthly.py >> /home/atharv/Internship26/tender-pocket/logs/backup-monthly.log 2>&1
+# Executes on the 1st of every month at 03:00 AM IST (03:00 Asia/Kolkata)
+0 3 1 * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-backup-monthly.py >> $PROJECT_DIR/logs/backup-monthly.log 2>&1
 
 # 3. Monthly Isolated Restore Verification Test
-# Executes on the 1st of every month at 05:00 AM IST
-0 5 1 * * /home/atharv/Internship26/tender-pocket/scripts/postgres-restore-test.py >> /home/atharv/Internship26/tender-pocket/logs/restore-test.log 2>&1
+# Executes on the 1st of every month at 05:00 AM IST (05:00 Asia/Kolkata)
+0 5 1 * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-restore-test.py >> $PROJECT_DIR/logs/restore-test.log 2>&1

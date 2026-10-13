@@ -1,0 +1,59 @@
+name: PostgreSQL Backup Verification CI
+
+on:
+  push:
+    branches: [ main, fix/postgres-backup, feature/postgresql-backup ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-backup:
+    name: Test PostgreSQL Backup & Restore System
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tender_pocket
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PostgreSQL Client Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Verify Python Syntax
+        run: |
+          python3 -m py_compile scripts/postgres-backup-daily.py
+          python3 -m py_compile scripts/postgres-backup-monthly.py
+          python3 -m py_compile scripts/postgres-restore-test.py
+          python3 -m py_compile scripts/test_postgres_backup.py
+
+      - name: Run PostgreSQL Backup Unit and Integration Test Suite
+        env:
+          USE_DIRECT_PSQL: "1"
+          POSTGRES_HOST: "localhost"
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: "postgres"
+          PGPASSWORD: "postgres"
+          POSTGRES_DB: "tender_pocket"
+        run: |
+          python3 scripts/test_postgres_backup.py -v
