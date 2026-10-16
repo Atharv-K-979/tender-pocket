@@ -380,6 +380,66 @@ public class TenderControllerTest {
     }
 
     @Test
+    void testClearanceTeamTenderDetailQuantitiesVisibility() {
+        authenticate("spec1", "Clearance Team");
+        tender1.setBidQty(50);
+        tender1.setQuotedQty(45);
+
+        ResponseEntity<?> response = tenderController.getTenderById("T1", "Clearance Team", "spec1");
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        assertTrue((Boolean) body.get("success"));
+        Tender detailTender = (Tender) body.get("tender");
+        assertNotNull(detailTender);
+        assertEquals(50, detailTender.getBidQty(), "Clearance Team must see Bid Quantity");
+        assertEquals(45, detailTender.getQuotedQty(), "Clearance Team must see Quoted Quantity");
+        assertEquals(50, detailTender.getBidQtySnakeCase());
+        assertEquals(45, detailTender.getQuotedQtySnakeCase());
+        // Confidentiality check: TPC purchase price should still be hidden
+        assertNull(detailTender.getTpcPurchasePrice(), "Clearance Team must not see confidential TPC purchase price");
+    }
+
+    @Test
+    void testClearanceTeamTenderDetailNullQuantities() {
+        authenticate("spec1", "Clearance Team");
+        tender1.setBidQty(null);
+        tender1.setQuotedQty(null);
+
+        ResponseEntity<?> response = tenderController.getTenderById("T1", "Clearance Team", "spec1");
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        assertTrue((Boolean) body.get("success"));
+        Tender detailTender = (Tender) body.get("tender");
+        assertNotNull(detailTender);
+        assertNull(detailTender.getBidQty(), "Null Bid Quantity must handle cleanly");
+        assertNull(detailTender.getQuotedQty(), "Null Quoted Quantity must handle cleanly");
+    }
+
+    @Test
+    void testTenderSerializationIncludesBothQuantityKeys() throws Exception {
+        Tender t = new Tender();
+        t.setId("T-QTY-1");
+        t.setBidQty(120);
+        t.setQuotedQty(110);
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(t);
+        com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(json);
+
+        assertTrue(node.has("bidQty"), "Serialized JSON must have bidQty");
+        assertTrue(node.has("bid_qty"), "Serialized JSON must have bid_qty");
+        assertEquals(120, node.get("bidQty").asInt());
+        assertEquals(120, node.get("bid_qty").asInt());
+
+        assertTrue(node.has("quotedQty"), "Serialized JSON must have quotedQty");
+        assertTrue(node.has("quoted_qty"), "Serialized JSON must have quoted_qty");
+        assertEquals(110, node.get("quotedQty").asInt());
+        assertEquals(110, node.get("quoted_qty").asInt());
+    }
+
+    @Test
     void testUnauthorizedTenderDetailAccess() {
         authenticate("exec1", "Tender Executive");
 

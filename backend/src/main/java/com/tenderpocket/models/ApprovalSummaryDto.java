@@ -1,5 +1,6 @@
 package com.tenderpocket.models;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 
 public class ApprovalSummaryDto {
@@ -38,6 +39,8 @@ public class ApprovalSummaryDto {
     private String tenderStatus;
     private String tenderCurrentStage;
     private String misExecutive;
+    private Integer tenderBidQty;
+    private Integer tenderQuotedQty;
 
     public ApprovalSummaryDto() {}
 
@@ -76,6 +79,8 @@ public class ApprovalSummaryDto {
             this.tenderStatus = tender.getStatus();
             this.tenderCurrentStage = tender.getCurrentStage();
             this.misExecutive = tender.getMisExecutive();
+            this.tenderBidQty = tender.getBidQty();
+            this.tenderQuotedQty = tender.getQuotedQty();
         }
     }
 
@@ -172,4 +177,24 @@ public class ApprovalSummaryDto {
 
     public String getReviewerComment() { return reviewerComment; }
     public void setReviewerComment(String reviewerComment) { this.reviewerComment = reviewerComment; }
+
+    @JsonProperty("tenderBidQty")
+    public Integer getTenderBidQty() { return tenderBidQty; }
+    @JsonProperty("tender_bid_qty")
+    public Integer getTenderBidQtySnake() { return tenderBidQty; }
+    @JsonProperty("bid_qty")
+    public Integer getBidQty() { return tenderBidQty; }
+    @JsonProperty("bidQty")
+    public Integer getBidQtyCamel() { return tenderBidQty; }
+    public void setTenderBidQty(Integer tenderBidQty) { this.tenderBidQty = tenderBidQty; }
+
+    @JsonProperty("tenderQuotedQty")
+    public Integer getTenderQuotedQty() { return tenderQuotedQty; }
+    @JsonProperty("tender_quoted_qty")
+    public Integer getTenderQuotedQtySnake() { return tenderQuotedQty; }
+    @JsonProperty("quoted_qty")
+    public Integer getQuotedQty() { return tenderQuotedQty; }
+    @JsonProperty("quotedQty")
+    public Integer getQuotedQtyCamel() { return tenderQuotedQty; }
+    public void setTenderQuotedQty(Integer tenderQuotedQty) { this.tenderQuotedQty = tenderQuotedQty; }
 }

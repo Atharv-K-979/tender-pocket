@@ -333,7 +333,9 @@ export interface Tender {
   product_name_as_per_tender?: string | null;
   product_name_as_per_marken?: string | null;
   bid_qty?: number | null;
+  bidQty?: number | null;
   quoted_qty?: number | null;
+  quotedQty?: number | null;
   ai_details_summary?: string | null;
   ai_history_summary?: string | null;
   working_path?: string | null;

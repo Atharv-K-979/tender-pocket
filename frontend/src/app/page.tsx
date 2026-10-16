@@ -222,8 +222,8 @@ export default function Dashboard() {
       setEmdAmountActual(selectedTender.emd_amount_actual ?? '');
       setEmdPaymentDate(selectedTender.emd_payment_date || '');
       setLossReason(selectedTender.loss_reason || '');
-      setBidQty(selectedTender.bid_qty ?? '');
-      setQuotedQty(selectedTender.quoted_qty ?? '');
+      setBidQty(selectedTender.bid_qty ?? selectedTender.bidQty ?? '');
+      setQuotedQty(selectedTender.quoted_qty ?? selectedTender.quotedQty ?? '');
       setMisExecutive(selectedTender.mis_executive || '');
       setSelectedMisMember(selectedTender.assigned_mis_member || '');
     }
@@ -597,8 +597,8 @@ export default function Dashboard() {
           setEmdAmountActual(match.emd_amount_actual ?? '');
           setEmdPaymentDate(match.emd_payment_date || '');
           setLossReason(match.loss_reason || '');
-          setBidQty(match.bid_qty ?? '');
-          setQuotedQty(match.quoted_qty ?? '');
+          setBidQty(match.bid_qty ?? match.bidQty ?? '');
+          setQuotedQty(match.quoted_qty ?? match.quotedQty ?? '');
           setMisExecutive(match.mis_executive || '');
           setSelectedMisMember(match.assigned_mis_member || '');
 
@@ -629,8 +629,8 @@ export default function Dashboard() {
             setEmdAmountActual(match.emd_amount_actual ?? '');
             setEmdPaymentDate(match.emd_payment_date || '');
             setLossReason(match.loss_reason || '');
-            setBidQty(match.bid_qty ?? '');
-            setQuotedQty(match.quoted_qty ?? '');
+            setBidQty(match.bid_qty ?? match.bidQty ?? '');
+            setQuotedQty(match.quoted_qty ?? match.quotedQty ?? '');
             setMisExecutive(match.mis_executive || '');
             setSelectedMisMember(match.assigned_mis_member || '');
 
@@ -3058,6 +3058,18 @@ export default function Dashboard() {
                               <div className="tender-detail-item">
                                 <Layers size={14} />
                                 <span>{tender.sector}</span>
+                              </div>
+                            )}
+                            {(tender.bid_qty != null || tender.bidQty != null) && (
+                              <div className="tender-detail-item" title="Bid Quantity">
+                                <Layers size={14} />
+                                <span>Bid Qty: <strong>{tender.bid_qty ?? tender.bidQty}</strong></span>
+                              </div>
+                            )}
+                            {(tender.quoted_qty != null || tender.quotedQty != null) && (
+                              <div className="tender-detail-item" title="Quoted Quantity">
+                                <Layers size={14} />
+                                <span>Quoted Qty: <strong>{tender.quoted_qty ?? tender.quotedQty}</strong></span>
                               </div>
                             )}
                           </div>
@@ -5849,6 +5861,31 @@ export default function Dashboard() {
                   <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px', lineHeight: '1.4' }}>
                     Review technical parameters and product specifications. Clearance Team verification is required before bid generation.
                   </p>
+                  {/* Tender Quantities Parameter Badges */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '6px', background: 'rgba(255,255,255,0.04)', color: 'var(--primary)' }}>
+                        <Layers size={15} />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', display: 'block' }}>Bid Quantity</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                          {selectedTender.bid_qty != null ? String(selectedTender.bid_qty) : (selectedTender.bidQty != null ? String(selectedTender.bidQty) : 'N/A')}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '6px', background: 'rgba(255,255,255,0.04)', color: 'var(--primary)' }}>
+                        <Layers size={15} />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', display: 'block' }}>Quoted Quantity</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                          {selectedTender.quoted_qty != null ? String(selectedTender.quoted_qty) : (selectedTender.quotedQty != null ? String(selectedTender.quotedQty) : 'N/A')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                   {selectedTender.assigned_mis_member_spec && (
                     <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginBottom: '8px' }}>
                       Target Clearance Representative: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_spec}</strong>
