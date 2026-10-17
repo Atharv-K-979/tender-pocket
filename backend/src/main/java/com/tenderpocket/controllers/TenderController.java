@@ -428,11 +428,15 @@ public class TenderController {
     }
 
     private boolean isValidCalendarDate(String dateStr) {
+        return isValidCalendarDate(dateStr, false);
+    }
+
+    private boolean isValidCalendarDate(String dateStr, boolean allowNoNA) {
         if (dateStr == null || dateStr.trim().isEmpty()) {
             return true;
         }
         String s = dateStr.trim();
-        if ("No".equalsIgnoreCase(s) || "N/A".equalsIgnoreCase(s)) {
+        if (allowNoNA && ("No".equalsIgnoreCase(s) || "N/A".equalsIgnoreCase(s))) {
             return true;
         }
 
@@ -468,8 +472,8 @@ public class TenderController {
             }
         }
 
-        // 4. Legacy format: d MMM uuuu e.g. "8 Oct 2026"
-        if (s.matches("^\\d{1,2} [A-Za-z]{3} \\d{4}$")) {
+        // 4. Legacy format: d MMM uuuu e.g. "8 Oct 2026" or "24 Sep 2026"
+        if (s.matches("^\\d{1,2}\\s+[A-Za-z]{3}\\s+\\d{4}$")) {
             try {
                 DateTimeFormatter dtf = DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH).withResolverStyle(ResolverStyle.STRICT);
                 LocalDate.parse(s, dtf);
@@ -496,14 +500,49 @@ public class TenderController {
         if (s.isEmpty() || "N/A".equalsIgnoreCase(s) || "null".equalsIgnoreCase(s)) {
             return null;
         }
-        boolean isNegative = s.startsWith("-") || s.contains("-");
-        String cleaned = s.replaceAll("[₹Rsrs$€£,\\s]", "").trim();
-        if (cleaned.isEmpty()) {
+
+        // Detect negative numbers e.g. -500, - 1,500, ₹ -500
+        boolean isNegative = s.startsWith("-") || s.matches("^[^0-9]*-\\s*[0-9].*");
+
+        // Strip valid currency symbol/prefix e.g. ₹, Rs, Rs., $, €, £, INR
+        String numStr = s.replaceFirst("^(?i)(₹|Rs\\.?|INR|[$€£])\\s*", "").trim();
+        if (numStr.startsWith("-")) {
+            isNegative = true;
+            numStr = numStr.substring(1).trim();
+        }
+
+        if (numStr.isEmpty()) {
             errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
             return null;
         }
+
+        // Reject if any illegal character or multiple decimal points
+        int dotCount = 0;
+        for (int i = 0; i < numStr.length(); i++) {
+            if (numStr.charAt(i) == '.') dotCount++;
+        }
+        if (dotCount > 1) {
+            errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
+            return null;
+        }
+
+        if (!numStr.matches("^[0-9,]+(\\.[0-9]+)?$")) {
+            errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
+            return null;
+        }
+
+        // If commas are present, validate strict Indian or Western grouping
+        if (numStr.contains(",")) {
+            boolean validWestern = numStr.matches("^\\d{1,3}(,\\d{3})+(\\.\\d+)?$");
+            boolean validIndian = numStr.matches("^\\d{1,2}(,\\d{2})*,\\d{3}(\\.\\d+)?$");
+            if (!validWestern && !validIndian) {
+                errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
+                return null;
+            }
+        }
+
         try {
-            double val = Double.parseDouble(cleaned);
+            double val = Double.parseDouble(numStr.replace(",", ""));
             if (isNegative || val < 0) {
                 errors.put(errorKey, isFee ? "Fee cannot be negative." : "Amount cannot be negative.");
                 return null;
@@ -691,6 +730,12 @@ public class TenderController {
         }
 
         Tender tender = opt.get();
+
+        // Field-level workflow authorization: reject attempts by unauthorized roles to modify workflow status, approval outcomes, payment fields, or confidential pricing
+        if (!WorkflowPermissions.allowedPatch(body, tender.getCurrentStage(), userRole)) {
+            return WorkflowPermissions.denied();
+        }
+
         String requestedVerStatus = (String) (body.containsKey("verification_status") ? body.get("verification_status") : body.get("verificationStatus"));
         if (requestedVerStatus != null && List.of("Pending", "Approved").contains(requestedVerStatus) && !isBidDocsProvided(tender)) {
             return ResponseEntity.badRequest().body(Map.of("success", false,
@@ -773,8 +818,9 @@ public class TenderController {
             String alias = dateFieldAliases[i];
             if (body.containsKey(fld) || body.containsKey(alias)) {
                 Object val = body.containsKey(fld) ? body.get(fld) : body.get(alias);
-                if (val != null && !isValidCalendarDate(val.toString())) {
-                    if ("pre_bid_date".equals(fld)) {
+                boolean isPreBid = "pre_bid_date".equals(fld);
+                if (val != null && !isValidCalendarDate(val.toString(), isPreBid)) {
+                    if (isPreBid) {
                         fieldErrors.put(fld, "Enter a valid date or 'No'.");
                     } else {
                         fieldErrors.put(fld, "Enter a valid date.");

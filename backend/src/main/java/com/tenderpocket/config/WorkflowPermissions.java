@@ -79,8 +79,28 @@ public final class WorkflowPermissions {
                 .body(Map.of("success", false, "error", "Access denied for this workflow action."));
     }
 
+    private static boolean hasAnyKey(Map<String, Object> body, String... keys) {
+        if (body == null || keys == null) return false;
+        for (String k : keys) {
+            if (body.containsKey(k)) return true;
+        }
+        return false;
+    }
+
+    private static Object getAnyVal(Map<String, Object> body, String... keys) {
+        if (body == null || keys == null) return null;
+        for (String k : keys) {
+            if (body.containsKey(k)) return body.get(k);
+        }
+        return null;
+    }
+
     public static boolean allowedPatch(Map<String, Object> body, String currentStage) {
-        String canonical = canonicalRole(role());
+        return allowedPatch(body, currentStage, role());
+    }
+
+    public static boolean allowedPatch(Map<String, Object> body, String currentStage, String role) {
+        String canonical = canonicalRole(role);
         if (canonical.isEmpty()) return false;
 
         boolean isAdmin = "Admin".equals(canonical);
@@ -89,47 +109,79 @@ public final class WorkflowPermissions {
         boolean isClearance = "Clearance Team".equals(canonical);
         boolean isTpc = "TPC Pricing Team".equals(canonical);
 
-        // Admin may view management data but cannot alter operational stages, participation decisions, or spec approvals
+        // Admin may view management data and edit specifications, but cannot alter operational workflow stages, participation decisions, or approvals
         if (isAdmin) {
-            if (body.containsKey("status") || body.containsKey("current_stage") || body.containsKey("spec_verification_status") || body.containsKey("verification_status") || body.containsKey("payment_status") || body.containsKey("submission_status")) {
+            if (hasAnyKey(body, "status", "current_stage", "currentStage", "spec_verification_status", "specVerificationStatus",
+                    "verification_status", "verificationStatus", "payment_status", "paymentStatus", "submission_status", "submissionStatus",
+                    "outcome_status", "outcomeStatus", "tpc_purchase_price", "tpcPurchasePrice")) {
                 return false;
             }
         }
 
-        if (body.containsKey("verification_status")) {
-            String val = String.valueOf(body.get("verification_status"));
+        // TPC confidential purchase price: only TPC Pricing Team
+        if (hasAnyKey(body, "tpc_purchase_price", "tpcPurchasePrice") && !isTpc) {
+            return false;
+        }
+
+        // MIS final price: only MIS Team or Admin
+        if (hasAnyKey(body, "mis_final_price", "misFinalPrice") && !isMis && !isAdmin) {
+            return false;
+        }
+
+        // Document verification status
+        if (hasAnyKey(body, "verification_status", "verificationStatus")) {
+            String val = String.valueOf(getAnyVal(body, "verification_status", "verificationStatus"));
             if (List.of("Approved", "Rejected").contains(val) && !isMis) return false;
             if ("Pending".equals(val) && !isExec) return false;
+            if (!List.of("Approved", "Rejected", "Pending", "None").contains(val) && !isMis) return false;
         }
 
-        if (body.containsKey("payment_status")) {
-            String val = String.valueOf(body.get("payment_status"));
+        // Payment status
+        if (hasAnyKey(body, "payment_status", "paymentStatus")) {
+            String val = String.valueOf(getAnyVal(body, "payment_status", "paymentStatus"));
             if (List.of("Approved", "Rejected").contains(val) && !isMis) return false;
             if ("Pending".equals(val) && !isExec) return false;
+            if (!List.of("Approved", "Rejected", "Pending", "None").contains(val) && !isMis) return false;
         }
 
-        for (String emdField : List.of("emd_amount_actual", "emd_payment_mode", "emd_payment_ref", "emd_payment_date", "assigned_mis_member_emd", "assigned_mis_member", "assigned_mis_member_docs", "assigned_mis_member_submission", "working_path", "downloaded_docs", "downloadedDocs")) {
-            if (body.containsKey(emdField) && !isExec) return false;
+        // EMD payment and execution details: only Executive or MIS
+        for (String emdField : List.of("emd_amount_actual", "emdAmountActual", "emd_payment_mode", "emdPaymentMode",
+                "emd_payment_ref", "emdPaymentRef", "emd_payment_date", "emdPaymentDate",
+                "working_path", "workingPath", "downloaded_docs", "downloadedDocs")) {
+            if (body.containsKey(emdField) && !isExec && !isMis) return false;
         }
 
-        if (body.containsKey("submission_status")) {
-            String val = String.valueOf(body.get("submission_status"));
+        // Assignment fields: only MIS Team or Admin
+        for (String assignField : List.of("mis_executive", "misExecutive", "assigned_mis_member", "assignedMisMember",
+                "assigned_mis_member_docs", "assignedMisMemberDocs", "assigned_mis_member_emd", "assignedMisMemberEmd",
+                "assigned_mis_member_submission", "assignedMisMemberSubmission", "assigned_mis_member_spec", "assignedMisMemberSpec")) {
+            if (body.containsKey(assignField) && !isMis && !isAdmin) return false;
+        }
+
+        // Submission status
+        if (hasAnyKey(body, "submission_status", "submissionStatus")) {
+            String val = String.valueOf(getAnyVal(body, "submission_status", "submissionStatus"));
             if (List.of("Approved", "Rejected").contains(val) && !isMis) return false;
             if ("Pending".equals(val) && !isExec) return false;
+            if (!List.of("Approved", "Rejected", "Pending", "None").contains(val) && !isMis) return false;
         }
 
-        if (body.containsKey("tpc_purchase_price") && !isTpc) return false;
-        if (body.containsKey("mis_final_price") && !isMis && !isAdmin) return false;
-        if ((body.containsKey("outcome_status") || body.containsKey("loss_reason")) && !isMis) return false;
+        // Final outcome and loss reason
+        if (hasAnyKey(body, "outcome_status", "outcomeStatus", "loss_reason", "lossReason") && !isMis) {
+            return false;
+        }
 
-        if (body.containsKey("spec_verification_status")) {
-            String val = String.valueOf(body.get("spec_verification_status"));
+        // Specification clearance verification
+        if (hasAnyKey(body, "spec_verification_status", "specVerificationStatus")) {
+            String val = String.valueOf(getAnyVal(body, "spec_verification_status", "specVerificationStatus"));
             if (List.of("Approved", "Rejected").contains(val) && !isClearance) return false;
             if ("Pending".equals(val) && !isExec) return false;
+            if (!List.of("Approved", "Rejected", "Pending", "None").contains(val) && !isClearance) return false;
         }
 
-        if (body.containsKey("current_stage")) {
-            String newStage = String.valueOf(body.get("current_stage")).toUpperCase(Locale.ROOT);
+        // Current stage
+        if (hasAnyKey(body, "current_stage", "currentStage")) {
+            String newStage = String.valueOf(getAnyVal(body, "current_stage", "currentStage")).toUpperCase(Locale.ROOT);
             if (List.of("WON", "LOST", "WIN_LOSS_PENDING").contains(newStage) && !isMis) return false;
             if ("DOC_VERIFICATION".equals(newStage) && !isExec && !isMis) return false;
             if ("TPC_PRICING".equals(newStage) && !isClearance && !isExec && !isMis) return false;
@@ -137,8 +189,9 @@ public final class WorkflowPermissions {
             if ("PAYMENT_APPROVAL".equals(newStage) && !isMis && !isExec) return false;
         }
 
-        if (body.containsKey("status") && body.get("status") != null) {
-            String status = String.valueOf(body.get("status"));
+        // Tender overall status
+        if (hasAnyKey(body, "status") && getAnyVal(body, "status") != null) {
+            String status = String.valueOf(getAnyVal(body, "status"));
             if (List.of("Won", "Lost", "Awarded", "Not Awarded", "Disqualified", "Missed Opportunity").contains(status) && !isMis) return false;
             if (List.of("Participating", "Not Participating").contains(status) && !isMis) return false;
             if (List.of("Submitted", "Filed").contains(status) && !isMis && !isExec) return false;

@@ -617,11 +617,22 @@ export default function TenderDetailPage() {
       return null;
     }
 
-    // Check legacy "d MMM uuuu" e.g. "8 Oct 2026"
+    // Check legacy "d MMM uuuu" e.g. "8 Oct 2026" or "24 Sep 2026"
     const legacyMatch = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
     if (legacyMatch) {
-      const parsed = Date.parse(s);
-      if (!isNaN(parsed)) return null;
+      const day = parseInt(legacyMatch[1], 10);
+      const monthStr = legacyMatch[2].toLowerCase();
+      const year = parseInt(legacyMatch[3], 10);
+      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const monthIdx = months.indexOf(monthStr);
+      if (monthIdx === -1 || year < 1900 || year > 2100 || day < 1 || day > 31) {
+        return isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.";
+      }
+      const d = new Date(year, monthIdx, day);
+      if (d.getFullYear() !== year || d.getMonth() !== monthIdx || d.getDate() !== day) {
+        return isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.";
+      }
+      return null;
     }
 
     return isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.";
@@ -629,13 +640,45 @@ export default function TenderDetailPage() {
 
   const validateSpecNumeric = (val: string | number, isFee: boolean): string | null => {
     if (val === null || val === undefined) return null;
+    if (typeof val === 'number') {
+      if (val < 0) return isFee ? "Fee cannot be negative." : "Amount cannot be negative.";
+      return null;
+    }
     const s = String(val).trim();
     if (!s || s.toLowerCase() === 'n/a' || s.toLowerCase() === 'null') return null;
-    const isNegative = s.startsWith('-') || s.includes('-');
-    const cleaned = s.replace(/[₹Rsrs$€£,\s]/g, '').trim();
-    if (!cleaned) {
+
+    let isNegative = s.startsWith('-') || /^[^\d]*-\s*\d/.test(s);
+    let numStr = s.replace(/^(?:₹|Rs\.?|INR|[$€£])\s*/i, '').trim();
+    if (numStr.startsWith('-')) {
+      isNegative = true;
+      numStr = numStr.substring(1).trim();
+    }
+
+    if (!numStr) {
       return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
     }
+
+    // Reject multiple decimal points
+    const dotCount = (numStr.match(/\./g) || []).length;
+    if (dotCount > 1) {
+      return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
+    }
+
+    // Reject invalid characters or malformed numeric format
+    if (!/^[0-9,]+(?:\.[0-9]+)?$/.test(numStr)) {
+      return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
+    }
+
+    // If commas are present, validate strict Indian or Western grouping
+    if (numStr.includes(',')) {
+      const validWestern = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(numStr);
+      const validIndian = /^\d{1,2}(?:,\d{2})*,\d{3}(?:\.\d+)?$/.test(numStr);
+      if (!validWestern && !validIndian) {
+        return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
+      }
+    }
+
+    const cleaned = numStr.replace(/,/g, '');
     const num = Number(cleaned);
     if (isNaN(num)) {
       return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
