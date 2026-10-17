@@ -564,4 +564,127 @@ public class TenderControllerTest {
             assertEquals(10, tender1.getBidQty());
         }
     }
+
+    @Test
+    void testIncompleteDateRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("opening_date", "2026-");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals(false, respBody.get("success"));
+        assertTrue(respBody.get("error").toString().contains("Enter a valid date."));
+        Map<?, ?> errors = (Map<?, ?>) respBody.get("errors");
+        assertNotNull(errors);
+        assertEquals("Enter a valid date.", errors.get("opening_date"));
+    }
+
+    @Test
+    void testImpossibleDateRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("opening_date", "2026-02-30");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals(false, respBody.get("success"));
+        assertEquals("Enter a valid date.", respBody.get("error"));
+    }
+
+    @Test
+    void testValidDateAccepted() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("opening_date", "2026-10-26");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("2026-10-26", tender1.getOpeningDate());
+    }
+
+    @Test
+    void testNonNumericFeeRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("document_fee_raw", "maha");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals(false, respBody.get("success"));
+        assertEquals("Enter a valid numeric fee.", respBody.get("error"));
+        Map<?, ?> errors = (Map<?, ?>) respBody.get("errors");
+        assertNotNull(errors);
+        assertEquals("Enter a valid numeric fee.", errors.get("document_fee_raw"));
+    }
+
+    @Test
+    void testNegativeFeeRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("document_fee_raw", "-500");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals("Fee cannot be negative.", respBody.get("error"));
+    }
+
+    @Test
+    void testValidFeeAccepted() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("document_fee_raw", "₹ 750.50");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("₹ 750.50", tender1.getDocumentFeeRaw());
+        assertEquals(750.50, tender1.getDocumentFee());
+    }
+
+    @Test
+    void testNegativeQuantityRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("bid_qty", -5);
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals("Quantity cannot be negative.", respBody.get("error"));
+    }
+
+    @Test
+    void testDecimalQuantityRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("bid_qty", "10.5");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals("Quantity must be an integer.", respBody.get("error"));
+    }
+
+    @Test
+    void testInvalidUrlRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("original_url", "not-a-valid-url");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertTrue(respBody.get("error").toString().contains("Enter a valid URL"));
+    }
 }
