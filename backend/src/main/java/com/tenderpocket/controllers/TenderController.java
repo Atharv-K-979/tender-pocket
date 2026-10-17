@@ -413,6 +413,16 @@ public class TenderController {
         return copy;
     }
 
+    private Double parseDoubleSafe(String val) {
+        if (val == null || val.isBlank()) return null;
+        try {
+            String cleaned = val.replaceAll("[^0-9.]", "");
+            return cleaned.isEmpty() ? null : Double.parseDouble(cleaned);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getTenderById(
             @PathVariable("id") String id,
@@ -575,14 +585,210 @@ public class TenderController {
             logDetails.add("notes updated");
         }
 
-        if (body.containsKey("quoted_qty")) {
-            Object q = body.get("quoted_qty");
-            tender.setQuotedQty(q instanceof Number ? ((Number) q).intValue() : null);
+        if (body.containsKey("quoted_qty") || body.containsKey("quotedQty")) {
+            Object q = body.containsKey("quoted_qty") ? body.get("quoted_qty") : body.get("quotedQty");
+            Integer val = null;
+            if (q instanceof Number) {
+                val = ((Number) q).intValue();
+            } else if (q != null && !q.toString().trim().isEmpty()) {
+                try {
+                    val = Integer.parseInt(q.toString().trim());
+                } catch (Exception ignored) {}
+            }
+            tender.setQuotedQty(val);
+            logDetails.add("quoted quantity updated to " + val);
         }
 
-        if (body.containsKey("bid_qty")) {
-            Object b = body.get("bid_qty");
-            tender.setBidQty(b instanceof Number ? ((Number) b).intValue() : null);
+        if (body.containsKey("bid_qty") || body.containsKey("bidQty")) {
+            Object b = body.containsKey("bid_qty") ? body.get("bid_qty") : body.get("bidQty");
+            Integer val = null;
+            if (b instanceof Number) {
+                val = ((Number) b).intValue();
+            } else if (b != null && !b.toString().trim().isEmpty()) {
+                try {
+                    val = Integer.parseInt(b.toString().trim());
+                } catch (Exception ignored) {}
+            }
+            tender.setBidQty(val);
+            logDetails.add("bid quantity updated to " + val);
+        }
+
+        if (body.containsKey("authority")) {
+            String val = (String) body.get("authority");
+            tender.setAuthority(val);
+            logDetails.add("authority updated to '" + val + "'");
+        }
+
+        if (body.containsKey("ref_no") || body.containsKey("refNo")) {
+            String val = (String) (body.containsKey("ref_no") ? body.get("ref_no") : body.get("refNo"));
+            tender.setRefNo(val);
+            logDetails.add("official reference number updated to '" + val + "'");
+        }
+
+        if (body.containsKey("estimated_cost_raw") || body.containsKey("estimatedCostRaw")) {
+            String val = (String) (body.containsKey("estimated_cost_raw") ? body.get("estimated_cost_raw") : body.get("estimatedCostRaw"));
+            tender.setEstimatedCostRaw(val);
+            if (!body.containsKey("estimated_cost") && !body.containsKey("estimatedCost")) {
+                tender.setEstimatedCost(parseDoubleSafe(val));
+            }
+            logDetails.add("estimated cost (raw) updated to '" + val + "'");
+        }
+
+        if (body.containsKey("estimated_cost") || body.containsKey("estimatedCost")) {
+            Object raw = body.containsKey("estimated_cost") ? body.get("estimated_cost") : body.get("estimatedCost");
+            tender.setEstimatedCost(raw instanceof Number ? ((Number) raw).doubleValue() : (raw != null && !raw.toString().isBlank() ? parseDoubleSafe(raw.toString()) : null));
+        }
+
+        if (body.containsKey("emd_raw") || body.containsKey("emdRaw")) {
+            String val = (String) (body.containsKey("emd_raw") ? body.get("emd_raw") : body.get("emdRaw"));
+            tender.setEmdRaw(val);
+            if (!body.containsKey("emd")) {
+                tender.setEmd(parseDoubleSafe(val));
+            }
+            logDetails.add("EMD requirement (raw) updated to '" + val + "'");
+        }
+
+        if (body.containsKey("emd")) {
+            Object raw = body.get("emd");
+            tender.setEmd(raw instanceof Number ? ((Number) raw).doubleValue() : (raw != null && !raw.toString().isBlank() ? parseDoubleSafe(raw.toString()) : null));
+        }
+
+        if (body.containsKey("document_fee_raw") || body.containsKey("documentFeeRaw")) {
+            String val = (String) (body.containsKey("document_fee_raw") ? body.get("document_fee_raw") : body.get("documentFeeRaw"));
+            tender.setDocumentFeeRaw(val);
+            if (!body.containsKey("document_fee") && !body.containsKey("documentFee")) {
+                tender.setDocumentFee(parseDoubleSafe(val));
+            }
+            logDetails.add("document fee (raw) updated to '" + val + "'");
+        }
+
+        if (body.containsKey("document_fee") || body.containsKey("documentFee")) {
+            Object raw = body.containsKey("document_fee") ? body.get("document_fee") : body.get("documentFee");
+            tender.setDocumentFee(raw instanceof Number ? ((Number) raw).doubleValue() : (raw != null && !raw.toString().isBlank() ? parseDoubleSafe(raw.toString()) : null));
+        }
+
+        if (body.containsKey("tender_type") || body.containsKey("tenderType")) {
+            String val = (String) (body.containsKey("tender_type") ? body.get("tender_type") : body.get("tenderType"));
+            tender.setTenderType(val);
+            logDetails.add("tender type updated to '" + val + "'");
+        }
+
+        if (body.containsKey("source")) {
+            String val = (String) body.get("source");
+            tender.setSource(val);
+            logDetails.add("source portal updated to '" + val + "'");
+        }
+
+        if (body.containsKey("source_id") || body.containsKey("sourceId")) {
+            String val = (String) (body.containsKey("source_id") ? body.get("source_id") : body.get("sourceId"));
+            tender.setSourceId(val);
+            logDetails.add("source ID updated to '" + val + "'");
+        }
+
+        if (body.containsKey("location")) {
+            String val = (String) body.get("location");
+            tender.setLocation(val);
+            logDetails.add("location updated to '" + val + "'");
+        }
+
+        if (body.containsKey("place")) {
+            String val = (String) body.get("place");
+            tender.setPlace(val);
+            logDetails.add("place updated to '" + val + "'");
+        }
+
+        if (body.containsKey("state")) {
+            String val = (String) body.get("state");
+            tender.setState(val);
+            logDetails.add("state updated to '" + val + "'");
+        }
+
+        if (body.containsKey("sector")) {
+            String val = (String) body.get("sector");
+            tender.setSector(val);
+            logDetails.add("sector updated to '" + val + "'");
+        }
+
+        if (body.containsKey("vertical_name") || body.containsKey("verticalName")) {
+            String val = (String) (body.containsKey("vertical_name") ? body.get("vertical_name") : body.get("verticalName"));
+            tender.setVerticalName(val);
+            logDetails.add("vertical name updated to '" + val + "'");
+        }
+
+        if (body.containsKey("publish_date") || body.containsKey("publishDate")) {
+            String val = (String) (body.containsKey("publish_date") ? body.get("publish_date") : body.get("publishDate"));
+            tender.setPublishDate(val);
+            logDetails.add("publish date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("start_date") || body.containsKey("startDate")) {
+            String val = (String) (body.containsKey("start_date") ? body.get("start_date") : body.get("startDate"));
+            tender.setStartDate(val);
+            logDetails.add("start date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("due_date") || body.containsKey("dueDate")) {
+            String val = (String) (body.containsKey("due_date") ? body.get("due_date") : body.get("dueDate"));
+            tender.setDueDate(val);
+            logDetails.add("closing due date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("opening_date") || body.containsKey("openingDate")) {
+            String val = (String) (body.containsKey("opening_date") ? body.get("opening_date") : body.get("openingDate"));
+            tender.setOpeningDate(val);
+            logDetails.add("opening date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("pre_bid_date") || body.containsKey("preBidDate")) {
+            String val = (String) (body.containsKey("pre_bid_date") ? body.get("pre_bid_date") : body.get("preBidDate"));
+            tender.setPreBidDate(val);
+            logDetails.add("pre-bid meeting date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("time")) {
+            String val = (String) body.get("time");
+            tender.setTime(val);
+            logDetails.add("bid submission time updated to '" + val + "'");
+        }
+
+        if (body.containsKey("entry_date") || body.containsKey("entryDate")) {
+            String val = (String) (body.containsKey("entry_date") ? body.get("entry_date") : body.get("entryDate"));
+            tender.setEntryDate(val);
+            logDetails.add("entry date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("corrigendum_remark") || body.containsKey("corrigendumRemark")) {
+            String val = (String) (body.containsKey("corrigendum_remark") ? body.get("corrigendum_remark") : body.get("corrigendumRemark"));
+            tender.setCorrigendumRemark(val);
+            logDetails.add("corrigendum remark updated to '" + val + "'");
+        }
+
+        if (body.containsKey("product_name_as_per_tender") || body.containsKey("productNameAsPerTender")) {
+            String val = (String) (body.containsKey("product_name_as_per_tender") ? body.get("product_name_as_per_tender") : body.get("productNameAsPerTender"));
+            tender.setProductNameAsPerTender(val);
+            logDetails.add("product name as per tender updated to '" + val + "'");
+        }
+
+        if (body.containsKey("product_name_as_per_marken") || body.containsKey("productNameAsPerMarken")) {
+            String val = (String) (body.containsKey("product_name_as_per_marken") ? body.get("product_name_as_per_marken") : body.get("productNameAsPerMarken"));
+            tender.setProductNameAsPerMarken(val);
+            logDetails.add("product name as per Marken updated to '" + val + "'");
+        }
+
+        if (body.containsKey("title")) {
+            String val = (String) body.get("title");
+            if (val != null && !val.trim().isEmpty()) {
+                tender.setTitle(val);
+                logDetails.add("title / tender brief updated");
+            }
+        }
+
+        if (body.containsKey("original_url") || body.containsKey("originalUrl")) {
+            String val = (String) (body.containsKey("original_url") ? body.get("original_url") : body.get("originalUrl"));
+            if (val != null && !val.trim().isEmpty()) {
+                tender.setOriginalUrl(val);
+                logDetails.add("original URL updated");
+            }
         }
 
         if (body.containsKey("mis_executive")) {
@@ -793,7 +999,11 @@ public class TenderController {
             System.err.println("[TenderController] Warning saving activity log for tender " + id + ": " + e.getMessage());
         }
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Tender updated successfully"));
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("message", "Tender updated successfully");
+        resp.put("tender", createResponseCopy(tender));
+        return ResponseEntity.ok(resp);
     }
 
     @DeleteMapping("/{id}")

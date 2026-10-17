@@ -469,4 +469,99 @@ public class TenderControllerTest {
         assertFalse((Boolean) respBody.get("success"));
         assertTrue(respBody.get("error").toString().contains("Generated bid documents are required"));
     }
+
+    @Test
+    void testUpdateTenderSpecificationParametersByClearanceTeam() {
+        authenticate("clearance", "Clearance Team");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("authority", "Updated Medical Health Authority");
+        body.put("ref_no", "REF-SPEC-999");
+        body.put("estimated_cost_raw", "₹ 7,50,000");
+        body.put("emd_raw", "₹ 15,000");
+        body.put("document_fee_raw", "₹ 500");
+        body.put("tender_type", "GeM");
+        body.put("source", "GeM");
+        body.put("source_id", "GEM/2026/B/9999");
+        body.put("location", "Nashik, MH");
+        body.put("place", "Satpur");
+        body.put("state", "Maharashtra");
+        body.put("sector", "Healthcare");
+        body.put("vertical_name", "Medical Equipment");
+        body.put("publish_date", "2026-10-01");
+        body.put("start_date", "2026-10-02");
+        body.put("due_date", "2026-10-25");
+        body.put("opening_date", "2026-10-26");
+        body.put("pre_bid_date", "2026-10-15");
+        body.put("time", "15:00:00");
+        body.put("entry_date", "2026-10-01");
+        body.put("bid_qty", "50");
+        body.put("quoted_qty", "45");
+        body.put("corrigendum_remark", "No");
+        body.put("product_name_as_per_tender", "Suction Unit 50L");
+        body.put("product_name_as_per_marken", "Marken Suction Unit 50L");
+        body.put("title", "Supply and Installation of Medical Suction Units");
+        body.put("original_url", "https://gem.gov.in/bid/9999");
+
+        ResponseEntity<?> response = tenderController.updateTender("Clearance Team", "clearance", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        assertEquals("Updated Medical Health Authority", tender1.getAuthority());
+        assertEquals("REF-SPEC-999", tender1.getRefNo());
+        assertEquals("₹ 7,50,000", tender1.getEstimatedCostRaw());
+        assertEquals(750000.0, tender1.getEstimatedCost());
+        assertEquals("₹ 15,000", tender1.getEmdRaw());
+        assertEquals(15000.0, tender1.getEmd());
+        assertEquals("₹ 500", tender1.getDocumentFeeRaw());
+        assertEquals(500.0, tender1.getDocumentFee());
+        assertEquals("GeM", tender1.getTenderType());
+        assertEquals("GeM", tender1.getSource());
+        assertEquals("GEM/2026/B/9999", tender1.getSourceId());
+        assertEquals("Nashik, MH", tender1.getLocation());
+        assertEquals("Satpur", tender1.getPlace());
+        assertEquals("Maharashtra", tender1.getState());
+        assertEquals("Healthcare", tender1.getSector());
+        assertEquals("Medical Equipment", tender1.getVerticalName());
+        assertEquals("2026-10-01", tender1.getPublishDate());
+        assertEquals("2026-10-02", tender1.getStartDate());
+        assertEquals("2026-10-25", tender1.getDueDate());
+        assertEquals("2026-10-26", tender1.getOpeningDate());
+        assertEquals("2026-10-15", tender1.getPreBidDate());
+        assertEquals("15:00:00", tender1.getTime());
+        assertEquals("2026-10-01", tender1.getEntryDate());
+        assertEquals(50, tender1.getBidQty());
+        assertEquals(45, tender1.getQuotedQty());
+        assertEquals("No", tender1.getCorrigendumRemark());
+        assertEquals("Suction Unit 50L", tender1.getProductNameAsPerTender());
+        assertEquals("Marken Suction Unit 50L", tender1.getProductNameAsPerMarken());
+        assertEquals("Supply and Installation of Medical Suction Units", tender1.getTitle());
+        assertEquals("https://gem.gov.in/bid/9999", tender1.getOriginalUrl());
+
+        verify(tenderRepository, atLeastOnce()).save(tender1);
+    }
+
+    @Test
+    void testUpdateTenderSpecificationParametersByAllRoles() {
+        for (String[] roleUser : new String[][]{
+                {"Admin", "admin"},
+                {"Tender Executive", "executive"},
+                {"Clearance Team", "clearance"},
+                {"TPC Pricing Team", "tpc"},
+                {"MIS Team", "misteam"}
+        }) {
+            String role = roleUser[0];
+            String username = roleUser[1];
+            authenticate(username, role);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("authority", "Authority Edited by " + role);
+            body.put("bid_qty", 10);
+            body.put("quoted_qty", 10);
+
+            ResponseEntity<?> response = tenderController.updateTender(role, username, "T1", body);
+            assertEquals(HttpStatus.OK, response.getStatusCode(), "Failed for role: " + role);
+            assertEquals("Authority Edited by " + role, tender1.getAuthority());
+            assertEquals(10, tender1.getBidQty());
+        }
+    }
 }
