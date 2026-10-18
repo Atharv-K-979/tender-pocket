@@ -344,17 +344,19 @@ export default function TenderDetailPage() {
         }
 
         // 5. Bid Qty
-        const prevBidQty = prevTender && prevTender.bid_qty !== undefined && prevTender.bid_qty !== null ? prevTender.bid_qty : '';
+        const prevBidQty = prevTender && (prevTender.bid_qty != null ? prevTender.bid_qty : (prevTender.bidQty != null ? prevTender.bidQty : ''));
         const hasLocalBidQtyChanges = prevTender && latestBidQty !== prevBidQty;
         if (isFirstLoad || !hasLocalBidQtyChanges) {
-          setBidQty(tender.bid_qty !== undefined && tender.bid_qty !== null ? tender.bid_qty : '');
+          const rawBidQty = tender.bid_qty != null ? tender.bid_qty : (tender.bidQty != null ? tender.bidQty : '');
+          setBidQty(rawBidQty);
         }
 
         // 6. Quoted Qty
-        const prevQuotedQty = prevTender && prevTender.quoted_qty !== undefined && prevTender.quoted_qty !== null ? prevTender.quoted_qty : '';
+        const prevQuotedQty = prevTender && (prevTender.quoted_qty != null ? prevTender.quoted_qty : (prevTender.quotedQty != null ? prevTender.quotedQty : ''));
         const hasLocalQuotedQtyChanges = prevTender && latestQuotedQty !== prevQuotedQty;
         if (isFirstLoad || !hasLocalQuotedQtyChanges) {
-          setQuotedQty(tender.quoted_qty !== undefined && tender.quoted_qty !== null ? tender.quoted_qty : '');
+          const rawQuotedQty = tender.quoted_qty != null ? tender.quoted_qty : (tender.quotedQty != null ? tender.quotedQty : '');
+          setQuotedQty(rawQuotedQty);
         }
 
         // 7. MIS Executive
@@ -1252,6 +1254,32 @@ export default function TenderDetailPage() {
                     <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
                       Review technical parameters and product specifications. Before bid documents can be generated, the Specification Team must verify and approve technical compliance.
                     </p>
+
+                    {/* Tender Quantities Parameter Badges for Clearance Team Review */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '6px', background: 'rgba(255,255,255,0.04)', color: 'var(--primary)' }}>
+                          <Layers size={16} />
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', display: 'block' }}>Bid Quantity</span>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                            {selectedTender.bid_qty != null ? String(selectedTender.bid_qty) : (selectedTender.bidQty != null ? String(selectedTender.bidQty) : 'N/A')}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '6px', background: 'rgba(255,255,255,0.04)', color: 'var(--primary)' }}>
+                          <Layers size={16} />
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', display: 'block' }}>Quoted Quantity</span>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                            {selectedTender.quoted_qty != null ? String(selectedTender.quoted_qty) : (selectedTender.quotedQty != null ? String(selectedTender.quotedQty) : 'N/A')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
 
                     {/* Display Assigned Specification Team Member */}
                     {((selectedTender.spec_verification_status === 'Pending' || selectedTender.spec_verification_status === 'Approved' || currentUser?.role !== 'MIS Executive') && selectedTender.assigned_mis_member_spec) ? (

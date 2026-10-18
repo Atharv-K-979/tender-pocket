@@ -59,6 +59,8 @@ interface ApprovalSummary {
   tenderStatus?: string;
   tenderCurrentStage?: string;
   misExecutive?: string;
+  tenderBidQty?: number | null;
+  tenderQuotedQty?: number | null;
 }
 
 interface ApprovalCounts {
@@ -217,7 +219,9 @@ function normalizeApproval(a: any): ApprovalSummary {
     tenderSector: a.tenderSector || a.tender_sector || '',
     tenderStatus: a.tenderStatus || a.tender_status || '',
     tenderCurrentStage: a.tenderCurrentStage || a.tender_current_stage || '',
-    misExecutive: a.misExecutive || a.mis_executive || ''
+    misExecutive: a.misExecutive || a.mis_executive || '',
+    tenderBidQty: a.tenderBidQty != null ? Number(a.tenderBidQty) : (a.tender_bid_qty != null ? Number(a.tender_bid_qty) : (a.bidQty != null ? Number(a.bidQty) : (a.bid_qty != null ? Number(a.bid_qty) : undefined))),
+    tenderQuotedQty: a.tenderQuotedQty != null ? Number(a.tenderQuotedQty) : (a.tender_quoted_qty != null ? Number(a.tender_quoted_qty) : (a.quotedQty != null ? Number(a.quotedQty) : (a.quoted_qty != null ? Number(a.quoted_qty) : undefined)))
   };
 }
 
@@ -1228,6 +1232,18 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                         <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.misFinalPrice)}</strong>
                       </div>
                     )}
+                    {approval.tenderBidQty != null && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Bid Quantity</span>
+                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderBidQty}</strong>
+                      </div>
+                    )}
+                    {approval.tenderQuotedQty != null && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Quoted Quantity</span>
+                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderQuotedQty}</strong>
+                      </div>
+                    )}
                     {approval.transferMode && (
                       <div>
                         <span style={{ color: 'var(--text-muted)', display: 'block' }}>Transfer Mode</span>
@@ -1579,6 +1595,18 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Provided Price</span>
                     <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatCurrency(modal.approval.misFinalPrice)}</div>
+                  </div>
+                )}
+                {modal.approval.tenderBidQty != null && (
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Bid Quantity</span>
+                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.tenderBidQty}</div>
+                  </div>
+                )}
+                {modal.approval.tenderQuotedQty != null && (
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Quoted Quantity</span>
+                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.tenderQuotedQty}</div>
                   </div>
                 )}
                 {modal.approval.lossReasonExecutive && (

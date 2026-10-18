@@ -386,10 +386,16 @@ public class Tender {
     public String getProductNameAsPerMarken() { return productNameAsPerMarken; }
     public void setProductNameAsPerMarken(String productNameAsPerMarken) { this.productNameAsPerMarken = productNameAsPerMarken; }
 
+    @JsonProperty("bidQty")
     public Integer getBidQty() { return bidQty; }
+    @JsonProperty("bid_qty")
+    public Integer getBidQtySnakeCase() { return bidQty; }
     public void setBidQty(Integer bidQty) { this.bidQty = bidQty; }
 
+    @JsonProperty("quotedQty")
     public Integer getQuotedQty() { return quotedQty; }
+    @JsonProperty("quoted_qty")
+    public Integer getQuotedQtySnakeCase() { return quotedQty; }
     public void setQuotedQty(Integer quotedQty) { this.quotedQty = quotedQty; }
 
     public String getAiDetailsSummary() { return aiDetailsSummary; }
