@@ -108,6 +108,7 @@ export default function TenderDetailPage() {
   const [submittingMisPrice, setSubmittingMisPrice] = useState(false);
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
+  const [isTechSpecDragOver, setIsTechSpecDragOver] = useState(false);
 
   // Editable Tender Specifications & Parameters State
   const [isEditingSpecs, setIsEditingSpecs] = useState(false);
@@ -913,8 +914,18 @@ export default function TenderDetailPage() {
     }
   };
 
+  const isValidTechSpecFile = (file: File) => {
+    const name = file.name.toLowerCase();
+    return name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
+           name.endsWith('.txt') || name.endsWith('.xlsx') || name.endsWith('.xls');
+  };
+
   const handleTechSpecUpload = async (fileToUpload: File) => {
-    if (!selectedTender || techSpecUploadInFlight.current) return;
+    if (!selectedTender || !fileToUpload || techSpecUploadInFlight.current) return;
+    if (!isValidTechSpecFile(fileToUpload)) {
+      showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+      return;
+    }
     const tenderId = selectedTender.id;
     techSpecUploadInFlight.current = true;
     setUploadingTechSpec(true);
@@ -2305,7 +2316,47 @@ export default function TenderDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                         {(!selectedTender.has_tech_spec && selectedTender.spec_verification_status !== 'Pending' && selectedTender.spec_verification_status !== 'Generated') ? (
                           /* PHASE 1: UPLOAD DOCUMENT TO GENERATE TECHNICAL SPECIFICATION */
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(99, 102, 241, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                          <div 
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(false);
+                              if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                const droppedFile = e.dataTransfer.files[0];
+                                if (!isValidTechSpecFile(droppedFile)) {
+                                  showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+                                  return;
+                                }
+                                const inputEl = document.getElementById('tech-spec-file-input-detail') as HTMLInputElement;
+                                if (inputEl) {
+                                  const dt = new DataTransfer();
+                                  dt.items.add(droppedFile);
+                                  inputEl.files = dt.files;
+                                }
+                                handleTechSpecUpload(droppedFile);
+                              }
+                            }}
+                            style={{ 
+                              display: 'flex', 
+                              flexDirection: 'column', 
+                              gap: '10px', 
+                              background: isTechSpecDragOver ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.05)', 
+                              padding: '12px', 
+                              borderRadius: '8px', 
+                              border: isTechSpecDragOver ? '2px dashed var(--primary)' : '1px solid rgba(99, 102, 241, 0.2)',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
                             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary)', textTransform: 'uppercase' }}>
                               Step 1: Upload Document to Generate Technical Specification
                             </span>
@@ -2314,13 +2365,22 @@ export default function TenderDetailPage() {
                             </p>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT)</label>
+                              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT / XLS / XLSX)</label>
                               <input 
                                 type="file" 
                                 id="tech-spec-file-input-detail"
                                 disabled={uploadingTechSpec}
-                                accept=".pdf,.docx,.doc,.txt"
+                                accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
                                 style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const file = e.target.files[0];
+                                    if (!isValidTechSpecFile(file)) {
+                                      showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+                                      e.target.value = '';
+                                    }
+                                  }
+                                }}
                               />
                             </div>
 
@@ -2333,6 +2393,10 @@ export default function TenderDetailPage() {
                                 const fileToUpload = inputEl?.files?.[0];
                                 if (!fileToUpload) {
                                   showToast('Please select a specification document to upload first.', 'error');
+                                  return;
+                                }
+                                if (!isValidTechSpecFile(fileToUpload)) {
+                                  showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
                                   return;
                                 }
                                 await handleTechSpecUpload(fileToUpload);
