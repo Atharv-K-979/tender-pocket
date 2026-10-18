@@ -26,12 +26,16 @@ import org.springframework.web.bind.annotation.*;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
@@ -413,6 +417,206 @@ public class TenderController {
         return copy;
     }
 
+    private Double parseDoubleSafe(String val) {
+        if (val == null || val.isBlank()) return null;
+        try {
+            String cleaned = val.replaceAll("[^0-9.]", "");
+            return cleaned.isEmpty() ? null : Double.parseDouble(cleaned);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean isValidCalendarDate(String dateStr) {
+        return isValidCalendarDate(dateStr, false);
+    }
+
+    private boolean isValidCalendarDate(String dateStr, boolean allowNoNA) {
+        if (dateStr == null || dateStr.trim().isEmpty()) {
+            return true;
+        }
+        String s = dateStr.trim();
+        if (allowNoNA && ("No".equalsIgnoreCase(s) || "N/A".equalsIgnoreCase(s))) {
+            return true;
+        }
+
+        // 1. Strict YYYY-MM-DD
+        if (s.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+            try {
+                LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE.withResolverStyle(ResolverStyle.STRICT));
+                return true;
+            } catch (DateTimeParseException e) {
+                return false;
+            }
+        }
+
+        // 2. Strict YYYY-MM-DD HH:mm:ss
+        if (s.matches("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$")) {
+            try {
+                DateTimeFormatter dtf = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").withResolverStyle(ResolverStyle.STRICT);
+                LocalDateTime.parse(s, dtf);
+                return true;
+            } catch (DateTimeParseException e) {
+                return false;
+            }
+        }
+
+        // 3. Strict ISO local date-time e.g. YYYY-MM-DDTHH:mm or YYYY-MM-DDTHH:mm:ss
+        if (s.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2})?$")) {
+            try {
+                DateTimeFormatter dtf = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm[:ss]").withResolverStyle(ResolverStyle.STRICT);
+                LocalDateTime.parse(s, dtf);
+                return true;
+            } catch (DateTimeParseException e) {
+                return false;
+            }
+        }
+
+        // 4. Legacy format: d MMM uuuu e.g. "8 Oct 2026" or "24 Sep 2026"
+        if (s.matches("^\\d{1,2}\\s+[A-Za-z]{3}\\s+\\d{4}$")) {
+            try {
+                DateTimeFormatter dtf = DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH).withResolverStyle(ResolverStyle.STRICT);
+                LocalDate.parse(s, dtf);
+                return true;
+            } catch (DateTimeParseException e) {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    private Double parseAndValidateNumeric(Object rawInput, boolean isFee, Map<String, String> errors, String errorKey) {
+        if (rawInput == null) return null;
+        if (rawInput instanceof Number) {
+            double d = ((Number) rawInput).doubleValue();
+            if (d < 0) {
+                errors.put(errorKey, isFee ? "Fee cannot be negative." : "Amount cannot be negative.");
+                return null;
+            }
+            return d;
+        }
+        String s = rawInput.toString().trim();
+        if (s.isEmpty() || "N/A".equalsIgnoreCase(s) || "null".equalsIgnoreCase(s)) {
+            return null;
+        }
+
+        // Detect negative numbers e.g. -500, - 1,500, ₹ -500
+        boolean isNegative = s.startsWith("-") || s.matches("^[^0-9]*-\\s*[0-9].*");
+
+        // Strip valid currency symbol/prefix e.g. ₹, Rs, Rs., $, €, £, INR
+        String numStr = s.replaceFirst("^(?i)(₹|Rs\\.?|INR|[$€£])\\s*", "").trim();
+        if (numStr.startsWith("-")) {
+            isNegative = true;
+            numStr = numStr.substring(1).trim();
+        }
+
+        if (numStr.isEmpty()) {
+            errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
+            return null;
+        }
+
+        // Reject if any illegal character or multiple decimal points
+        int dotCount = 0;
+        for (int i = 0; i < numStr.length(); i++) {
+            if (numStr.charAt(i) == '.') dotCount++;
+        }
+        if (dotCount > 1) {
+            errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
+            return null;
+        }
+
+        if (!numStr.matches("^[0-9,]+(\\.[0-9]+)?$")) {
+            errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
+            return null;
+        }
+
+        // If commas are present, validate strict Indian or Western grouping
+        if (numStr.contains(",")) {
+            boolean validWestern = numStr.matches("^\\d{1,3}(,\\d{3})+(\\.\\d+)?$");
+            boolean validIndian = numStr.matches("^\\d{1,2}(,\\d{2})*,\\d{3}(\\.\\d+)?$");
+            if (!validWestern && !validIndian) {
+                errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
+                return null;
+            }
+        }
+
+        try {
+            double val = Double.parseDouble(numStr.replace(",", ""));
+            if (isNegative || val < 0) {
+                errors.put(errorKey, isFee ? "Fee cannot be negative." : "Amount cannot be negative.");
+                return null;
+            }
+            return val;
+        } catch (NumberFormatException e) {
+            errors.put(errorKey, isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.");
+            return null;
+        }
+    }
+
+    private Integer parseAndValidateInteger(Object rawInput, Map<String, String> errors, String errorKey) {
+        if (rawInput == null) return null;
+        if (rawInput instanceof Number) {
+            double d = ((Number) rawInput).doubleValue();
+            if (d < 0) {
+                errors.put(errorKey, "Quantity cannot be negative.");
+                return null;
+            }
+            if (Math.floor(d) != d) {
+                errors.put(errorKey, "Quantity must be an integer.");
+                return null;
+            }
+            return ((Number) rawInput).intValue();
+        }
+        String s = rawInput.toString().trim();
+        if (s.isEmpty() || "null".equalsIgnoreCase(s) || "N/A".equalsIgnoreCase(s)) {
+            return null;
+        }
+        if (s.contains(".")) {
+            try {
+                double d = Double.parseDouble(s);
+                if (d < 0) {
+                    errors.put(errorKey, "Quantity cannot be negative.");
+                    return null;
+                }
+                if (Math.floor(d) != d) {
+                    errors.put(errorKey, "Quantity must be an integer.");
+                    return null;
+                }
+            } catch (NumberFormatException e) {
+                errors.put(errorKey, "Enter a valid numeric quantity.");
+                return null;
+            }
+        }
+        try {
+            int val = Integer.parseInt(s);
+            if (val < 0) {
+                errors.put(errorKey, "Quantity cannot be negative.");
+                return null;
+            }
+            return val;
+        } catch (NumberFormatException e) {
+            errors.put(errorKey, "Enter a valid numeric quantity.");
+            return null;
+        }
+    }
+
+    private boolean isValidUrl(String urlStr) {
+        if (urlStr == null || urlStr.trim().isEmpty()) {
+            return true;
+        }
+        String s = urlStr.trim();
+        if (!s.startsWith("http://") && !s.startsWith("https://")) {
+            return false;
+        }
+        try {
+            URI uri = new URI(s);
+            return uri.getHost() != null && !uri.getHost().isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getTenderById(
             @PathVariable("id") String id,
@@ -526,10 +730,160 @@ public class TenderController {
         }
 
         Tender tender = opt.get();
+
+        // Field-level workflow authorization: reject attempts by unauthorized roles to modify workflow status, approval outcomes, payment fields, or confidential pricing
+        if (!WorkflowPermissions.allowedPatch(body, tender.getCurrentStage(), userRole)) {
+            return WorkflowPermissions.denied();
+        }
+
         String requestedVerStatus = (String) (body.containsKey("verification_status") ? body.get("verification_status") : body.get("verificationStatus"));
         if (requestedVerStatus != null && List.of("Pending", "Approved").contains(requestedVerStatus) && !isBidDocsProvided(tender)) {
             return ResponseEntity.badRequest().body(Map.of("success", false,
                     "error", "Generated bid documents are required before submitting or approving document verification."));
+        }
+
+        // Field-specific validation for all editable parameters
+        Map<String, String> fieldErrors = new LinkedHashMap<>();
+
+        // 1. Mandatory text fields & length checks
+        if (body.containsKey("title")) {
+            Object val = body.get("title");
+            if (val == null || val.toString().trim().isEmpty()) {
+                fieldErrors.put("title", "Tender Brief / Description cannot be empty.");
+            }
+        }
+        if (body.containsKey("ref_no") || body.containsKey("refNo")) {
+            Object val = body.containsKey("ref_no") ? body.get("ref_no") : body.get("refNo");
+            if (val == null || val.toString().trim().isEmpty()) {
+                fieldErrors.put("ref_no", "Official Reference No cannot be empty.");
+            } else if (val.toString().trim().length() > 255) {
+                fieldErrors.put("ref_no", "Official Reference No cannot exceed 255 characters.");
+            }
+        }
+        for (String fld : List.of("place", "state", "sector", "vertical_name", "source_id")) {
+            if (body.containsKey(fld)) {
+                Object val = body.get(fld);
+                if (val != null && val.toString().trim().length() > 255) {
+                    fieldErrors.put(fld, fld + " cannot exceed 255 characters.");
+                }
+            }
+        }
+
+        // 2. Monetary validation
+        Double parsedDocFee = null;
+        if (body.containsKey("document_fee_raw") || body.containsKey("documentFeeRaw")) {
+            Object raw = body.containsKey("document_fee_raw") ? body.get("document_fee_raw") : body.get("documentFeeRaw");
+            parsedDocFee = parseAndValidateNumeric(raw, true, fieldErrors, "document_fee_raw");
+        } else if (body.containsKey("document_fee") || body.containsKey("documentFee")) {
+            Object raw = body.containsKey("document_fee") ? body.get("document_fee") : body.get("documentFee");
+            parsedDocFee = parseAndValidateNumeric(raw, true, fieldErrors, "document_fee");
+        }
+
+        Double parsedEstCost = null;
+        if (body.containsKey("estimated_cost_raw") || body.containsKey("estimatedCostRaw")) {
+            Object raw = body.containsKey("estimated_cost_raw") ? body.get("estimated_cost_raw") : body.get("estimatedCostRaw");
+            parsedEstCost = parseAndValidateNumeric(raw, false, fieldErrors, "estimated_cost_raw");
+        } else if (body.containsKey("estimated_cost") || body.containsKey("estimatedCost")) {
+            Object raw = body.containsKey("estimated_cost") ? body.get("estimated_cost") : body.get("estimatedCost");
+            parsedEstCost = parseAndValidateNumeric(raw, false, fieldErrors, "estimated_cost");
+        }
+
+        Double parsedEmd = null;
+        if (body.containsKey("emd_raw") || body.containsKey("emdRaw")) {
+            Object raw = body.containsKey("emd_raw") ? body.get("emd_raw") : body.get("emdRaw");
+            parsedEmd = parseAndValidateNumeric(raw, false, fieldErrors, "emd_raw");
+        } else if (body.containsKey("emd")) {
+            Object raw = body.get("emd");
+            parsedEmd = parseAndValidateNumeric(raw, false, fieldErrors, "emd");
+        }
+
+        // 3. Integer quantity validation
+        Integer parsedBidQty = null;
+        if (body.containsKey("bid_qty") || body.containsKey("bidQty")) {
+            Object raw = body.containsKey("bid_qty") ? body.get("bid_qty") : body.get("bidQty");
+            parsedBidQty = parseAndValidateInteger(raw, fieldErrors, "bid_qty");
+        }
+
+        Integer parsedQuotedQty = null;
+        if (body.containsKey("quoted_qty") || body.containsKey("quotedQty")) {
+            Object raw = body.containsKey("quoted_qty") ? body.get("quoted_qty") : body.get("quotedQty");
+            parsedQuotedQty = parseAndValidateInteger(raw, fieldErrors, "quoted_qty");
+        }
+
+        // 4. Date validation
+        String[] dateFields = {"opening_date", "publish_date", "start_date", "due_date", "entry_date", "pre_bid_date"};
+        String[] dateFieldAliases = {"openingDate", "publishDate", "startDate", "dueDate", "entryDate", "preBidDate"};
+        for (int i = 0; i < dateFields.length; i++) {
+            String fld = dateFields[i];
+            String alias = dateFieldAliases[i];
+            if (body.containsKey(fld) || body.containsKey(alias)) {
+                Object val = body.containsKey(fld) ? body.get(fld) : body.get(alias);
+                boolean isPreBid = "pre_bid_date".equals(fld);
+                if (val != null && !isValidCalendarDate(val.toString(), isPreBid)) {
+                    if (isPreBid) {
+                        fieldErrors.put(fld, "Enter a valid date or 'No'.");
+                    } else {
+                        fieldErrors.put(fld, "Enter a valid date.");
+                    }
+                }
+            }
+        }
+
+        // 5. Time validation
+        if (body.containsKey("time")) {
+            Object val = body.get("time");
+            if (val != null && !val.toString().trim().isEmpty() && !"N/A".equalsIgnoreCase(val.toString().trim())) {
+                String s = val.toString().trim();
+                if (!s.matches("^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$")) {
+                    fieldErrors.put("time", "Enter a valid time (e.g. 15:00:00).");
+                }
+            }
+        }
+
+        // 6. URL validation
+        if (body.containsKey("original_url") || body.containsKey("originalUrl")) {
+            Object val = body.containsKey("original_url") ? body.get("original_url") : body.get("originalUrl");
+            if (val != null && !val.toString().trim().isEmpty() && !isValidUrl(val.toString())) {
+                fieldErrors.put("original_url", "Enter a valid URL (e.g. https://...).");
+            }
+        }
+
+        // 7. Enum validation
+        if (body.containsKey("tender_type") || body.containsKey("tenderType")) {
+            Object val = body.containsKey("tender_type") ? body.get("tender_type") : body.get("tenderType");
+            if (val != null && !val.toString().trim().isEmpty()) {
+                String s = val.toString().trim();
+                if (!s.equalsIgnoreCase("GeM") && !s.equalsIgnoreCase("Non GeM") && !s.equalsIgnoreCase("Custom")) {
+                    fieldErrors.put("tender_type", "Tender type must be 'GeM', 'Non GeM', or 'Custom'.");
+                }
+            }
+        }
+        if (body.containsKey("source")) {
+            Object val = body.get("source");
+            if (val != null && !val.toString().trim().isEmpty()) {
+                String s = val.toString().trim();
+                if (!s.equalsIgnoreCase("GeM") && !s.equalsIgnoreCase("Tender247")) {
+                    fieldErrors.put("source", "Source portal must be 'GeM' or 'Tender247'.");
+                }
+            }
+        }
+        if (body.containsKey("corrigendum_remark") || body.containsKey("corrigendumRemark")) {
+            Object val = body.containsKey("corrigendum_remark") ? body.get("corrigendum_remark") : body.get("corrigendumRemark");
+            if (val != null && !val.toString().trim().isEmpty()) {
+                String s = val.toString().trim();
+                if (!s.equalsIgnoreCase("Yes") && !s.equalsIgnoreCase("No")) {
+                    fieldErrors.put("corrigendum_remark", "Corrigendum remark must be 'Yes' or 'No'.");
+                }
+            }
+        }
+
+        // If any validation errors exist, REJECT IMMEDIATELY without updating tender
+        if (!fieldErrors.isEmpty()) {
+            Map<String, Object> errResp = new LinkedHashMap<>();
+            errResp.put("success", false);
+            errResp.put("error", fieldErrors.values().iterator().next());
+            errResp.put("errors", fieldErrors);
+            return ResponseEntity.badRequest().body(errResp);
         }
 
         List<String> logDetails = new ArrayList<>();
@@ -575,14 +929,180 @@ public class TenderController {
             logDetails.add("notes updated");
         }
 
-        if (body.containsKey("quoted_qty")) {
-            Object q = body.get("quoted_qty");
-            tender.setQuotedQty(q instanceof Number ? ((Number) q).intValue() : null);
+        if (body.containsKey("quoted_qty") || body.containsKey("quotedQty")) {
+            tender.setQuotedQty(parsedQuotedQty);
+            logDetails.add("quoted quantity updated to " + parsedQuotedQty);
         }
 
-        if (body.containsKey("bid_qty")) {
-            Object b = body.get("bid_qty");
-            tender.setBidQty(b instanceof Number ? ((Number) b).intValue() : null);
+        if (body.containsKey("bid_qty") || body.containsKey("bidQty")) {
+            tender.setBidQty(parsedBidQty);
+            logDetails.add("bid quantity updated to " + parsedBidQty);
+        }
+
+        if (body.containsKey("authority")) {
+            String val = (String) body.get("authority");
+            tender.setAuthority(val);
+            logDetails.add("authority updated to '" + val + "'");
+        }
+
+        if (body.containsKey("ref_no") || body.containsKey("refNo")) {
+            String val = (String) (body.containsKey("ref_no") ? body.get("ref_no") : body.get("refNo"));
+            tender.setRefNo(val);
+            logDetails.add("official reference number updated to '" + val + "'");
+        }
+
+        if (body.containsKey("estimated_cost_raw") || body.containsKey("estimatedCostRaw")) {
+            String val = (String) (body.containsKey("estimated_cost_raw") ? body.get("estimated_cost_raw") : body.get("estimatedCostRaw"));
+            tender.setEstimatedCostRaw(val);
+            tender.setEstimatedCost(parsedEstCost);
+            logDetails.add("estimated cost updated to '" + val + "'");
+        } else if (body.containsKey("estimated_cost") || body.containsKey("estimatedCost")) {
+            tender.setEstimatedCost(parsedEstCost);
+            tender.setEstimatedCostRaw(parsedEstCost != null ? "₹ " + parsedEstCost : null);
+        }
+
+        if (body.containsKey("emd_raw") || body.containsKey("emdRaw")) {
+            String val = (String) (body.containsKey("emd_raw") ? body.get("emd_raw") : body.get("emdRaw"));
+            tender.setEmdRaw(val);
+            tender.setEmd(parsedEmd);
+            logDetails.add("EMD requirement updated to '" + val + "'");
+        } else if (body.containsKey("emd")) {
+            tender.setEmd(parsedEmd);
+            tender.setEmdRaw(parsedEmd != null ? "₹ " + parsedEmd : null);
+        }
+
+        if (body.containsKey("document_fee_raw") || body.containsKey("documentFeeRaw")) {
+            String val = (String) (body.containsKey("document_fee_raw") ? body.get("document_fee_raw") : body.get("documentFeeRaw"));
+            tender.setDocumentFeeRaw(val);
+            tender.setDocumentFee(parsedDocFee);
+            logDetails.add("document fee updated to '" + val + "'");
+        } else if (body.containsKey("document_fee") || body.containsKey("documentFee")) {
+            tender.setDocumentFee(parsedDocFee);
+            tender.setDocumentFeeRaw(parsedDocFee != null ? "₹ " + parsedDocFee : null);
+        }
+
+        if (body.containsKey("tender_type") || body.containsKey("tenderType")) {
+            String val = (String) (body.containsKey("tender_type") ? body.get("tender_type") : body.get("tenderType"));
+            tender.setTenderType(val);
+            logDetails.add("tender type updated to '" + val + "'");
+        }
+
+        if (body.containsKey("source")) {
+            String val = (String) body.get("source");
+            tender.setSource(val);
+            logDetails.add("source portal updated to '" + val + "'");
+        }
+
+        if (body.containsKey("source_id") || body.containsKey("sourceId")) {
+            String val = (String) (body.containsKey("source_id") ? body.get("source_id") : body.get("sourceId"));
+            tender.setSourceId(val);
+            logDetails.add("source ID updated to '" + val + "'");
+        }
+
+        if (body.containsKey("location")) {
+            String val = (String) body.get("location");
+            tender.setLocation(val);
+            logDetails.add("location updated to '" + val + "'");
+        }
+
+        if (body.containsKey("place")) {
+            String val = (String) body.get("place");
+            tender.setPlace(val);
+            logDetails.add("place updated to '" + val + "'");
+        }
+
+        if (body.containsKey("state")) {
+            String val = (String) body.get("state");
+            tender.setState(val);
+            logDetails.add("state updated to '" + val + "'");
+        }
+
+        if (body.containsKey("sector")) {
+            String val = (String) body.get("sector");
+            tender.setSector(val);
+            logDetails.add("sector updated to '" + val + "'");
+        }
+
+        if (body.containsKey("vertical_name") || body.containsKey("verticalName")) {
+            String val = (String) (body.containsKey("vertical_name") ? body.get("vertical_name") : body.get("verticalName"));
+            tender.setVerticalName(val);
+            logDetails.add("vertical name updated to '" + val + "'");
+        }
+
+        if (body.containsKey("publish_date") || body.containsKey("publishDate")) {
+            String val = (String) (body.containsKey("publish_date") ? body.get("publish_date") : body.get("publishDate"));
+            tender.setPublishDate(val);
+            logDetails.add("publish date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("start_date") || body.containsKey("startDate")) {
+            String val = (String) (body.containsKey("start_date") ? body.get("start_date") : body.get("startDate"));
+            tender.setStartDate(val);
+            logDetails.add("start date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("due_date") || body.containsKey("dueDate")) {
+            String val = (String) (body.containsKey("due_date") ? body.get("due_date") : body.get("dueDate"));
+            tender.setDueDate(val);
+            logDetails.add("closing due date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("opening_date") || body.containsKey("openingDate")) {
+            String val = (String) (body.containsKey("opening_date") ? body.get("opening_date") : body.get("openingDate"));
+            tender.setOpeningDate(val);
+            logDetails.add("opening date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("pre_bid_date") || body.containsKey("preBidDate")) {
+            String val = (String) (body.containsKey("pre_bid_date") ? body.get("pre_bid_date") : body.get("preBidDate"));
+            tender.setPreBidDate(val);
+            logDetails.add("pre-bid meeting date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("time")) {
+            String val = (String) body.get("time");
+            tender.setTime(val);
+            logDetails.add("bid submission time updated to '" + val + "'");
+        }
+
+        if (body.containsKey("entry_date") || body.containsKey("entryDate")) {
+            String val = (String) (body.containsKey("entry_date") ? body.get("entry_date") : body.get("entryDate"));
+            tender.setEntryDate(val);
+            logDetails.add("entry date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("corrigendum_remark") || body.containsKey("corrigendumRemark")) {
+            String val = (String) (body.containsKey("corrigendum_remark") ? body.get("corrigendum_remark") : body.get("corrigendumRemark"));
+            tender.setCorrigendumRemark(val);
+            logDetails.add("corrigendum remark updated to '" + val + "'");
+        }
+
+        if (body.containsKey("product_name_as_per_tender") || body.containsKey("productNameAsPerTender")) {
+            String val = (String) (body.containsKey("product_name_as_per_tender") ? body.get("product_name_as_per_tender") : body.get("productNameAsPerTender"));
+            tender.setProductNameAsPerTender(val);
+            logDetails.add("product name as per tender updated to '" + val + "'");
+        }
+
+        if (body.containsKey("product_name_as_per_marken") || body.containsKey("productNameAsPerMarken")) {
+            String val = (String) (body.containsKey("product_name_as_per_marken") ? body.get("product_name_as_per_marken") : body.get("productNameAsPerMarken"));
+            tender.setProductNameAsPerMarken(val);
+            logDetails.add("product name as per Marken updated to '" + val + "'");
+        }
+
+        if (body.containsKey("title")) {
+            String val = (String) body.get("title");
+            if (val != null && !val.trim().isEmpty()) {
+                tender.setTitle(val.trim());
+                logDetails.add("title / tender brief updated");
+            }
+        }
+
+        if (body.containsKey("original_url") || body.containsKey("originalUrl")) {
+            String val = (String) (body.containsKey("original_url") ? body.get("original_url") : body.get("originalUrl"));
+            if (val != null && !val.trim().isEmpty()) {
+                tender.setOriginalUrl(val.trim());
+                logDetails.add("original URL updated");
+            }
         }
 
         if (body.containsKey("mis_executive")) {
@@ -793,7 +1313,11 @@ public class TenderController {
             System.err.println("[TenderController] Warning saving activity log for tender " + id + ": " + e.getMessage());
         }
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Tender updated successfully"));
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("message", "Tender updated successfully");
+        resp.put("tender", createResponseCopy(tender));
+        return ResponseEntity.ok(resp);
     }
 
     @DeleteMapping("/{id}")

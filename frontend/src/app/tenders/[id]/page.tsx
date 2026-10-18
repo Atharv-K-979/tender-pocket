@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   FileText,
@@ -26,7 +26,11 @@ import {
   ExternalLink,
   Sun,
   Moon,
-  Shield
+  Shield,
+  Edit3,
+  Save,
+  RotateCcw,
+  Lock
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
 import { canPerform, canReviewAssignment } from '@/lib/workflowAuthorization';
@@ -104,6 +108,57 @@ export default function TenderDetailPage() {
   const [submittingMisPrice, setSubmittingMisPrice] = useState(false);
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
+
+  // Editable Tender Specifications & Parameters State
+  const [isEditingSpecs, setIsEditingSpecs] = useState(false);
+  const [savingSpecs, setSavingSpecs] = useState(false);
+  const [specValidationErrors, setSpecValidationErrors] = useState<Record<string, string>>({});
+  const [specForm, setSpecForm] = useState({
+    authority: '',
+    ref_no: '',
+    estimated_cost_raw: '',
+    emd_raw: '',
+    document_fee_raw: '',
+    tender_type: 'GeM',
+    source: 'GeM',
+    source_id: '',
+    location: '',
+    place: '',
+    state: '',
+    sector: '',
+    vertical_name: '',
+    publish_date: '',
+    start_date: '',
+    due_date: '',
+    opening_date: '',
+    pre_bid_date: '',
+    time: '',
+    entry_date: '',
+    bid_qty: '' as number | string,
+    quoted_qty: '' as number | string,
+    corrigendum_remark: 'No',
+    product_name_as_per_tender: '',
+    product_name_as_per_marken: '',
+    title: '',
+    original_url: ''
+  });
+  const [originalSpecForm, setOriginalSpecForm] = useState<typeof specForm | null>(null);
+
+  const hasUnsavedSpecChanges = useMemo(() => {
+    if (!isEditingSpecs || !originalSpecForm) return false;
+    return JSON.stringify(specForm) !== JSON.stringify(originalSpecForm);
+  }, [isEditingSpecs, specForm, originalSpecForm]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isEditingSpecs && hasUnsavedSpecChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isEditingSpecs, hasUnsavedSpecChanges]);
 
   // Company Presets
   const COMPANY_PRESETS = {
@@ -510,6 +565,354 @@ export default function TenderDetailPage() {
     }
   };
 
+  const specInputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    background: 'var(--bg-app)',
+    border: '1px solid var(--border-color)',
+    color: 'var(--text-primary)',
+    fontSize: '13px',
+    outline: 'none',
+    boxSizing: 'border-box',
+    fontFamily: 'inherit'
+  };
+
+  const validateSpecCalendarDate = (dateStr: string, isPreBid: boolean = false): string | null => {
+    if (!dateStr || !dateStr.trim()) return null;
+    const s = dateStr.trim();
+    if (isPreBid && (s.toLowerCase() === 'no' || s.toLowerCase() === 'n/a')) {
+      return null;
+    }
+    // Check YYYY-MM-DD
+    const dateMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateMatch) {
+      const year = parseInt(dateMatch[1], 10);
+      const month = parseInt(dateMatch[2], 10);
+      const day = parseInt(dateMatch[3], 10);
+      if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+        return isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.";
+      }
+      const d = new Date(year, month - 1, day);
+      if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
+        return isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.";
+      }
+      return null;
+    }
+
+    // Check YYYY-MM-DD HH:mm:ss or YYYY-MM-DDTHH:mm(:ss)?
+    const dtMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(:(\d{2}))?$/);
+    if (dtMatch) {
+      const year = parseInt(dtMatch[1], 10);
+      const month = parseInt(dtMatch[2], 10);
+      const day = parseInt(dtMatch[3], 10);
+      const hour = parseInt(dtMatch[4], 10);
+      const min = parseInt(dtMatch[5], 10);
+      const sec = dtMatch[7] ? parseInt(dtMatch[7], 10) : 0;
+      if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || min > 59 || sec > 59) {
+        return "Enter a valid date.";
+      }
+      const d = new Date(year, month - 1, day, hour, min, sec);
+      if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
+        return "Enter a valid date.";
+      }
+      return null;
+    }
+
+    // Check legacy "d MMM uuuu" e.g. "8 Oct 2026" or "24 Sep 2026"
+    const legacyMatch = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+    if (legacyMatch) {
+      const day = parseInt(legacyMatch[1], 10);
+      const monthStr = legacyMatch[2].toLowerCase();
+      const year = parseInt(legacyMatch[3], 10);
+      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const monthIdx = months.indexOf(monthStr);
+      if (monthIdx === -1 || year < 1900 || year > 2100 || day < 1 || day > 31) {
+        return isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.";
+      }
+      const d = new Date(year, monthIdx, day);
+      if (d.getFullYear() !== year || d.getMonth() !== monthIdx || d.getDate() !== day) {
+        return isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.";
+      }
+      return null;
+    }
+
+    return isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.";
+  };
+
+  const validateSpecNumeric = (val: string | number, isFee: boolean): string | null => {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'number') {
+      if (val < 0) return isFee ? "Fee cannot be negative." : "Amount cannot be negative.";
+      return null;
+    }
+    const s = String(val).trim();
+    if (!s || s.toLowerCase() === 'n/a' || s.toLowerCase() === 'null') return null;
+
+    let isNegative = s.startsWith('-') || /^[^\d]*-\s*\d/.test(s);
+    let numStr = s.replace(/^(?:₹|Rs\.?|INR|[$€£])\s*/i, '').trim();
+    if (numStr.startsWith('-')) {
+      isNegative = true;
+      numStr = numStr.substring(1).trim();
+    }
+
+    if (!numStr) {
+      return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
+    }
+
+    // Reject multiple decimal points
+    const dotCount = (numStr.match(/\./g) || []).length;
+    if (dotCount > 1) {
+      return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
+    }
+
+    // Reject invalid characters or malformed numeric format
+    if (!/^[0-9,]+(?:\.[0-9]+)?$/.test(numStr)) {
+      return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
+    }
+
+    // If commas are present, validate strict Indian or Western grouping
+    if (numStr.includes(',')) {
+      const validWestern = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(numStr);
+      const validIndian = /^\d{1,2}(?:,\d{2})*,\d{3}(?:\.\d+)?$/.test(numStr);
+      if (!validWestern && !validIndian) {
+        return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
+      }
+    }
+
+    const cleaned = numStr.replace(/,/g, '');
+    const num = Number(cleaned);
+    if (isNaN(num)) {
+      return isFee ? "Enter a valid numeric fee." : "Enter a valid numeric amount.";
+    }
+    if (isNegative || num < 0) {
+      return isFee ? "Fee cannot be negative." : "Amount cannot be negative.";
+    }
+    return null;
+  };
+
+  const validateSpecQuantity = (val: string | number): string | null => {
+    if (val === null || val === undefined || val === '') return null;
+    const s = String(val).trim();
+    if (!s || s.toLowerCase() === 'n/a') return null;
+    if (s.includes('.')) {
+      const num = Number(s);
+      if (isNaN(num)) return "Enter a valid numeric quantity.";
+      if (num < 0) return "Quantity cannot be negative.";
+      return "Quantity must be an integer.";
+    }
+    const num = Number(s);
+    if (isNaN(num)) {
+      return "Enter a valid numeric quantity.";
+    }
+    if (num < 0) {
+      return "Quantity cannot be negative.";
+    }
+    return null;
+  };
+
+  const validateSpecUrl = (urlStr: string): string | null => {
+    if (!urlStr || !urlStr.trim()) return "Source URL cannot be empty.";
+    const s = urlStr.trim();
+    if (!s.startsWith('http://') && !s.startsWith('https://')) {
+      return "Enter a valid URL (e.g. https://...).";
+    }
+    try {
+      new URL(s);
+      return null;
+    } catch {
+      return "Enter a valid URL (e.g. https://...).";
+    }
+  };
+
+  const validateSpecField = (field: string, value: any): string | null => {
+    if (field === 'title') {
+      if (!value || !String(value).trim()) return "Tender Brief / Description cannot be empty.";
+      return null;
+    }
+    if (field === 'ref_no') {
+      if (!value || !String(value).trim()) return "Official Reference No cannot be empty.";
+      if (String(value).trim().length > 255) return "Official Reference No cannot exceed 255 characters.";
+      return null;
+    }
+    if (['place', 'state', 'sector', 'vertical_name', 'source_id'].includes(field)) {
+      if (value && String(value).trim().length > 255) return `${field} cannot exceed 255 characters.`;
+      return null;
+    }
+    if (field === 'document_fee_raw') {
+      return validateSpecNumeric(value, true);
+    }
+    if (field === 'estimated_cost_raw' || field === 'emd_raw') {
+      return validateSpecNumeric(value, false);
+    }
+    if (field === 'bid_qty' || field === 'quoted_qty') {
+      return validateSpecQuantity(value);
+    }
+    if (['opening_date', 'publish_date', 'start_date', 'due_date', 'entry_date'].includes(field)) {
+      return validateSpecCalendarDate(String(value || ''));
+    }
+    if (field === 'pre_bid_date') {
+      return validateSpecCalendarDate(String(value || ''), true);
+    }
+    if (field === 'time') {
+      if (value && String(value).trim() && String(value).trim() !== 'N/A') {
+        const s = String(value).trim();
+        if (!s.match(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/)) {
+          return "Enter a valid time (e.g. 15:00:00).";
+        }
+      }
+      return null;
+    }
+    if (field === 'original_url') {
+      return validateSpecUrl(String(value || ''));
+    }
+    return null;
+  };
+
+  const validateAllSpecFields = (form: Record<string, any>): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    for (const [key, val] of Object.entries(form)) {
+      const err = validateSpecField(key, val);
+      if (err) {
+        errors[key] = err;
+      }
+    }
+    return errors;
+  };
+
+  const handleSpecFieldChange = (field: string, val: any) => {
+    setSpecForm(prev => ({ ...prev, [field]: val }));
+    const err = validateSpecField(field, val);
+    setSpecValidationErrors(prev => {
+      const copy = { ...prev };
+      if (err) {
+        copy[field] = err;
+      } else {
+        delete copy[field];
+      }
+      return copy;
+    });
+  };
+
+  const handleStartEditingSpecs = () => {
+    if (!selectedTender) return;
+    const initialForm = {
+      authority: selectedTender.authority || '',
+      ref_no: selectedTender.ref_no || '',
+      estimated_cost_raw: selectedTender.estimated_cost_raw || '',
+      emd_raw: selectedTender.emd_raw || '',
+      document_fee_raw: selectedTender.document_fee_raw || '',
+      tender_type: selectedTender.tender_type || 'GeM',
+      source: selectedTender.source || 'GeM',
+      source_id: selectedTender.source_id || '',
+      location: selectedTender.location || '',
+      place: selectedTender.place || '',
+      state: selectedTender.state || '',
+      sector: selectedTender.sector || '',
+      vertical_name: selectedTender.vertical_name || '',
+      publish_date: selectedTender.publish_date || '',
+      start_date: selectedTender.start_date || '',
+      due_date: selectedTender.due_date || '',
+      opening_date: selectedTender.opening_date || '',
+      pre_bid_date: selectedTender.pre_bid_date || '',
+      time: selectedTender.time || '',
+      entry_date: selectedTender.entry_date || '',
+      bid_qty: selectedTender.bid_qty !== null && selectedTender.bid_qty !== undefined ? selectedTender.bid_qty : '',
+      quoted_qty: selectedTender.quoted_qty !== null && selectedTender.quoted_qty !== undefined ? selectedTender.quoted_qty : '',
+      corrigendum_remark: selectedTender.corrigendum_remark || 'No',
+      product_name_as_per_tender: selectedTender.product_name_as_per_tender || '',
+      product_name_as_per_marken: selectedTender.product_name_as_per_marken || '',
+      title: selectedTender.title || '',
+      original_url: selectedTender.original_url || ''
+    };
+    setSpecForm(initialForm);
+    setOriginalSpecForm(initialForm);
+    // Validate immediately on enter so existing invalid data (e.g. 2026- or maha) is caught and flagged!
+    const initialErrors = validateAllSpecFields(initialForm);
+    setSpecValidationErrors(initialErrors);
+    setIsEditingSpecs(true);
+  };
+
+  const handleCancelEditingSpecs = () => {
+    setIsEditingSpecs(false);
+    if (originalSpecForm) {
+      setSpecForm(originalSpecForm);
+    }
+    setSpecValidationErrors({});
+  };
+
+  const handleSaveSpecs = async () => {
+    if (!selectedTender || savingSpecs) return;
+    
+    // Strict full validation before save
+    const errors = validateAllSpecFields(specForm);
+    if (Object.keys(errors).length > 0) {
+      setSpecValidationErrors(errors);
+      showToast('Please fix validation errors before saving.', 'error');
+      return;
+    }
+
+    setSavingSpecs(true);
+    try {
+      const payload: Record<string, any> = {
+        authority: specForm.authority,
+        ref_no: specForm.ref_no,
+        estimated_cost_raw: specForm.estimated_cost_raw,
+        emd_raw: specForm.emd_raw,
+        document_fee_raw: specForm.document_fee_raw,
+        tender_type: specForm.tender_type,
+        source: specForm.source,
+        source_id: specForm.source_id,
+        location: specForm.location,
+        place: specForm.place,
+        state: specForm.state,
+        sector: specForm.sector,
+        vertical_name: specForm.vertical_name,
+        publish_date: specForm.publish_date,
+        start_date: specForm.start_date,
+        due_date: specForm.due_date,
+        opening_date: specForm.opening_date,
+        pre_bid_date: specForm.pre_bid_date,
+        time: specForm.time,
+        entry_date: specForm.entry_date,
+        bid_qty: specForm.bid_qty === '' ? null : Number(specForm.bid_qty),
+        quoted_qty: specForm.quoted_qty === '' ? null : Number(specForm.quoted_qty),
+        corrigendum_remark: specForm.corrigendum_remark,
+        product_name_as_per_tender: specForm.product_name_as_per_tender,
+        product_name_as_per_marken: specForm.product_name_as_per_marken,
+        title: specForm.title.trim(),
+        original_url: specForm.original_url
+      };
+
+      const response = await fetchWithAuth(`/api/tenders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (data.success) {
+        showToast('Tender specification parameters saved successfully!', 'success');
+        setSelectedTender(prev => prev ? { ...prev, ...payload } : null);
+        if (payload.bid_qty !== undefined) setBidQty(payload.bid_qty !== null ? payload.bid_qty : '');
+        if (payload.quoted_qty !== undefined) setQuotedQty(payload.quoted_qty !== null ? payload.quoted_qty : '');
+        setIsEditingSpecs(false);
+        setOriginalSpecForm(null);
+        setSpecValidationErrors({});
+        fetchTenderDetails();
+      } else {
+        if (data.errors && typeof data.errors === 'object') {
+          setSpecValidationErrors(data.errors);
+        }
+        showToast(data.error || 'Failed to save specification parameters.', 'error');
+      }
+    } catch (err) {
+      console.error('Error saving specification parameters:', err);
+      showToast('Error communicating with server while saving parameters.', 'error');
+    } finally {
+      setSavingSpecs(false);
+    }
+  };
+
   const handleTechSpecUpload = async (fileToUpload: File) => {
     if (!selectedTender || techSpecUploadInFlight.current) return;
     const tenderId = selectedTender.id;
@@ -769,7 +1172,14 @@ export default function TenderDetailPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button 
               className="btn btn-secondary" 
-              onClick={() => router.push('/')}
+              onClick={() => {
+                if (isEditingSpecs && hasUnsavedSpecChanges) {
+                  if (!window.confirm('You have unsaved changes in Tender Specifications & Parameters. Discard them and leave?')) {
+                    return;
+                  }
+                }
+                router.push('/');
+              }}
               style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}
             >
               <ChevronLeft size={16} /> Back to Dashboard
@@ -991,81 +1401,683 @@ export default function TenderDetailPage() {
 
               {/* Row 2: Tender Specifications Visual Grid */}
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px' }}>
-                <h3 style={{ margin: '0 0 20px 0', fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Building size={18} style={{ color: 'var(--primary)' }} />
-                  Tender Specifications & Parameters
-                </h3>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                  {[
-                    { label: 'Procuring Authority', value: selectedTender.authority, icon: Building },
-                    { label: 'Official Reference No', value: selectedTender.ref_no, icon: FileText },
-                    { label: 'Estimated Cost', value: selectedTender.estimated_cost_raw, icon: DollarSign, highlight: true },
-                    { label: 'EMD Amount Requirement', value: selectedTender.emd_raw, icon: DollarSign },
-                    { label: 'Tender Document Fee', value: selectedTender.document_fee_raw, icon: Tag },
-                    { label: 'Tender Type (GeM / Non GeM)', value: selectedTender.tender_type, icon: FileText, color: selectedTender.tender_type === 'GeM' ? '#10b981' : '#3b82f6' },
-                    { label: 'Source Portal', value: selectedTender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal', icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : '#3b82f6' },
-                    { label: 'Source ID', value: selectedTender.source_id, icon: Tag },
-                    { label: 'Location / Region', value: selectedTender.location, icon: MapPin },
-                    { label: 'Place', value: selectedTender.place, icon: MapPin },
-                    { label: 'State', value: selectedTender.state, icon: MapPin },
-                    { label: 'Sector / Category', value: selectedTender.sector, icon: Tag },
-                    { label: 'Vertical Name', value: selectedTender.vertical_name, icon: Tag },
-                    { label: 'Publish Date', value: selectedTender.publish_date, icon: Calendar },
-                    { label: 'Start Date', value: selectedTender.start_date, icon: Calendar },
-                    { label: 'Closing Due Date', value: selectedTender.due_date, icon: Calendar },
-                    { label: 'Tender Opening Date', value: selectedTender.opening_date, icon: Calendar },
-                    { label: 'Pre-Bid Meeting Date', value: selectedTender.pre_bid_date, icon: Calendar },
-                    { label: 'Bid Submission Time', value: selectedTender.time, icon: Calendar },
-                    { label: 'Entry Date', value: selectedTender.entry_date, icon: Calendar },
-                    { label: 'Scraped At', value: selectedTender.scraped_at, icon: Calendar },
-                    { label: 'Bid Quantity', value: selectedTender.bid_qty !== null && selectedTender.bid_qty !== undefined ? String(selectedTender.bid_qty) : 'N/A', icon: Layers },
-                    { label: 'Quoted Quantity', value: selectedTender.quoted_qty !== null && selectedTender.quoted_qty !== undefined ? String(selectedTender.quoted_qty) : 'N/A', icon: Layers },
-                    { label: 'Corrigendum Remark', value: selectedTender.corrigendum_remark === 'Yes' ? 'Yes (Alert)' : 'No', icon: Activity, color: selectedTender.corrigendum_remark === 'Yes' ? '#ef4444' : 'var(--text-secondary)' }
-                  ].map((spec, index) => {
-                    const Icon = spec.icon;
-                    return (
-                      <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', color: 'var(--primary)' }}>
-                          <Icon size={18} />
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>{spec.label}</span>
-                          <span style={{ 
-                            fontSize: '13px', 
-                            fontWeight: spec.highlight ? '700' : '600', 
-                            color: spec.color || 'var(--text-primary)' 
-                          }}>
-                            {spec.value || 'N/A'}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Building size={18} style={{ color: 'var(--primary)' }} />
+                    Tender Specifications & Parameters
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {!isEditingSpecs ? (
+                      <button
+                        id="btn-edit-parameters"
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={handleStartEditingSpecs}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 14px', fontWeight: '600' }}
+                      >
+                        <Edit3 size={14} /> Edit Parameters
+                      </button>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: '11px', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 10px', borderRadius: '12px', fontWeight: '600' }}>
+                          ● Edit Mode Active
+                        </span>
+                        <button
+                          id="btn-cancel-parameters"
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={savingSpecs}
+                          onClick={handleCancelEditingSpecs}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 14px', fontWeight: '600' }}
+                        >
+                          <RotateCcw size={14} /> Cancel
+                        </button>
+                        <button
+                          id="btn-save-parameters"
+                          type="button"
+                          className="btn btn-primary"
+                          disabled={savingSpecs}
+                          onClick={handleSaveSpecs}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 16px', fontWeight: '600', minWidth: '120px', justifyContent: 'center' }}
+                        >
+                          {savingSpecs ? (
+                            <>
+                              <RefreshCw size={14} className="animate-spin" /> Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save size={14} /> Save Changes
+                            </>
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {isEditingSpecs ? (
+                  <form onSubmit={(e) => { e.preventDefault(); handleSaveSpecs(); }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                      {/* 1. Procuring Authority */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-authority" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Building size={14} style={{ color: 'var(--primary)' }} /> Procuring Authority
+                        </label>
+                        <input
+                          id="spec-input-authority"
+                          type="text"
+                          value={specForm.authority}
+                          onChange={(e) => handleSpecFieldChange('authority', e.target.value)}
+                          style={specValidationErrors.authority ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. Director General of Health Services"
+                        />
+                        {specValidationErrors.authority && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.authority}</span>
+                        )}
+                      </div>
+
+                      {/* 2. Official Reference No */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-ref-no" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <FileText size={14} style={{ color: 'var(--primary)' }} /> Official Reference No <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input
+                          id="spec-input-ref-no"
+                          type="text"
+                          value={specForm.ref_no}
+                          onChange={(e) => handleSpecFieldChange('ref_no', e.target.value)}
+                          style={specValidationErrors.ref_no ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. GEM/2026/B/12345"
+                        />
+                        {specValidationErrors.ref_no && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.ref_no}</span>
+                        )}
+                      </div>
+
+                      {/* 3. Estimated Cost */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-estimated-cost-raw" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <DollarSign size={14} style={{ color: 'var(--primary)' }} /> Estimated Cost
+                        </label>
+                        <input
+                          id="spec-input-estimated-cost-raw"
+                          type="text"
+                          value={specForm.estimated_cost_raw}
+                          onChange={(e) => handleSpecFieldChange('estimated_cost_raw', e.target.value)}
+                          style={specValidationErrors.estimated_cost_raw ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. ₹ 5,00,000"
+                        />
+                        {specValidationErrors.estimated_cost_raw && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.estimated_cost_raw}</span>
+                        )}
+                      </div>
+
+                      {/* 4. EMD Amount Requirement */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-emd-raw" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <DollarSign size={14} style={{ color: 'var(--primary)' }} /> EMD Amount Requirement
+                        </label>
+                        <input
+                          id="spec-input-emd-raw"
+                          type="text"
+                          value={specForm.emd_raw}
+                          onChange={(e) => handleSpecFieldChange('emd_raw', e.target.value)}
+                          style={specValidationErrors.emd_raw ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. ₹ 25,000"
+                        />
+                        {specValidationErrors.emd_raw && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.emd_raw}</span>
+                        )}
+                      </div>
+
+                      {/* 5. Tender Document Fee */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-document-fee-raw" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Tag size={14} style={{ color: 'var(--primary)' }} /> Tender Document Fee
+                        </label>
+                        <input
+                          id="spec-input-document-fee-raw"
+                          type="text"
+                          value={specForm.document_fee_raw}
+                          onChange={(e) => handleSpecFieldChange('document_fee_raw', e.target.value)}
+                          style={specValidationErrors.document_fee_raw ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. ₹ 500"
+                        />
+                        {specValidationErrors.document_fee_raw && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.document_fee_raw}</span>
+                        )}
+                      </div>
+
+                      {/* 6. Tender Type (GeM / Non GeM) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-tender-type" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <FileText size={14} style={{ color: 'var(--primary)' }} /> Tender Type (GeM / Non GeM)
+                        </label>
+                        <select
+                          id="spec-input-tender-type"
+                          value={specForm.tender_type}
+                          onChange={(e) => handleSpecFieldChange('tender_type', e.target.value)}
+                          style={specInputStyle}
+                        >
+                          <option value="GeM">GeM</option>
+                          <option value="Non GeM">Non GeM</option>
+                          <option value="Custom">Custom</option>
+                        </select>
+                      </div>
+
+                      {/* 7. Source Portal */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-source" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Globe size={14} style={{ color: 'var(--primary)' }} /> Source Portal
+                        </label>
+                        <select
+                          id="spec-input-source"
+                          value={specForm.source}
+                          onChange={(e) => handleSpecFieldChange('source', e.target.value)}
+                          style={specInputStyle}
+                        >
+                          <option value="GeM">GeM Portal</option>
+                          <option value="Tender247">Tender247 Portal</option>
+                        </select>
+                      </div>
+
+                      {/* 8. Source ID */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-source-id" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Tag size={14} style={{ color: 'var(--primary)' }} /> Source ID
+                        </label>
+                        <input
+                          id="spec-input-source-id"
+                          type="text"
+                          value={specForm.source_id}
+                          onChange={(e) => handleSpecFieldChange('source_id', e.target.value)}
+                          style={specValidationErrors.source_id ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="Source Portal Tender ID"
+                        />
+                        {specValidationErrors.source_id && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.source_id}</span>
+                        )}
+                      </div>
+
+                      {/* 9. Location / Region */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-location" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <MapPin size={14} style={{ color: 'var(--primary)' }} /> Location / Region
+                        </label>
+                        <input
+                          id="spec-input-location"
+                          type="text"
+                          value={specForm.location}
+                          onChange={(e) => handleSpecFieldChange('location', e.target.value)}
+                          style={specValidationErrors.location ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. Mumbai, MH"
+                        />
+                        {specValidationErrors.location && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.location}</span>
+                        )}
+                      </div>
+
+                      {/* 10. Place */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-place" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <MapPin size={14} style={{ color: 'var(--primary)' }} /> Place
+                        </label>
+                        <input
+                          id="spec-input-place"
+                          type="text"
+                          value={specForm.place}
+                          onChange={(e) => handleSpecFieldChange('place', e.target.value)}
+                          style={specValidationErrors.place ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. Pune"
+                        />
+                        {specValidationErrors.place && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.place}</span>
+                        )}
+                      </div>
+
+                      {/* 11. State */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-state" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <MapPin size={14} style={{ color: 'var(--primary)' }} /> State
+                        </label>
+                        <input
+                          id="spec-input-state"
+                          type="text"
+                          value={specForm.state}
+                          onChange={(e) => handleSpecFieldChange('state', e.target.value)}
+                          style={specValidationErrors.state ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. Maharashtra"
+                        />
+                        {specValidationErrors.state && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.state}</span>
+                        )}
+                      </div>
+
+                      {/* 12. Sector / Category */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-sector" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Tag size={14} style={{ color: 'var(--primary)' }} /> Sector / Category
+                        </label>
+                        <input
+                          id="spec-input-sector"
+                          type="text"
+                          value={specForm.sector}
+                          onChange={(e) => handleSpecFieldChange('sector', e.target.value)}
+                          style={specValidationErrors.sector ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. Healthcare"
+                        />
+                        {specValidationErrors.sector && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.sector}</span>
+                        )}
+                      </div>
+
+                      {/* 13. Vertical Name */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-vertical-name" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Tag size={14} style={{ color: 'var(--primary)' }} /> Vertical Name
+                        </label>
+                        <input
+                          id="spec-input-vertical-name"
+                          type="text"
+                          value={specForm.vertical_name}
+                          onChange={(e) => handleSpecFieldChange('vertical_name', e.target.value)}
+                          style={specValidationErrors.vertical_name ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. Medical Devices"
+                        />
+                        {specValidationErrors.vertical_name && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.vertical_name}</span>
+                        )}
+                      </div>
+
+                      {/* 14. Publish Date */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-publish-date" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Calendar size={14} style={{ color: 'var(--primary)' }} /> Publish Date
+                        </label>
+                        <input
+                          id="spec-input-publish-date"
+                          type="text"
+                          value={specForm.publish_date}
+                          onChange={(e) => handleSpecFieldChange('publish_date', e.target.value)}
+                          style={specValidationErrors.publish_date ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="YYYY-MM-DD"
+                        />
+                        {specValidationErrors.publish_date && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.publish_date}</span>
+                        )}
+                      </div>
+
+                      {/* 15. Start Date */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-start-date" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Calendar size={14} style={{ color: 'var(--primary)' }} /> Start Date
+                        </label>
+                        <input
+                          id="spec-input-start-date"
+                          type="text"
+                          value={specForm.start_date}
+                          onChange={(e) => handleSpecFieldChange('start_date', e.target.value)}
+                          style={specValidationErrors.start_date ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="YYYY-MM-DD"
+                        />
+                        {specValidationErrors.start_date && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.start_date}</span>
+                        )}
+                      </div>
+
+                      {/* 16. Closing Due Date */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-due-date" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Calendar size={14} style={{ color: 'var(--primary)' }} /> Closing Due Date
+                        </label>
+                        <input
+                          id="spec-input-due-date"
+                          type="text"
+                          value={specForm.due_date}
+                          onChange={(e) => handleSpecFieldChange('due_date', e.target.value)}
+                          style={specValidationErrors.due_date ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="YYYY-MM-DD"
+                        />
+                        {specValidationErrors.due_date && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.due_date}</span>
+                        )}
+                      </div>
+
+                      {/* 17. Tender Opening Date */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-opening-date" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Calendar size={14} style={{ color: 'var(--primary)' }} /> Tender Opening Date
+                        </label>
+                        <input
+                          id="spec-input-opening-date"
+                          type="text"
+                          value={specForm.opening_date}
+                          onChange={(e) => handleSpecFieldChange('opening_date', e.target.value)}
+                          style={specValidationErrors.opening_date ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="YYYY-MM-DD"
+                        />
+                        {specValidationErrors.opening_date && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.opening_date}</span>
+                        )}
+                      </div>
+
+                      {/* 18. Pre-Bid Meeting Date */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-pre-bid-date" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Calendar size={14} style={{ color: 'var(--primary)' }} /> Pre-Bid Meeting Date
+                        </label>
+                        <input
+                          id="spec-input-pre-bid-date"
+                          type="text"
+                          value={specForm.pre_bid_date}
+                          onChange={(e) => handleSpecFieldChange('pre_bid_date', e.target.value)}
+                          style={specValidationErrors.pre_bid_date ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="YYYY-MM-DD or No"
+                        />
+                        {specValidationErrors.pre_bid_date && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.pre_bid_date}</span>
+                        )}
+                      </div>
+
+                      {/* 19. Bid Submission Time */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-time" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Calendar size={14} style={{ color: 'var(--primary)' }} /> Bid Submission Time
+                        </label>
+                        <input
+                          id="spec-input-time"
+                          type="text"
+                          value={specForm.time}
+                          onChange={(e) => handleSpecFieldChange('time', e.target.value)}
+                          style={specValidationErrors.time ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. 15:00:00"
+                        />
+                        {specValidationErrors.time && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.time}</span>
+                        )}
+                      </div>
+
+                      {/* 20. Entry Date */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-entry-date" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Calendar size={14} style={{ color: 'var(--primary)' }} /> Entry Date
+                        </label>
+                        <input
+                          id="spec-input-entry-date"
+                          type="text"
+                          value={specForm.entry_date}
+                          onChange={(e) => handleSpecFieldChange('entry_date', e.target.value)}
+                          style={specValidationErrors.entry_date ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="YYYY-MM-DD"
+                        />
+                        {specValidationErrors.entry_date && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.entry_date}</span>
+                        )}
+                      </div>
+
+                      {/* 21. Scraped At (Read Only) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)' }}>
+                        <label htmlFor="spec-input-scraped-at" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Lock size={14} style={{ color: 'var(--text-muted)' }} /> Scraped At (System Generated)
+                        </label>
+                        <input
+                          id="spec-input-scraped-at"
+                          type="text"
+                          disabled
+                          readOnly
+                          value={selectedTender.scraped_at || 'N/A'}
+                          style={{ ...specInputStyle, opacity: 0.6, cursor: 'not-allowed', background: 'rgba(255,255,255,0.03)' }}
+                        />
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Read-only system timestamp</span>
+                      </div>
+
+                      {/* 22. Bid Quantity */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-bid-qty" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Layers size={14} style={{ color: 'var(--primary)' }} /> Bid Quantity
+                        </label>
+                        <input
+                          id="spec-input-bid-qty"
+                          type="text"
+                          inputMode="numeric"
+                          value={specForm.bid_qty}
+                          onChange={(e) => handleSpecFieldChange('bid_qty', e.target.value)}
+                          style={specValidationErrors.bid_qty ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. 100"
+                        />
+                        {specValidationErrors.bid_qty && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.bid_qty}</span>
+                        )}
+                      </div>
+
+                      {/* 23. Quoted Quantity */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-quoted-qty" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Layers size={14} style={{ color: 'var(--primary)' }} /> Quoted Quantity
+                        </label>
+                        <input
+                          id="spec-input-quoted-qty"
+                          type="text"
+                          inputMode="numeric"
+                          value={specForm.quoted_qty}
+                          onChange={(e) => handleSpecFieldChange('quoted_qty', e.target.value)}
+                          style={specValidationErrors.quoted_qty ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="e.g. 100"
+                        />
+                        {specValidationErrors.quoted_qty && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.quoted_qty}</span>
+                        )}
+                      </div>
+
+                      {/* 24. Corrigendum Remark */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                        <label htmlFor="spec-input-corrigendum-remark" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
+                          <Activity size={14} style={{ color: 'var(--primary)' }} /> Corrigendum Remark
+                        </label>
+                        <select
+                          id="spec-input-corrigendum-remark"
+                          value={specForm.corrigendum_remark}
+                          onChange={(e) => handleSpecFieldChange('corrigendum_remark', e.target.value)}
+                          style={specInputStyle}
+                        >
+                          <option value="No">No</option>
+                          <option value="Yes">Yes (Alert)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+                      {/* Product Name As Per Tender */}
+                      <div>
+                        <label htmlFor="spec-input-product-name-as-per-tender" style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', marginBottom: '6px' }}>
+                          Product Name (As per Tender)
+                        </label>
+                        <input
+                          id="spec-input-product-name-as-per-tender"
+                          type="text"
+                          value={specForm.product_name_as_per_tender}
+                          onChange={(e) => handleSpecFieldChange('product_name_as_per_tender', e.target.value)}
+                          style={specValidationErrors.product_name_as_per_tender ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="Product Name as per Tender..."
+                        />
+                        {specValidationErrors.product_name_as_per_tender && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.product_name_as_per_tender}</span>
+                        )}
+                      </div>
+
+                      {/* Product Name As Per Marken */}
+                      <div>
+                        <label htmlFor="spec-input-product-name-as-per-marken" style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', marginBottom: '6px' }}>
+                          Product Name (As per Marken)
+                        </label>
+                        <input
+                          id="spec-input-product-name-as-per-marken"
+                          type="text"
+                          value={specForm.product_name_as_per_marken}
+                          onChange={(e) => handleSpecFieldChange('product_name_as_per_marken', e.target.value)}
+                          style={specValidationErrors.product_name_as_per_marken ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="Product Name as per Marken..."
+                        />
+                        {specValidationErrors.product_name_as_per_marken && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>{specValidationErrors.product_name_as_per_marken}</span>
+                        )}
+                      </div>
+
+                      {/* Full Tender Brief / Description */}
+                      <div>
+                        <label htmlFor="spec-input-title" style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', marginBottom: '6px' }}>
+                          Full Tender Brief / Description <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <textarea
+                          id="spec-input-title"
+                          rows={3}
+                          value={specForm.title}
+                          onChange={(e) => handleSpecFieldChange('title', e.target.value)}
+                          style={specValidationErrors.title ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="Enter complete tender title / description..."
+                        />
+                        {specValidationErrors.title && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>
+                            {specValidationErrors.title}
                           </span>
+                        )}
+                      </div>
+
+                      {/* Source URLs */}
+                      <div>
+                        <label htmlFor="spec-input-original-url" style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', marginBottom: '6px' }}>
+                          Source Portal Details URL <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input
+                          id="spec-input-original-url"
+                          type="url"
+                          value={specForm.original_url}
+                          onChange={(e) => handleSpecFieldChange('original_url', e.target.value)}
+                          style={specValidationErrors.original_url ? { ...specInputStyle, borderColor: '#ef4444' } : specInputStyle}
+                          placeholder="https://..."
+                        />
+                        {specValidationErrors.original_url && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', display: 'block' }}>
+                            {specValidationErrors.original_url}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Bottom Action Bar */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={savingSpecs}
+                          onClick={handleCancelEditingSpecs}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '8px 18px', fontWeight: '600' }}
+                        >
+                          <RotateCcw size={14} /> Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          disabled={savingSpecs || Object.keys(specValidationErrors).length > 0}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '12px',
+                            padding: '8px 20px',
+                            fontWeight: '600',
+                            minWidth: '130px',
+                            justifyContent: 'center',
+                            opacity: Object.keys(specValidationErrors).length > 0 ? 0.6 : 1,
+                            cursor: Object.keys(specValidationErrors).length > 0 ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {savingSpecs ? (
+                            <>
+                              <RefreshCw size={14} className="animate-spin" /> Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save size={14} /> Save Changes
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                      {[
+                        { label: 'Procuring Authority', value: selectedTender.authority, icon: Building },
+                        { label: 'Official Reference No', value: selectedTender.ref_no, icon: FileText },
+                        { label: 'Estimated Cost', value: selectedTender.estimated_cost_raw, icon: DollarSign, highlight: true },
+                        { label: 'EMD Amount Requirement', value: selectedTender.emd_raw, icon: DollarSign },
+                        { label: 'Tender Document Fee', value: selectedTender.document_fee_raw, icon: Tag },
+                        { label: 'Tender Type (GeM / Non GeM)', value: selectedTender.tender_type, icon: FileText, color: selectedTender.tender_type === 'GeM' ? '#10b981' : '#3b82f6' },
+                        { label: 'Source Portal', value: selectedTender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal', icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : '#3b82f6' },
+                        { label: 'Source ID', value: selectedTender.source_id, icon: Tag },
+                        { label: 'Location / Region', value: selectedTender.location, icon: MapPin },
+                        { label: 'Place', value: selectedTender.place, icon: MapPin },
+                        { label: 'State', value: selectedTender.state, icon: MapPin },
+                        { label: 'Sector / Category', value: selectedTender.sector, icon: Tag },
+                        { label: 'Vertical Name', value: selectedTender.vertical_name, icon: Tag },
+                        { label: 'Publish Date', value: selectedTender.publish_date, icon: Calendar },
+                        { label: 'Start Date', value: selectedTender.start_date, icon: Calendar },
+                        { label: 'Closing Due Date', value: selectedTender.due_date, icon: Calendar },
+                        { label: 'Tender Opening Date', value: selectedTender.opening_date, icon: Calendar },
+                        { label: 'Pre-Bid Meeting Date', value: selectedTender.pre_bid_date, icon: Calendar },
+                        { label: 'Bid Submission Time', value: selectedTender.time, icon: Calendar },
+                        { label: 'Entry Date', value: selectedTender.entry_date, icon: Calendar },
+                        { label: 'Scraped At', value: selectedTender.scraped_at, icon: Calendar },
+                        { label: 'Bid Quantity', value: selectedTender.bid_qty !== null && selectedTender.bid_qty !== undefined ? String(selectedTender.bid_qty) : 'N/A', icon: Layers },
+                        { label: 'Quoted Quantity', value: selectedTender.quoted_qty !== null && selectedTender.quoted_qty !== undefined ? String(selectedTender.quoted_qty) : 'N/A', icon: Layers },
+                        { label: 'Corrigendum Remark', value: selectedTender.corrigendum_remark === 'Yes' ? 'Yes (Alert)' : 'No', icon: Activity, color: selectedTender.corrigendum_remark === 'Yes' ? '#ef4444' : 'var(--text-secondary)' }
+                      ].map((spec, index) => {
+                        const Icon = spec.icon;
+                        return (
+                          <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', color: 'var(--primary)' }}>
+                              <Icon size={18} />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>{spec.label}</span>
+                              <span style={{ 
+                                fontSize: '13px', 
+                                fontWeight: spec.highlight ? '700' : '600', 
+                                color: spec.color || 'var(--text-primary)' 
+                              }}>
+                                {spec.value || 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Product Name (As per Tender)</span>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{selectedTender.product_name_as_per_tender || selectedTender.title || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Product Name (As per Marken)</span>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: '700', color: 'var(--primary)' }}>{selectedTender.product_name_as_per_marken || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Full Tender Brief / Description</span>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '13.5px', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.5' }}>{selectedTender.title || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Source URLs</span>
+                        <div style={{ marginTop: '6px' }}>
+                          <a href={selectedTender.original_url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '8px 16px', textDecoration: 'none' }}>
+                            View Portal Details Page <ExternalLink size={14} />
+                          </a>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
-                  <div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Product Name (As per Tender)</span>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{selectedTender.product_name_as_per_tender || selectedTender.title || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Product Name (As per Marken)</span>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: '700', color: 'var(--primary)' }}>{selectedTender.product_name_as_per_marken || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Full Tender Brief / Description</span>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '13.5px', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.5' }}>{selectedTender.title || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Source URLs</span>
-                    <div style={{ marginTop: '6px' }}>
-                      <a href={selectedTender.original_url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '8px 16px', textDecoration: 'none' }}>
-                        View Portal Details Page <ExternalLink size={14} />
-                      </a>
                     </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </div>
 
               {/* Row 3: Document Repository (Full width card) */}

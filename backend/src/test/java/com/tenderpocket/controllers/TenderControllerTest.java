@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import com.tenderpocket.config.WorkflowPermissions;
 
 import java.util.*;
 
@@ -529,4 +530,472 @@ public class TenderControllerTest {
         assertFalse((Boolean) respBody.get("success"));
         assertTrue(respBody.get("error").toString().contains("Generated bid documents are required"));
     }
+
+    @Test
+    void testUpdateTenderSpecificationParametersByClearanceTeam() {
+        authenticate("clearance", "Clearance Team");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("authority", "Updated Medical Health Authority");
+        body.put("ref_no", "REF-SPEC-999");
+        body.put("estimated_cost_raw", "₹ 7,50,000");
+        body.put("emd_raw", "₹ 15,000");
+        body.put("document_fee_raw", "₹ 500");
+        body.put("tender_type", "GeM");
+        body.put("source", "GeM");
+        body.put("source_id", "GEM/2026/B/9999");
+        body.put("location", "Nashik, MH");
+        body.put("place", "Satpur");
+        body.put("state", "Maharashtra");
+        body.put("sector", "Healthcare");
+        body.put("vertical_name", "Medical Equipment");
+        body.put("publish_date", "2026-10-01");
+        body.put("start_date", "2026-10-02");
+        body.put("due_date", "2026-10-25");
+        body.put("opening_date", "2026-10-26");
+        body.put("pre_bid_date", "2026-10-15");
+        body.put("time", "15:00:00");
+        body.put("entry_date", "2026-10-01");
+        body.put("bid_qty", "50");
+        body.put("quoted_qty", "45");
+        body.put("corrigendum_remark", "No");
+        body.put("product_name_as_per_tender", "Suction Unit 50L");
+        body.put("product_name_as_per_marken", "Marken Suction Unit 50L");
+        body.put("title", "Supply and Installation of Medical Suction Units");
+        body.put("original_url", "https://gem.gov.in/bid/9999");
+
+        ResponseEntity<?> response = tenderController.updateTender("Clearance Team", "clearance", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        assertEquals("Updated Medical Health Authority", tender1.getAuthority());
+        assertEquals("REF-SPEC-999", tender1.getRefNo());
+        assertEquals("₹ 7,50,000", tender1.getEstimatedCostRaw());
+        assertEquals(750000.0, tender1.getEstimatedCost());
+        assertEquals("₹ 15,000", tender1.getEmdRaw());
+        assertEquals(15000.0, tender1.getEmd());
+        assertEquals("₹ 500", tender1.getDocumentFeeRaw());
+        assertEquals(500.0, tender1.getDocumentFee());
+        assertEquals("GeM", tender1.getTenderType());
+        assertEquals("GeM", tender1.getSource());
+        assertEquals("GEM/2026/B/9999", tender1.getSourceId());
+        assertEquals("Nashik, MH", tender1.getLocation());
+        assertEquals("Satpur", tender1.getPlace());
+        assertEquals("Maharashtra", tender1.getState());
+        assertEquals("Healthcare", tender1.getSector());
+        assertEquals("Medical Equipment", tender1.getVerticalName());
+        assertEquals("2026-10-01", tender1.getPublishDate());
+        assertEquals("2026-10-02", tender1.getStartDate());
+        assertEquals("2026-10-25", tender1.getDueDate());
+        assertEquals("2026-10-26", tender1.getOpeningDate());
+        assertEquals("2026-10-15", tender1.getPreBidDate());
+        assertEquals("15:00:00", tender1.getTime());
+        assertEquals("2026-10-01", tender1.getEntryDate());
+        assertEquals(50, tender1.getBidQty());
+        assertEquals(45, tender1.getQuotedQty());
+        assertEquals("No", tender1.getCorrigendumRemark());
+        assertEquals("Suction Unit 50L", tender1.getProductNameAsPerTender());
+        assertEquals("Marken Suction Unit 50L", tender1.getProductNameAsPerMarken());
+        assertEquals("Supply and Installation of Medical Suction Units", tender1.getTitle());
+        assertEquals("https://gem.gov.in/bid/9999", tender1.getOriginalUrl());
+
+        verify(tenderRepository, atLeastOnce()).save(tender1);
+    }
+
+    @Test
+    void testUpdateTenderSpecificationParametersByAllRoles() {
+        for (String[] roleUser : new String[][]{
+                {"Admin", "admin"},
+                {"Tender Executive", "executive"},
+                {"Clearance Team", "clearance"},
+                {"TPC Pricing Team", "tpc"},
+                {"MIS Team", "misteam"}
+        }) {
+            String role = roleUser[0];
+            String username = roleUser[1];
+            authenticate(username, role);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("authority", "Authority Edited by " + role);
+            body.put("bid_qty", 10);
+            body.put("quoted_qty", 10);
+
+            ResponseEntity<?> response = tenderController.updateTender(role, username, "T1", body);
+            assertEquals(HttpStatus.OK, response.getStatusCode(), "Failed for role: " + role);
+            assertEquals("Authority Edited by " + role, tender1.getAuthority());
+            assertEquals(10, tender1.getBidQty());
+        }
+    }
+
+    @Test
+    void testIncompleteDateRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("opening_date", "2026-");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals(false, respBody.get("success"));
+        assertTrue(respBody.get("error").toString().contains("Enter a valid date."));
+        Map<?, ?> errors = (Map<?, ?>) respBody.get("errors");
+        assertNotNull(errors);
+        assertEquals("Enter a valid date.", errors.get("opening_date"));
+    }
+
+    @Test
+    void testImpossibleDateRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("opening_date", "2026-02-30");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals(false, respBody.get("success"));
+        assertEquals("Enter a valid date.", respBody.get("error"));
+    }
+
+    @Test
+    void testValidDateAccepted() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("opening_date", "2026-10-26");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("2026-10-26", tender1.getOpeningDate());
+    }
+
+    @Test
+    void testNonNumericFeeRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("document_fee_raw", "maha");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals(false, respBody.get("success"));
+        assertEquals("Enter a valid numeric fee.", respBody.get("error"));
+        Map<?, ?> errors = (Map<?, ?>) respBody.get("errors");
+        assertNotNull(errors);
+        assertEquals("Enter a valid numeric fee.", errors.get("document_fee_raw"));
+    }
+
+    @Test
+    void testNegativeFeeRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("document_fee_raw", "-500");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals("Fee cannot be negative.", respBody.get("error"));
+    }
+
+    @Test
+    void testValidFeeAccepted() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("document_fee_raw", "₹ 750.50");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("₹ 750.50", tender1.getDocumentFeeRaw());
+        assertEquals(750.50, tender1.getDocumentFee());
+    }
+
+    @Test
+    void testNegativeQuantityRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("bid_qty", -5);
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals("Quantity cannot be negative.", respBody.get("error"));
+    }
+
+    @Test
+    void testDecimalQuantityRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("bid_qty", "10.5");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals("Quantity must be an integer.", respBody.get("error"));
+    }
+
+    @Test
+    void testInvalidUrlRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("original_url", "not-a-valid-url");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertTrue(respBody.get("error").toString().contains("Enter a valid URL"));
+    }
+
+    // --- Tightened Numeric Amount Parsing Tests ---
+
+    @Test
+    void testMalformedCommaGroupingRejected() {
+        authenticate("admin", "Admin");
+
+        // "12,34" has invalid grouping (not 3 digits at end)
+        Map<String, Object> body1 = new HashMap<>();
+        body1.put("document_fee_raw", "12,34");
+        ResponseEntity<?> resp1 = tenderController.updateTender("Admin", "admin", "T1", body1);
+        assertEquals(HttpStatus.BAD_REQUEST, resp1.getStatusCode());
+
+        // "1,,2" has consecutive commas
+        Map<String, Object> body2 = new HashMap<>();
+        body2.put("estimated_cost_raw", "1,,2");
+        ResponseEntity<?> resp2 = tenderController.updateTender("Admin", "admin", "T1", body2);
+        assertEquals(HttpStatus.BAD_REQUEST, resp2.getStatusCode());
+
+        // "1,2,3,4" has single-digit comma groups
+        Map<String, Object> body3 = new HashMap<>();
+        body3.put("document_fee_raw", "1,2,3,4");
+        ResponseEntity<?> resp3 = tenderController.updateTender("Admin", "admin", "T1", body3);
+        assertEquals(HttpStatus.BAD_REQUEST, resp3.getStatusCode());
+
+        // Trailing comma
+        Map<String, Object> body4 = new HashMap<>();
+        body4.put("document_fee_raw", "500,");
+        ResponseEntity<?> resp4 = tenderController.updateTender("Admin", "admin", "T1", body4);
+        assertEquals(HttpStatus.BAD_REQUEST, resp4.getStatusCode());
+    }
+
+    @Test
+    void testMultipleDecimalPointsRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("document_fee_raw", "1.2.3");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertNotNull(respBody);
+        assertEquals("Enter a valid numeric fee.", respBody.get("error"));
+    }
+
+    @Test
+    void testLegitimateCurrencyFormattedAmountsAccepted() {
+        authenticate("admin", "Admin");
+
+        // Indian format with lakhs
+        Map<String, Object> body1 = new HashMap<>();
+        body1.put("estimated_cost_raw", "₹ 12,34,567.89");
+        ResponseEntity<?> resp1 = tenderController.updateTender("Admin", "admin", "T1", body1);
+        assertEquals(HttpStatus.OK, resp1.getStatusCode());
+        assertEquals(1234567.89, tender1.getEstimatedCost(), 0.001);
+
+        // Western format with millions
+        Map<String, Object> body2 = new HashMap<>();
+        body2.put("estimated_cost_raw", "$ 1,234,567.89");
+        ResponseEntity<?> resp2 = tenderController.updateTender("Admin", "admin", "T1", body2);
+        assertEquals(HttpStatus.OK, resp2.getStatusCode());
+        assertEquals(1234567.89, tender1.getEstimatedCost(), 0.001);
+
+        // Rs prefix with Indian format
+        Map<String, Object> body3 = new HashMap<>();
+        body3.put("document_fee_raw", "Rs. 1,500.50");
+        ResponseEntity<?> resp3 = tenderController.updateTender("Admin", "admin", "T1", body3);
+        assertEquals(HttpStatus.OK, resp3.getStatusCode());
+        assertEquals(1500.50, tender1.getDocumentFee(), 0.001);
+    }
+
+    // --- Date Validation Alignment Tests ---
+
+    @Test
+    void testLegacyPermittedScrapedDateFormatAccepted() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("due_date", "8 Oct 2026");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("8 Oct 2026", tender1.getDueDate());
+    }
+
+    @Test
+    void testImpossibleLegacyDateRejected() {
+        authenticate("admin", "Admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("due_date", "30 Feb 2026");
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+    }
+
+    @Test
+    void testDateTimeFormatsAccepted() {
+        authenticate("admin", "Admin");
+
+        // YYYY-MM-DD HH:mm:ss
+        Map<String, Object> body1 = new HashMap<>();
+        body1.put("due_date", "2026-10-25 15:30:00");
+        ResponseEntity<?> resp1 = tenderController.updateTender("Admin", "admin", "T1", body1);
+        assertEquals(HttpStatus.OK, resp1.getStatusCode());
+        assertEquals("2026-10-25 15:30:00", tender1.getDueDate());
+
+        // YYYY-MM-DDTHH:mm
+        Map<String, Object> body2 = new HashMap<>();
+        body2.put("due_date", "2026-10-25T15:30");
+        ResponseEntity<?> resp2 = tenderController.updateTender("Admin", "admin", "T1", body2);
+        assertEquals(HttpStatus.OK, resp2.getStatusCode());
+        assertEquals("2026-10-25T15:30", tender1.getDueDate());
+    }
+
+    @Test
+    void testNoPermittedOnlyForPreBidDate() {
+        authenticate("admin", "Admin");
+
+        // "No" on pre_bid_date is allowed
+        Map<String, Object> body1 = new HashMap<>();
+        body1.put("pre_bid_date", "No");
+        ResponseEntity<?> resp1 = tenderController.updateTender("Admin", "admin", "T1", body1);
+        assertEquals(HttpStatus.OK, resp1.getStatusCode());
+        assertEquals("No", tender1.getPreBidDate());
+
+        // "No" on opening_date is NOT allowed
+        Map<String, Object> body2 = new HashMap<>();
+        body2.put("opening_date", "No");
+        ResponseEntity<?> resp2 = tenderController.updateTender("Admin", "admin", "T1", body2);
+        assertEquals(HttpStatus.BAD_REQUEST, resp2.getStatusCode());
+    }
+
+    // --- Field-Level Authorization Tests for PATCH /api/tenders/{id} ---
+
+    @Test
+    void testUnauthorizedRoleCannotModifyTpcPurchasePrice() {
+        authenticate("exec1", "Tender Executive");
+        tender1.setTpcPurchasePrice(null);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("authority", "Valid Authority");
+        body.put("tpc_purchase_price", 45000.0);
+
+        ResponseEntity<?> response = tenderController.updateTender("Tender Executive", "exec1", "T1", body);
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNull(tender1.getTpcPurchasePrice());
+        assertNotEquals("Valid Authority", tender1.getAuthority()); // Zero partial mutation
+    }
+
+    @Test
+    void testUnauthorizedRoleCannotModifyTpcPurchasePriceCamelCase() {
+        authenticate("clearance", "Clearance Team");
+        tender1.setTpcPurchasePrice(null);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("tpcPurchasePrice", 55000.0);
+
+        ResponseEntity<?> response = tenderController.updateTender("Clearance Team", "clearance", "T1", body);
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNull(tender1.getTpcPurchasePrice());
+    }
+
+    @Test
+    void testTpcRoleCanModifyTpcPurchasePrice() {
+        authenticate("tpc", "TPC Pricing Team");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("tpc_purchase_price", 48000.0);
+
+        // When TPC updates via tender spec parameters, allowedPatch permits it
+        boolean allowed = WorkflowPermissions.allowedPatch(body, tender1.getCurrentStage(), "TPC Pricing Team");
+        assertTrue(allowed);
+    }
+
+    @Test
+    void testUnauthorizedRoleCannotModifyWorkflowStatus() {
+        authenticate("exec1", "Tender Executive");
+        String originalStatus = tender1.getStatus();
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", "Won");
+
+        ResponseEntity<?> response = tenderController.updateTender("Tender Executive", "exec1", "T1", body);
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertEquals(originalStatus, tender1.getStatus());
+    }
+
+    @Test
+    void testUnauthorizedRoleCannotModifySpecVerificationStatus() {
+        authenticate("exec1", "Tender Executive");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("spec_verification_status", "Approved");
+
+        ResponseEntity<?> response = tenderController.updateTender("Tender Executive", "exec1", "T1", body);
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+    }
+
+    @Test
+    void testUnauthorizedRoleCannotModifyPaymentStatus() {
+        authenticate("clearance", "Clearance Team");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("payment_status", "Approved");
+
+        ResponseEntity<?> response = tenderController.updateTender("Clearance Team", "clearance", "T1", body);
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+    }
+
+    @Test
+    void testAllRolesCanEditApprovedSpecificationParameters() {
+        String[] roles = {"Admin", "MIS Team", "Tender Executive", "Clearance Team", "TPC Pricing Team"};
+        String[] users = {"admin", "misteam", "exec1", "clearance", "tpc"};
+
+        for (int i = 0; i < roles.length; i++) {
+            authenticate(users[i], roles[i]);
+            Map<String, Object> body = new HashMap<>();
+            body.put("authority", "Authority updated by " + roles[i]);
+            body.put("opening_date", "2026-10-26");
+            body.put("document_fee_raw", "₹ 500");
+
+            ResponseEntity<?> response = tenderController.updateTender(roles[i], users[i], "T1", body);
+            assertEquals(HttpStatus.OK, response.getStatusCode(), "Role " + roles[i] + " should be permitted to edit specifications");
+            assertEquals("Authority updated by " + roles[i], tender1.getAuthority());
+            assertEquals("2026-10-26", tender1.getOpeningDate());
+            assertEquals(500.0, tender1.getDocumentFee());
+        }
+    }
+
+    @Test
+    void testInvalidRequestDoesNotPartiallyMutateTender() {
+        authenticate("admin", "Admin");
+        tender1.setAuthority("Original Authority");
+        tender1.setDocumentFeeRaw("1000");
+        tender1.setDocumentFee(1000.0);
+        tender1.setOpeningDate("2026-10-20");
+
+        // Payload has a valid authority, but an invalid date
+        Map<String, Object> body = new HashMap<>();
+        body.put("authority", "Mutated Authority");
+        body.put("opening_date", "2026-02-31"); // impossible date
+
+        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+
+        // Verify tender fields were NOT mutated
+        assertEquals("Original Authority", tender1.getAuthority());
+        assertEquals("2026-10-20", tender1.getOpeningDate());
+        assertEquals(1000.0, tender1.getDocumentFee());
+    }
 }
+
