@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.TenderRepository;
+import com.tenderpocket.utils.TenderClassifier;
 import jakarta.mail.*;
 import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.search.*;
@@ -150,32 +151,73 @@ public class EmailSyncService {
                 for (Map<String, String> tData : tenders) {
                     String id = tData.get("id");
                     String link = tData.get("url");
-                    String refNo = tData.getOrDefault("ref_no", "");
+                    String refNo = tData.getOrDefault("ref_no", "").trim();
+                    String title = tData.getOrDefault("title", "Tender " + id);
+                    String nameofWebsite = tData.getOrDefault("nameof_website", "");
 
                     if (id == null || link == null) continue;
 
-                    // Deduplication check: if tender already exists in the system (by ID, refNo, or sourceId), do not add it again
-                    boolean alreadyExists = tenderRepository.existsById(id)
-                            || (!refNo.isBlank() && tenderRepository.existsByRefNo(refNo))
-                            || tenderRepository.existsBySourceId(id);
-                    if (alreadyExists) {
+                    // If refNo is still blank, attempt to extract a GeM bid number from the title or link
+                    if (refNo.isEmpty()) {
+                        String extracted = TenderClassifier.extractGemBidNumber(title, link);
+                        if (extracted != null) {
+                            refNo = extracted;
+                        }
+                    }
+
+                    // Evidence-based platform classification
+                    String classifiedType = TenderClassifier.classify(refNo, link, nameofWebsite, title);
+
+                    // Cross-source deduplication check:
+                    // 1) Match by official refNo (e.g. GeM bid number) if available and not a placeholder
+                    // 2) Match by primary key id (Tender247 ID) ONLY if existing record belongs to Tender247 namespace or refNo matches
+                    // 3) Match by sourceId ONLY if existing record belongs to Tender247 namespace or refNo matches
+                    Optional<Tender> existingOpt = Optional.empty();
+                    if (!TenderClassifier.isPlaceholderRefNo(refNo)) {
+                        existingOpt = tenderRepository.findFirstByRefNo(refNo);
+                    }
+                    if (existingOpt.isEmpty() && id != null && !id.isBlank()) {
+                        Optional<Tender> byId = tenderRepository.findById(id);
+                        if (byId.isPresent() && isLegitimateT247Match(byId.get(), id, refNo)) {
+                            existingOpt = byId;
+                        }
+                    }
+                    if (existingOpt.isEmpty() && id != null && !id.isBlank()) {
+                        Optional<Tender> bySourceId = tenderRepository.findFirstBySourceId(id);
+                        if (bySourceId.isPresent() && isLegitimateT247Match(bySourceId.get(), id, refNo)) {
+                            existingOpt = bySourceId;
+                        }
+                    }
+
+                    if (existingOpt.isPresent()) {
+                        Tender existing = existingOpt.get();
+                        enrichExistingRecordFromTender247(existing, tData, refNo, classifiedType, link);
+                        tenderRepository.save(existing);
+                        System.out.println(String.format("[EmailSync] Enriched existing tender id=%s refNo=%s with classification=%s",
+                                existing.getId(), existing.getRefNo(), existing.getTenderType()));
                         continue;
                     }
 
+                    // Prevent primary key collision with unrelated tender from another namespace
+                    String tenderId = id;
+                    if (tenderRepository.existsById(id)) {
+                        tenderId = "t247-" + id;
+                    }
+
                     Tender tender = new Tender();
-                    tender.setId(id);
+                    tender.setId(tenderId);
                     tender.setSourceId(id);
                     tender.setRefNo(refNo);
-                    tender.setTitle(tData.getOrDefault("title", "Tender " + id));
+                    tender.setTitle(title);
                     tender.setAuthority(tData.getOrDefault("authority", ""));
                     tender.setEstimatedCost(null);
                     tender.setEstimatedCostRaw(tData.getOrDefault("estimated_cost_raw", "N/A"));
                     tender.setEmd(null);
-                    tender.setEmdRaw("N/A");
+                    tender.setEmdRaw(tData.getOrDefault("emd_raw", "N/A"));
                     tender.setDocumentFee(null);
-                    tender.setDocumentFeeRaw("N/A");
+                    tender.setDocumentFeeRaw(tData.getOrDefault("document_fee_raw", "N/A"));
                     tender.setLocation(tData.getOrDefault("location", "N/A"));
-                    tender.setSector(null);
+                    tender.setSector(nameofWebsite.isEmpty() ? null : nameofWebsite);
                     tender.setDueDate(tData.getOrDefault("due_date", ""));
                     tender.setOpeningDate(null);
                     tender.setDocumentUrl(null);
@@ -184,7 +226,7 @@ public class EmailSyncService {
                     tender.setScrapedAt(new Date().toString());
                     tender.setEntryDate(LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy")));
                     tender.setSource("Tender247");
-                    tender.setTenderType("Non GeM");
+                    tender.setTenderType(classifiedType);
 
                     tenderRepository.save(tender);
                     tendersImported++;
@@ -239,43 +281,111 @@ public class EmailSyncService {
             Element viewAll = doc.selectFirst("a:contains(View All), a:contains(Fresh Tenders)");
             if (viewAll != null) {
                 String href = viewAll.absUrl("href");
-                if (href != null && href.contains("key=")) {
-                    String key = href.substring(href.indexOf("key=") + 4);
+                String key = extractT247Key(href);
+                if (key != null && !key.isBlank()) {
                     return fetchTendersFromT247Api(key);
                 }
             }
 
             // Fallback table parser
+            Set<String> seenIds = new HashSet<>();
             Elements tables = doc.select("table");
             for (Element table : tables) {
-                if (table.text().contains("TENDER DETAILS")) {
-                    Elements rows = table.select("tbody > tr, tr");
-                    for (Element tr : rows) {
-                        Elements cells = tr.select("td");
-                        if (cells.size() < 3) continue;
+                // Check if this table has a direct header row for tender details
+                Element header = table.selectFirst("> thead > tr");
+                if (header == null) {
+                    header = table.selectFirst("> tbody > tr, > tr");
+                }
+                if (header == null) continue;
 
-                        String cell1Text = cells.get(0).text();
-                        if (cell1Text.contains("T247 ID")) {
-                            Map<String, String> t = new HashMap<>();
-                            
-                            Pattern p = Pattern.compile("T247\\s+ID\\s*:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
-                            Matcher m = p.matcher(cell1Text);
-                            String id = m.find() ? m.group(1) : "";
-                            
-                            Element a = cells.get(0).selectFirst("a");
-                            String url = a != null ? a.absUrl("href") : "";
-                            String title = a != null ? a.text() : "";
+                Elements headerCells = header.children();
+                if (headerCells.size() < 3) continue;
 
-                            if (!id.isEmpty() && !url.isEmpty()) {
-                                t.put("id", id);
-                                t.put("url", url);
-                                t.put("title", title);
-                                t.put("authority", cells.get(1).select("strong, b").text());
-                                t.put("location", cells.get(1).text().replace(t.get("authority"), "").trim());
-                                tenders.add(t);
-                            }
+                String c0Hdr = headerCells.get(0).text().toUpperCase();
+                String c1Hdr = headerCells.get(1).text().toUpperCase();
+                if (!c0Hdr.contains("TENDER DETAILS") || !c1Hdr.contains("ORGANIZATION")) {
+                    continue;
+                }
+
+                // Genuine tender details table found: collect rows from all direct-child tbody elements
+                Elements tbodies = table.select("> tbody");
+                Elements rows = new Elements();
+                if (!tbodies.isEmpty()) {
+                    for (Element tb : tbodies) {
+                        rows.addAll(tb.children());
+                    }
+                } else {
+                    rows.addAll(table.children());
+                }
+
+                for (Element tr : rows) {
+                    if (tr == header) continue;
+
+                    Elements cells = tr.children();
+                    if (cells.size() < 3) continue;
+
+                    Element cell0 = cells.get(0);
+                    Element cell1 = cells.get(1);
+                    Element cell2 = cells.get(2);
+
+                    String cell0Text = cell0.text();
+                    Pattern p = Pattern.compile("T247\\s+ID\\s*:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+                    Matcher m = p.matcher(cell0Text);
+                    if (!m.find()) continue;
+                    String id = m.group(1);
+                    if (id.isEmpty() || seenIds.contains(id)) continue;
+
+                    Element a = cell0.selectFirst("a");
+                    String url = a != null ? a.attr("href") : "";
+                    if (url.isEmpty() && a != null) {
+                        url = a.absUrl("href");
+                    }
+                    String title = a != null ? a.text().replaceAll("\\s+", " ").trim() : "";
+
+                    Map<String, String> t = new HashMap<>();
+                    t.put("id", id);
+                    t.put("url", url);
+                    t.put("title", title);
+
+                    // Extract authority and location from cell1
+                    Element authEl = cell1.selectFirst("span[style*=bold], strong, b");
+                    String authority = "";
+                    String location = "";
+                    if (authEl != null) {
+                        authority = authEl.text().replaceAll("\\s+", " ").trim();
+                        location = cell1.text().replace(authEl.text(), "").replaceAll("\\s+", " ").trim();
+                    } else {
+                        String[] parts = cell1.text().split("\\n");
+                        if (parts.length > 1) {
+                            authority = parts[0].trim();
+                            location = parts[1].trim();
+                        } else {
+                            authority = cell1.text().trim();
+                            location = "N/A";
                         }
                     }
+                    t.put("authority", authority);
+                    t.put("location", location);
+
+                    // Extract official bid number from title or cell0 text if present
+                    String bidNo = TenderClassifier.extractGemBidNumber(title, cell0Text);
+                    if (bidNo != null && !bidNo.isBlank()) {
+                        t.put("ref_no", bidNo);
+                    }
+
+                    // Extract due date & cost from cell2
+                    String cell2Text = cell2.text().replaceAll("\\s+", " ").trim();
+                    Matcher dateMatcher = Pattern.compile("\\b(\\d{2}-\\d{2}-\\d{4})\\b").matcher(cell2Text);
+                    if (dateMatcher.find()) {
+                        t.put("due_date", dateMatcher.group(1));
+                    }
+                    String costRaw = cell2Text.replaceAll("\\b\\d{2}-\\d{2}-\\d{4}\\b", "").trim();
+                    if (!costRaw.isEmpty()) {
+                        t.put("estimated_cost_raw", costRaw);
+                    }
+
+                    seenIds.add(id);
+                    tenders.add(t);
                 }
             }
         } catch (Exception e) {
@@ -322,19 +432,217 @@ public class EmailSyncService {
         JsonNode docs = searchResponse.getBody().get("Data");
         for (JsonNode doc : docs) {
             String tenderId = doc.get("tender_id").asText();
-            String securityCode = doc.has("security_code") ? doc.get("security_code").asText() : "";
+            String securityCode = doc.has("security_code") && !doc.get("security_code").isNull() ? doc.get("security_code").asText() : "";
             String spaUrl = String.format("https://www.tender247.com/auth/tender/%s/%s/%s", tenderId, securityCode, userId);
 
             Map<String, String> t = new HashMap<>();
             t.put("id", tenderId);
             t.put("url", spaUrl);
-            t.put("title", doc.get("requirement_workbrief").asText());
-            t.put("authority", doc.get("organization_name").asText());
-            t.put("location", doc.get("site_location").asText());
-            t.put("due_date", doc.get("submission_enddate").asText());
+            t.put("title", doc.has("requirement_workbrief") && !doc.get("requirement_workbrief").isNull() ? doc.get("requirement_workbrief").asText() : "");
+            t.put("authority", doc.has("organization_name") && !doc.get("organization_name").isNull() ? doc.get("organization_name").asText() : "");
+            t.put("location", doc.has("site_location") && !doc.get("site_location").isNull() ? doc.get("site_location").asText() : "");
+            t.put("due_date", doc.has("submission_enddate") && !doc.get("submission_enddate").isNull() ? doc.get("submission_enddate").asText() : "");
+
+            String tenderNumber = doc.has("tender_number") && !doc.get("tender_number").isNull() ? doc.get("tender_number").asText("").trim() : "";
+            String nameofWebsite = doc.has("nameof_website") && !doc.get("nameof_website").isNull() ? doc.get("nameof_website").asText("").trim() : "";
+
+            if (doc.has("tender_estimatedcost") && !doc.get("tender_estimatedcost").isNull()) {
+                t.put("estimated_cost_raw", doc.get("tender_estimatedcost").asText());
+            }
+            if (doc.has("earnest_money_deposite") && !doc.get("earnest_money_deposite").isNull()) {
+                t.put("emd_raw", doc.get("earnest_money_deposite").asText());
+            }
+            if (doc.has("document_fees") && !doc.get("document_fees").isNull()) {
+                t.put("document_fee_raw", doc.get("document_fees").asText());
+            }
+
+            // If tender_number or nameof_website is missing, fetch from tender-detail endpoint safely
+            if (tenderNumber.isEmpty() || nameofWebsite.isEmpty()) {
+                Map<String, String> detail = fetchTenderDetailSafe(tenderId, securityCode, token);
+                if (tenderNumber.isEmpty() && detail.containsKey("tender_number")) {
+                    tenderNumber = detail.get("tender_number");
+                }
+                if (nameofWebsite.isEmpty() && detail.containsKey("nameof_website")) {
+                    nameofWebsite = detail.get("nameof_website");
+                }
+                if (!t.containsKey("estimated_cost_raw") && detail.containsKey("estimated_cost_raw")) {
+                    t.put("estimated_cost_raw", detail.get("estimated_cost_raw"));
+                }
+                if (!t.containsKey("emd_raw") && detail.containsKey("emd_raw")) {
+                    t.put("emd_raw", detail.get("emd_raw"));
+                }
+                if (!t.containsKey("document_fee_raw") && detail.containsKey("document_fee_raw")) {
+                    t.put("document_fee_raw", detail.get("document_fee_raw"));
+                }
+            }
+
+            if (!tenderNumber.isEmpty()) {
+                t.put("ref_no", tenderNumber);
+            }
+            if (!nameofWebsite.isEmpty()) {
+                t.put("nameof_website", nameofWebsite);
+            }
+
             tenders.add(t);
         }
 
         return tenders;
+    }
+
+    private Map<String, String> fetchTenderDetailSafe(String tenderId, String securityCode, String token) {
+        if (tenderId == null || tenderId.isBlank()) return Collections.emptyMap();
+        try {
+            String detailUrl = "https://t247_api.tender247.com/apigateway/T247Tender/api/tender/tender-detail/" + tenderId;
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("User-Agent", "Mozilla/5.0");
+            headers.set("Referer", "https://www.tender247.com/");
+            if (token != null && !token.isBlank()) {
+                headers.setBearerAuth(token);
+            }
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("guest_user_id", 0);
+            payload.put("security_code", securityCode != null ? securityCode : "");
+            payload.put("ip", "");
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
+            ResponseEntity<JsonNode> response = restTemplate.postForEntity(detailUrl, request, JsonNode.class);
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null && response.getBody().has("Data")) {
+                JsonNode data = response.getBody().get("Data");
+                if (data.isArray() && data.size() > 0) {
+                    JsonNode detail = data.get(0);
+                    Map<String, String> res = new HashMap<>();
+                    if (detail.has("tender_number") && !detail.get("tender_number").isNull()) {
+                        res.put("tender_number", detail.get("tender_number").asText("").trim());
+                    }
+                    if (detail.has("nameof_website") && !detail.get("nameof_website").isNull()) {
+                        res.put("nameof_website", detail.get("nameof_website").asText("").trim());
+                    }
+                    if (detail.has("tender_estimatedcost") && !detail.get("tender_estimatedcost").isNull()) {
+                        res.put("estimated_cost_raw", detail.get("tender_estimatedcost").asText());
+                    }
+                    if (detail.has("earnest_money_deposite") && !detail.get("earnest_money_deposite").isNull()) {
+                        res.put("emd_raw", detail.get("earnest_money_deposite").asText());
+                    }
+                    if (detail.has("document_fees") && !detail.get("document_fees").isNull()) {
+                        res.put("document_fee_raw", detail.get("document_fees").asText());
+                    }
+                    return res;
+                }
+            }
+        } catch (Exception e) {
+            System.out.println(String.format("[T247Detail] Warning: Failed to fetch detail for tender %s: %s", tenderId, e.getMessage()));
+        }
+        return Collections.emptyMap();
+    }
+
+    public static String extractT247Key(String href) {
+        if (href == null || !href.contains("key=")) return null;
+        int start = href.indexOf("key=") + 4;
+        int end = href.indexOf('&', start);
+        String rawKey = (end != -1) ? href.substring(start, end) : href.substring(start);
+        try {
+            return java.net.URLDecoder.decode(rawKey, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            return rawKey;
+        }
+    }
+
+    private boolean isLegitimateT247Match(Tender existing, String t247Id, String refNo) {
+        if (existing == null) return false;
+        // 1. Authoritative official bid number matches
+        if (!TenderClassifier.isPlaceholderRefNo(refNo) && !TenderClassifier.isPlaceholderRefNo(existing.getRefNo())) {
+            if (refNo.equalsIgnoreCase(existing.getRefNo())) {
+                return true;
+            }
+        }
+        // 2. Same source namespace ("Tender247")
+        if ("Tender247".equalsIgnoreCase(existing.getSource())) {
+            if (t247Id != null && (t247Id.equalsIgnoreCase(existing.getId()) || t247Id.equalsIgnoreCase(existing.getSourceId()))) {
+                return true;
+            }
+        }
+        // If existing record belongs to another source (e.g. GeM) and refNo does not match, reject match
+        return false;
+    }
+
+    void enrichExistingRecordFromTender247(Tender existing, Map<String, String> tData, String refNo, String classifiedType, String link) {
+        // 1. Official reference / bid number
+        if ((existing.getRefNo() == null || existing.getRefNo().isBlank() || TenderClassifier.isPlaceholderRefNo(existing.getRefNo()))
+                && !TenderClassifier.isPlaceholderRefNo(refNo)) {
+            existing.setRefNo(refNo);
+        }
+
+        // 2. Classification enrichment & precedence:
+        // - Verified official source evidence takes precedence.
+        // - Strong incoming Non-GeM evidence can correct an unverified or erroneously defaulted "GeM" record,
+        //   provided the existing record does NOT have verified GeM evidence (valid GeM bid number or official GeM domain).
+        // - Strong incoming GeM evidence upgrades existing records unless the existing record has verified Non-GeM evidence.
+        // - Direct conflict between verified official sources resolves to "Unverified".
+        // - Weak or unverified incoming evidence never overwrites existing verified classifications.
+        boolean existingHasVerifiedGem = TenderClassifier.isValidGemBidNumber(existing.getRefNo())
+                || TenderClassifier.isOfficialGemDomain(existing.getOriginalUrl());
+        boolean existingHasVerifiedNonGem = TenderClassifier.isVerifiedNonGemDomain(existing.getOriginalUrl())
+                || TenderClassifier.isVerifiedNonGemDomain(existing.getSector());
+
+        boolean incomingHasVerifiedGem = "GeM".equalsIgnoreCase(classifiedType)
+                && (TenderClassifier.isValidGemBidNumber(refNo)
+                || TenderClassifier.isOfficialGemDomain(link)
+                || TenderClassifier.isOfficialGemDomain(tData.get("nameof_website")));
+        boolean incomingHasVerifiedNonGem = "Non GeM".equalsIgnoreCase(classifiedType)
+                && (TenderClassifier.isVerifiedNonGemDomain(link)
+                || TenderClassifier.isVerifiedNonGemDomain(tData.get("nameof_website")));
+
+        if (incomingHasVerifiedGem && existingHasVerifiedNonGem) {
+            existing.setTenderType("Unverified");
+        } else if (incomingHasVerifiedNonGem && existingHasVerifiedGem) {
+            existing.setTenderType("Unverified");
+        } else if (incomingHasVerifiedGem) {
+            existing.setTenderType("GeM");
+        } else if (incomingHasVerifiedNonGem) {
+            if (!existingHasVerifiedGem) {
+                existing.setTenderType("Non GeM");
+            }
+        } else if ("GeM".equalsIgnoreCase(classifiedType)) {
+            if (!existingHasVerifiedNonGem && (existing.getTenderType() == null || existing.getTenderType().isBlank() || "Unverified".equalsIgnoreCase(existing.getTenderType()))) {
+                existing.setTenderType("GeM");
+            }
+        } else if ("Non GeM".equalsIgnoreCase(classifiedType)) {
+            if (!existingHasVerifiedGem && (existing.getTenderType() == null || existing.getTenderType().isBlank() || "Unverified".equalsIgnoreCase(existing.getTenderType()))) {
+                existing.setTenderType("Non GeM");
+            }
+        } else if (existing.getTenderType() == null || existing.getTenderType().isBlank()) {
+            existing.setTenderType(classifiedType);
+        }
+
+        // 3. Original URL enrichment:
+        // If incoming has an official portal URL (e.g. gem.gov.in) and existing is an aggregator link or blank
+        if (TenderClassifier.isOfficialGemDomain(link) || TenderClassifier.isVerifiedNonGemDomain(link)) {
+            existing.setOriginalUrl(link);
+        }
+
+        // 4. Metadata non-destructive enrichment: do not overwrite populated values with blank/null
+        if (existing.getAuthority() == null || existing.getAuthority().isBlank()) {
+            existing.setAuthority(tData.getOrDefault("authority", ""));
+        }
+        if (existing.getLocation() == null || existing.getLocation().isBlank() || "N/A".equalsIgnoreCase(existing.getLocation())) {
+            existing.setLocation(tData.getOrDefault("location", "N/A"));
+        }
+        if (existing.getDueDate() == null || existing.getDueDate().isBlank()) {
+            existing.setDueDate(tData.getOrDefault("due_date", ""));
+        }
+        if ((existing.getEstimatedCostRaw() == null || "N/A".equalsIgnoreCase(existing.getEstimatedCostRaw())) && tData.containsKey("estimated_cost_raw")) {
+            existing.setEstimatedCostRaw(tData.get("estimated_cost_raw"));
+        }
+        if ((existing.getEmdRaw() == null || "N/A".equalsIgnoreCase(existing.getEmdRaw())) && tData.containsKey("emd_raw")) {
+            existing.setEmdRaw(tData.get("emd_raw"));
+        }
+        if ((existing.getDocumentFeeRaw() == null || "N/A".equalsIgnoreCase(existing.getDocumentFeeRaw())) && tData.containsKey("document_fee_raw")) {
+            existing.setDocumentFeeRaw(tData.get("document_fee_raw"));
+        }
+        if ((existing.getSector() == null || existing.getSector().isBlank()) && tData.containsKey("nameof_website")) {
+            existing.setSector(tData.get("nameof_website"));
+        }
     }
 }

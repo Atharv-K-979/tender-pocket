@@ -119,8 +119,8 @@ export default function TenderDetailPage() {
     estimated_cost_raw: '',
     emd_raw: '',
     document_fee_raw: '',
-    tender_type: 'GeM',
-    source: 'GeM',
+    tender_type: 'Unverified',
+    source: '',
     source_id: '',
     location: '',
     place: '',
@@ -802,8 +802,8 @@ export default function TenderDetailPage() {
       estimated_cost_raw: selectedTender.estimated_cost_raw || '',
       emd_raw: selectedTender.emd_raw || '',
       document_fee_raw: selectedTender.document_fee_raw || '',
-      tender_type: selectedTender.tender_type || 'GeM',
-      source: selectedTender.source || 'GeM',
+      tender_type: selectedTender.tender_type || selectedTender.tenderType || 'Unverified',
+      source: selectedTender.source || '',
       source_id: selectedTender.source_id || '',
       location: selectedTender.location || '',
       place: selectedTender.place || '',
@@ -1562,6 +1562,7 @@ export default function TenderDetailPage() {
                           <option value="GeM">GeM</option>
                           <option value="Non GeM">Non GeM</option>
                           <option value="Custom">Custom</option>
+                          <option value="Unverified">Unverified</option>
                         </select>
                       </div>
 
@@ -1576,6 +1577,7 @@ export default function TenderDetailPage() {
                           onChange={(e) => handleSpecFieldChange('source', e.target.value)}
                           style={specInputStyle}
                         >
+                          <option value="">Not Specified</option>
                           <option value="GeM">GeM Portal</option>
                           <option value="Tender247">Tender247 Portal</option>
                         </select>
@@ -2013,8 +2015,8 @@ export default function TenderDetailPage() {
                         { label: 'Estimated Cost', value: selectedTender.estimated_cost_raw, icon: DollarSign, highlight: true },
                         { label: 'EMD Amount Requirement', value: selectedTender.emd_raw, icon: DollarSign },
                         { label: 'Tender Document Fee', value: selectedTender.document_fee_raw, icon: Tag },
-                        { label: 'Tender Type (GeM / Non GeM)', value: selectedTender.tender_type, icon: FileText, color: selectedTender.tender_type === 'GeM' ? '#10b981' : '#3b82f6' },
-                        { label: 'Source Portal', value: selectedTender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal', icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : '#3b82f6' },
+                        { label: 'Tender Type (GeM / Non GeM)', value: selectedTender.tender_type || selectedTender.tenderType || 'Unverified', icon: FileText, color: (selectedTender.tender_type || selectedTender.tenderType) === 'GeM' ? '#10b981' : ((selectedTender.tender_type || selectedTender.tenderType) === 'Non GeM' ? '#3b82f6' : '#f59e0b') },
+                        { label: 'Source Portal', value: selectedTender.source ? (selectedTender.source === 'GeM' ? 'GeM Portal' : (selectedTender.source === 'Tender247' ? 'Tender247 Portal' : selectedTender.source)) : 'Not Specified', icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : (selectedTender.source === 'Tender247' ? '#3b82f6' : 'var(--text-muted)') },
                         { label: 'Source ID', value: selectedTender.source_id, icon: Tag },
                         { label: 'Location / Region', value: selectedTender.location, icon: MapPin },
                         { label: 'Place', value: selectedTender.place, icon: MapPin },

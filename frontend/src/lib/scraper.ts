@@ -1069,13 +1069,30 @@ export function computeDefaultBusinessMetadata(t: Partial<Tender>): Partial<Tend
   const formattedCurrentDate = `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 
   // 1. Tender Type & Source
-  const isGem = !!(
-    t.ref_no?.toUpperCase().includes('GEM') ||
-    t.title?.toLowerCase().includes('gem') ||
-    t.original_url?.toLowerCase().includes('gem')
+  const gemBidRegex = /\bGEM[/_]\d{4}[/_][A-Z][/_]\d+\b/i;
+  const isPlaceholder = (val?: string | null) => !val || ['N/A', 'NA', 'NULL', '-', '--', 'TBD', 'NONE'].includes(val.trim().toUpperCase());
+
+  const hasGemBid = !!(t.ref_no && !isPlaceholder(t.ref_no) && gemBidRegex.test(t.ref_no));
+  const hasGemUrl = !!(t.original_url && (t.original_url.includes('gem.gov.in') || t.original_url.includes('bidplus.gem.gov.in')));
+  const hasGemTitle = !!(t.title && gemBidRegex.test(t.title));
+
+  const hasNonGemUrl = !!(
+    t.original_url && (t.original_url.includes('eprocure.gov.in') || t.original_url.includes('etenders.gov.in') || (t.original_url.includes('.gov.in') && !t.original_url.includes('gem.gov.in')))
   );
-  const tenderType = isGem ? 'GeM' : 'Non GeM';
-  const source = isGem ? 'GeM' : 'E- Procurment';
+
+  let tenderType = 'Unverified';
+  if ((hasGemBid || hasGemUrl) && hasNonGemUrl) {
+    tenderType = 'Unverified';
+  } else if (hasGemBid || hasGemUrl) {
+    tenderType = 'GeM';
+  } else if (hasNonGemUrl) {
+    tenderType = 'Non GeM';
+  } else if (hasGemTitle) {
+    tenderType = 'GeM';
+  }
+
+  // Preserve the actual ingestion source rather than overriding it solely based on tenderType
+  const source = t.source || (hasGemUrl ? 'GeM' : 'Tender247');
 
   // 2. Vertical Name
   let verticalName = 'Others';
@@ -1769,7 +1786,7 @@ export async function downloadAndSaveTenderDocuments(tenderId: string): Promise<
             vertical_name = COALESCE(NULLIF(NULLIF(vertical_name, 'N/A'), ''), ?),
             place = COALESCE(NULLIF(NULLIF(place, 'N/A'), ''), ?),
             state = COALESCE(NULLIF(NULLIF(state, 'N/A'), ''), ?),
-            tender_type = COALESCE(NULLIF(NULLIF(tender_type, 'N/A'), ''), ?),
+            tender_type = CASE WHEN ? = 'GeM' THEN 'GeM' ELSE COALESCE(NULLIF(NULLIF(tender_type, 'N/A'), ''), ?) END,
             publish_date = COALESCE(NULLIF(NULLIF(publish_date, 'N/A'), ''), ?),
             start_date = COALESCE(NULLIF(NULLIF(start_date, 'N/A'), ''), ?),
             due_date = COALESCE(NULLIF(NULLIF(due_date, 'N/A'), ''), ?),

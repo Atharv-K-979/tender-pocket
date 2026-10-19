@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface TenderRepository extends JpaRepository<Tender, String> {
@@ -24,6 +25,8 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
 
     boolean existsByRefNo(String refNo);
     boolean existsBySourceId(String sourceId);
+    Optional<Tender> findFirstByRefNo(String refNo);
+    Optional<Tender> findFirstBySourceId(String sourceId);
 
     List<Tender> findByAssignedMisMemberSpec(String assignedMisMemberSpec);
 

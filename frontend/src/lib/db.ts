@@ -325,6 +325,7 @@ export interface Tender {
   place?: string | null;
   state?: string | null;
   tender_type?: string | null;
+  tenderType?: string | null;
   publish_date?: string | null;
   start_date?: string | null;
   time?: string | null;

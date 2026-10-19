@@ -441,6 +441,62 @@ public class TenderControllerTest {
     }
 
     @Test
+    void testTenderSerializationIncludesBothTenderTypeKeys() throws Exception {
+        Tender t = new Tender();
+        t.setId("T-TYPE-1");
+        t.setTenderType("GeM");
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(t);
+        com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(json);
+
+        assertTrue(node.has("tenderType"), "Serialized JSON must have tenderType (camelCase)");
+        assertTrue(node.has("tender_type"), "Serialized JSON must have tender_type (snake_case)");
+        assertEquals("GeM", node.get("tenderType").asText());
+        assertEquals("GeM", node.get("tender_type").asText());
+
+        // Deserialization with camelCase
+        Tender deserializedCamel = mapper.readValue("{\"tenderType\":\"Non GeM\"}", Tender.class);
+        assertEquals("Non GeM", deserializedCamel.getTenderType());
+
+        // Deserialization with snake_case
+        Tender deserializedSnake = mapper.readValue("{\"tender_type\":\"Unverified\"}", Tender.class);
+        assertEquals("Unverified", deserializedSnake.getTenderType());
+
+        // Deserialization with both keys present
+        Tender deserializedBoth = mapper.readValue("{\"tenderType\":\"GeM\",\"tender_type\":\"GeM\"}", Tender.class);
+        assertEquals("GeM", deserializedBoth.getTenderType());
+    }
+
+    @Test
+    void testPatchTenderTypeAcceptsUnverifiedAndValidEnums() {
+        authenticate("admin", "Admin");
+
+        // Test Unverified is accepted
+        ResponseEntity<?> resUnverified = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "Unverified"));
+        assertEquals(HttpStatus.OK, resUnverified.getStatusCode());
+        assertEquals("Unverified", tender1.getTenderType());
+
+        // Test Non GeM is accepted
+        ResponseEntity<?> resNonGem = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "Non GeM"));
+        assertEquals(HttpStatus.OK, resNonGem.getStatusCode());
+        assertEquals("Non GeM", tender1.getTenderType());
+
+        // Test GeM is accepted
+        ResponseEntity<?> resGem = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "GeM"));
+        assertEquals(HttpStatus.OK, resGem.getStatusCode());
+        assertEquals("GeM", tender1.getTenderType());
+
+        // Test invalid value is rejected with 400 Bad Request
+        ResponseEntity<?> resInvalid = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "InvalidType"));
+        assertEquals(HttpStatus.BAD_REQUEST, resInvalid.getStatusCode());
+        Map<?, ?> body = (Map<?, ?>) resInvalid.getBody();
+        Map<?, ?> errors = (Map<?, ?>) body.get("errors");
+        assertNotNull(errors);
+        assertTrue(errors.containsKey("tender_type"));
+    }
+
+    @Test
     void testUnauthorizedTenderDetailAccess() {
         authenticate("exec1", "Tender Executive");
 
@@ -996,6 +1052,89 @@ public class TenderControllerTest {
         assertEquals("Original Authority", tender1.getAuthority());
         assertEquals("2026-10-20", tender1.getOpeningDate());
         assertEquals(1000.0, tender1.getDocumentFee());
+    }
+
+    @Test
+    void testCreateTenderClassifiesGemFromOfficialBidNo() {
+        authenticate("exec", "Executive");
+        Tender newTender = new Tender();
+        newTender.setId("NEW_T1");
+        newTender.setTitle("Supply of Centrifuges");
+        newTender.setOriginalUrl("https://example.com/details");
+        newTender.setRefNo("GEM/2026/B/7570015");
+        newTender.setTenderType(null); // Missing classification
+        newTender.setStatus("Issued");
+        newTender.setCurrentStage("SPEC_CLEARANCE");
+
+        when(tenderRepository.existsById("NEW_T1")).thenReturn(false);
+
+        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("GeM", newTender.getTenderType(), "Valid GeM bid number must cause classification as GeM");
+        assertNull(newTender.getSource(), "Ingestion source must not default to GeM when not supplied");
+        verify(tenderRepository).save(newTender);
+    }
+
+    @Test
+    void testCreateTenderClassifiesNonGemFromOfficialPortalUrl() {
+        authenticate("exec", "Executive");
+        Tender newTender = new Tender();
+        newTender.setId("NEW_T2");
+        newTender.setTitle("Hospital Furniture Tender");
+        newTender.setOriginalUrl("https://eprocure.gov.in/epublish/app?component=view");
+        newTender.setRefNo("2026_AIIMS_810792_1");
+        newTender.setTenderType(null); // Missing classification
+        newTender.setStatus("Issued");
+        newTender.setCurrentStage("SPEC_CLEARANCE");
+
+        when(tenderRepository.existsById("NEW_T2")).thenReturn(false);
+
+        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("Non GeM", newTender.getTenderType(), "Verified government portal URL must cause classification as Non GeM");
+        verify(tenderRepository).save(newTender);
+    }
+
+    @Test
+    void testCreateTenderRemainsUnverifiedWhenEvidenceIsInsufficient() {
+        authenticate("exec", "Executive");
+        Tender newTender = new Tender();
+        newTender.setId("NEW_T3");
+        newTender.setTitle("Procurement of General Items");
+        newTender.setOriginalUrl("https://aggregator.example.com/tender/view?id=123");
+        newTender.setRefNo("UNKNOWN_REF_999");
+        newTender.setTenderType(null); // Missing classification
+        newTender.setStatus("Issued");
+        newTender.setCurrentStage("SPEC_CLEARANCE");
+
+        when(tenderRepository.existsById("NEW_T3")).thenReturn(false);
+
+        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("Unverified", newTender.getTenderType(), "Missing or insufficient evidence must remain Unverified; must NOT default to GeM");
+        verify(tenderRepository).save(newTender);
+    }
+
+    @Test
+    void testCreateTenderPreservesExplicitIngestionSourceAndTenderType() {
+        authenticate("exec", "Executive");
+        Tender newTender = new Tender();
+        newTender.setId("NEW_T4");
+        newTender.setTitle("Specific Tender");
+        newTender.setOriginalUrl("https://example.com/view");
+        newTender.setRefNo("REF_123");
+        newTender.setSource("Tender247");
+        newTender.setTenderType("Custom");
+        newTender.setStatus("Issued");
+        newTender.setCurrentStage("SPEC_CLEARANCE");
+
+        when(tenderRepository.existsById("NEW_T4")).thenReturn(false);
+
+        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("Custom", newTender.getTenderType(), "Explicit tenderType must be preserved");
+        assertEquals("Tender247", newTender.getSource(), "Explicit source must be preserved");
+        verify(tenderRepository).save(newTender);
     }
 }
 

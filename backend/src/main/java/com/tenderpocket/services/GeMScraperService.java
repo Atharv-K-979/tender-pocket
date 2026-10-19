@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.TenderRepository;
+import com.tenderpocket.utils.TenderClassifier;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -170,13 +171,46 @@ public class GeMScraperService {
 
                     if (bId == null || bidNo == null) continue;
 
-                    // Deduplication check: if tender already exists in the system (by ID, refNo, or sourceId), do not add it again
-                    boolean alreadyExists = tenderRepository.existsById(bId)
-                            || tenderRepository.existsByRefNo(bidNo)
-                            || tenderRepository.existsBySourceId(bidNo);
-                    if (alreadyExists) {
+                    // Cross-source deduplication and existing record lookup:
+                    // 1) Match by official bid number (refNo) if not placeholder
+                    // 2) Match by sourceId (bidNo) if not placeholder
+                    // 3) Match by parent bid number if not placeholder
+                    // 4) Match by GeM bId ONLY if existing record belongs to GeM namespace or bid numbers match
+                    Optional<Tender> existingOpt = Optional.empty();
+                    if (!TenderClassifier.isPlaceholderRefNo(bidNo)) {
+                        existingOpt = tenderRepository.findFirstByRefNo(bidNo);
+                    }
+                    if (existingOpt.isEmpty() && !TenderClassifier.isPlaceholderRefNo(bidNo)) {
+                        existingOpt = tenderRepository.findFirstBySourceId(bidNo);
+                    }
+                    if (existingOpt.isEmpty()) {
+                        String bnp = getJsonString(doc, "b_bid_number_parent");
+                        if (bnp != null && !TenderClassifier.isPlaceholderRefNo(bnp)) {
+                            existingOpt = tenderRepository.findFirstByRefNo(bnp);
+                        }
+                    }
+                    if (existingOpt.isEmpty()) {
+                        Optional<Tender> byId = tenderRepository.findById(bId);
+                        if (byId.isPresent() && isLegitimateGeMMatch(byId.get(), bId, bidNo)) {
+                            existingOpt = byId;
+                        }
+                    }
+
+                    if (existingOpt.isPresent()) {
+                        Tender existing = existingOpt.get();
+                        String bIdParent = getJsonString(doc, "b_id_parent");
+                        String docDownloadId = bIdParent != null ? bIdParent : bId;
+                        String officialUrl = "https://bidplus.gem.gov.in/showbidDocument/" + docDownloadId;
+                        String bidNoParent = getJsonString(doc, "b_bid_number_parent");
+                        String officialRefNo = bidNoParent != null ? bidNoParent : bidNo;
+
+                        enrichExistingRecordFromGeM(existing, officialRefNo, bidNo, officialUrl, doc);
+                        tenderRepository.save(existing);
+                        System.out.println(String.format("  - Enriched existing tender id=%s refNo=%s with authoritative GeM classification",
+                                existing.getId(), existing.getRefNo()));
+
                         if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
-                            retryPendingS3UploadIfPresent(bId);
+                            retryPendingS3UploadIfPresent(existing.getId());
                         }
                         consecutiveKnown++;
                         if (consecutiveKnown >= stopAfterKnown) {
@@ -256,8 +290,14 @@ public class GeMScraperService {
                     String startDateTimeStr = formatDateTime(start);
                     String endDateTimeStr = end != null ? formatDateTime(end) : defaults.get("due_date");
 
+                    // Prevent primary key collision with unrelated record from another namespace
+                    String tenderId = bId;
+                    if (tenderRepository.existsById(bId)) {
+                        tenderId = "gem-" + bId;
+                    }
+
                     Tender tender = new Tender();
-                    tender.setId(bId);
+                    tender.setId(tenderId);
                     tender.setRefNo(officialRefNo);
                     tender.setTitle(items);
                     tender.setAuthority(dept);
@@ -298,7 +338,7 @@ public class GeMScraperService {
                     System.out.println(String.format("  - Registered new GeM Bid: %s", bidNo));
 
                     // Download document PDF and run python PDF parser
-                    downloadAndParseGemPdf(bId, url, bidNo, doc);
+                    downloadAndParseGemPdf(tender.getId(), url, bidNo, doc);
                   } catch (Exception docError) {
                     // One malformed bid must not cost the rest of the keyword. Before pagination
                     // that only lost the remainder of a single page; now it would lose every
@@ -323,6 +363,87 @@ public class GeMScraperService {
         }
 
         return importCount;
+    }
+
+    private boolean isLegitimateGeMMatch(Tender existing, String bId, String bidNo) {
+        if (existing == null) return false;
+        // 1. Authoritative official bid number matches
+        if (!TenderClassifier.isPlaceholderRefNo(bidNo) && !TenderClassifier.isPlaceholderRefNo(existing.getRefNo())) {
+            if (bidNo.equalsIgnoreCase(existing.getRefNo()) || bidNo.equalsIgnoreCase(existing.getSourceId())) {
+                return true;
+            }
+        }
+        // 2. Same source namespace ("GeM") with same internal ID
+        if ("GeM".equalsIgnoreCase(existing.getSource())) {
+            if (bId != null && bId.equalsIgnoreCase(existing.getId())) {
+                return true;
+            }
+        }
+        // If existing record belongs to another source (e.g. Tender247) and bid numbers don't match, reject match
+        return false;
+    }
+
+    private void enrichExistingRecordFromGeM(Tender existing, String officialRefNo, String bidNo, String officialUrl, JsonNode doc) {
+        // Authoritative platform classification
+        existing.setTenderType("GeM");
+
+        if ((existing.getRefNo() == null || existing.getRefNo().isBlank() || TenderClassifier.isPlaceholderRefNo(existing.getRefNo()))
+                && !TenderClassifier.isPlaceholderRefNo(officialRefNo)) {
+            existing.setRefNo(officialRefNo);
+        }
+        if (existing.getSourceId() == null || existing.getSourceId().isBlank()) {
+            existing.setSourceId(bidNo);
+        }
+        if (existing.getOriginalUrl() == null || !existing.getOriginalUrl().contains("gem.gov.in")) {
+            existing.setOriginalUrl(officialUrl);
+        }
+
+        String items = getJsonString(doc, "b_category_name");
+        String dept = getJsonString(doc, "ba_official_details_deptName");
+        String qty = getJsonString(doc, "b_total_quantity");
+        String start = getJsonString(doc, "final_start_date_sort");
+        String end = getJsonString(doc, "final_end_date_sort");
+
+        if (existing.getTitle() == null || existing.getTitle().isBlank() || existing.getTitle().startsWith("Tender ")) {
+            if (items != null && !items.isBlank()) {
+                existing.setTitle(items);
+            }
+        }
+        if (existing.getAuthority() == null || existing.getAuthority().isBlank()) {
+            if (dept != null && !dept.isBlank()) {
+                existing.setAuthority(dept);
+            }
+        }
+        if (existing.getDueDate() == null || existing.getDueDate().isBlank()) {
+            if (end != null) {
+                existing.setDueDate(formatDateTime(end));
+            }
+        }
+        if (existing.getStartDate() == null || existing.getStartDate().isBlank()) {
+            if (start != null) {
+                existing.setStartDate(formatDateTime(start));
+            }
+        }
+        if (existing.getPublishDate() == null || existing.getPublishDate().isBlank()) {
+            if (start != null && start.contains("T")) {
+                existing.setPublishDate(start.split("T")[0]);
+            }
+        }
+        if (existing.getBidQty() == null || existing.getBidQty() <= 0) {
+            if (qty != null) {
+                try { existing.setBidQty(Integer.parseInt(qty)); } catch (Exception ignored) {}
+            }
+        }
+        if (existing.getQuotedQty() == null || existing.getQuotedQty() <= 0) {
+            if (qty != null) {
+                try { existing.setQuotedQty(Integer.parseInt(qty)); } catch (Exception ignored) {}
+            }
+        }
+
+        // Attach official GeM bid document PDF if missing
+        if (existing.getDocumentUrl() == null || existing.getDocumentUrl().isBlank()) {
+            downloadAndParseGemPdf(existing.getId(), officialUrl, bidNo, doc);
+        }
     }
 
     private void retryPendingS3UploadIfPresent(String tenderId) {

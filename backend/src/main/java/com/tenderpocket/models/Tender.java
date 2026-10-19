@@ -362,8 +362,14 @@ public class Tender {
     public String getState() { return state; }
     public void setState(String state) { this.state = state; }
 
+    @JsonProperty("tenderType")
     public String getTenderType() { return tenderType; }
+    @JsonProperty("tender_type")
+    public String getTenderTypeSnakeCase() { return tenderType; }
+    @JsonProperty("tenderType")
     public void setTenderType(String tenderType) { this.tenderType = tenderType; }
+    @JsonProperty("tender_type")
+    public void setTenderTypeSnakeCase(String tenderType) { this.tenderType = tenderType; }
 
     public String getPublishDate() { return publishDate; }
     public void setPublishDate(String publishDate) { this.publishDate = publishDate; }

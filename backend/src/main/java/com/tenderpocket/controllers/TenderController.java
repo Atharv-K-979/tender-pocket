@@ -14,6 +14,7 @@ import com.tenderpocket.services.DocumentGeneratorService;
 import com.tenderpocket.services.ComplianceProgressService;
 import com.tenderpocket.services.ComplianceConversionMetrics;
 import com.tenderpocket.services.AISpecificationIntelligenceService;
+import com.tenderpocket.utils.TenderClassifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -706,6 +707,20 @@ public class TenderController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
                     "error", "Tender already exists. Use its update endpoint."));
         }
+
+        // Evidence-based platform classification:
+        // Reuses TenderClassifier to deduce platform from refNo, originalUrl, sector/website, and title.
+        // Missing or insufficient evidence remains "Unverified"; never defaults to GeM.
+        if (tender.getTenderType() == null || tender.getTenderType().isBlank()) {
+            String classified = TenderClassifier.classify(
+                    tender.getRefNo(),
+                    tender.getOriginalUrl(),
+                    tender.getSector(),
+                    tender.getTitle()
+            );
+            tender.setTenderType(classified);
+        }
+
         tender.setScrapedAt(new Date().toString());
         tenderRepository.save(tender);
 
@@ -853,8 +868,8 @@ public class TenderController {
             Object val = body.containsKey("tender_type") ? body.get("tender_type") : body.get("tenderType");
             if (val != null && !val.toString().trim().isEmpty()) {
                 String s = val.toString().trim();
-                if (!s.equalsIgnoreCase("GeM") && !s.equalsIgnoreCase("Non GeM") && !s.equalsIgnoreCase("Custom")) {
-                    fieldErrors.put("tender_type", "Tender type must be 'GeM', 'Non GeM', or 'Custom'.");
+                if (!s.equalsIgnoreCase("GeM") && !s.equalsIgnoreCase("Non GeM") && !s.equalsIgnoreCase("Custom") && !s.equalsIgnoreCase("Unverified")) {
+                    fieldErrors.put("tender_type", "Tender type must be 'GeM', 'Non GeM', 'Custom', or 'Unverified'.");
                 }
             }
         }
