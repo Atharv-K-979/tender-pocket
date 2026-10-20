@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
 import { PIPELINE_STEPS, resolveTenderStageDetails } from '@/lib/tenderStatus';
+import { getClassificationDisplay, getSourceBadgeLabel } from '@/lib/tenderClassification';
 
 interface StatusDashboardProps {
   tenders: Tender[];
@@ -844,20 +845,46 @@ export default function StatusDashboard({
                         {tender.id}
                       </span>
 
-                      {/* Portal Tag */}
-                      <span
-                        style={{
-                          fontSize: '10.5px',
-                          fontWeight: '600',
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          backgroundColor: tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                          color: tender.source === 'GeM' ? '#10b981' : '#3b82f6',
-                          border: `1px solid ${tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`
-                        }}
-                      >
-                        {tender.source === 'GeM' ? 'GeM Portal' : 'Tender247'}
-                      </span>
+                      {/* Classification Badge */}
+                      {(() => {
+                        const classification = getClassificationDisplay(tender.tender_type || tender.tenderType);
+                        return (
+                          <span
+                            style={{
+                              fontSize: '10.5px',
+                              fontWeight: '600',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              backgroundColor: classification.bgColor,
+                              color: classification.color,
+                              border: `1px solid ${classification.borderColor}`
+                            }}
+                          >
+                            {classification.label}
+                          </span>
+                        );
+                      })()}
+
+                      {/* Ingestion Source Tag */}
+                      {(() => {
+                        const sourceLabel = getSourceBadgeLabel(tender.source);
+                        if (!sourceLabel) return null;
+                        return (
+                          <span
+                            style={{
+                              fontSize: '10.5px',
+                              fontWeight: '500',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                              color: 'var(--text-muted, #6b7280)',
+                              border: '1px solid rgba(107, 114, 128, 0.2)'
+                            }}
+                          >
+                            {sourceLabel}
+                          </span>
+                        );
+                      })()}
 
                       {/* Overall Status Badge */}
                       <span

@@ -11,6 +11,8 @@
  * - Main Dashboard Drawer (/page.tsx)
  */
 
+export * from './tenderClassification';
+
 export function getTodayISTString(): string {
   const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };
   const formatter = new Intl.DateTimeFormat('en-IN', options as any);

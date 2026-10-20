@@ -36,6 +36,7 @@ import { Tender } from '@/lib/db';
 import { canPerform, canReviewAssignment } from '@/lib/workflowAuthorization';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
+import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
 
 interface Toast {
   message: string;
@@ -1206,9 +1207,43 @@ export default function TenderDetailPage() {
               <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
             </button>
             {selectedTender && (
-              <span className={`status-badge ${selectedTender.status}`} style={{ fontSize: '13px', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
-                {selectedTender.status}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {(() => {
+                  const classification = getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType);
+                  const sourceLabel = getSourceBadgeLabel(selectedTender.source);
+                  return (
+                    <>
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        backgroundColor: classification.bgColor,
+                        color: classification.color,
+                        border: `1px solid ${classification.borderColor}`
+                      }}>
+                        {classification.label}
+                      </span>
+                      {sourceLabel && (
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: '500',
+                          padding: '4px 10px',
+                          borderRadius: '12px',
+                          backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                          color: 'var(--text-muted, #6b7280)',
+                          border: '1px solid rgba(107, 114, 128, 0.2)'
+                        }}>
+                          {sourceLabel}
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+                <span className={`status-badge ${selectedTender.status}`} style={{ fontSize: '13px', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
+                  {selectedTender.status}
+                </span>
+              </div>
             )}
           </div>
         </header>
@@ -1560,9 +1595,9 @@ export default function TenderDetailPage() {
                           style={specInputStyle}
                         >
                           <option value="GeM">GeM</option>
-                          <option value="Non GeM">Non GeM</option>
+                          <option value="Non GeM">Non-GeM</option>
                           <option value="Custom">Custom</option>
-                          <option value="Unverified">Unverified</option>
+                          <option value="Unverified">Non-GeM</option>
                         </select>
                       </div>
 
@@ -2015,8 +2050,8 @@ export default function TenderDetailPage() {
                         { label: 'Estimated Cost', value: selectedTender.estimated_cost_raw, icon: DollarSign, highlight: true },
                         { label: 'EMD Amount Requirement', value: selectedTender.emd_raw, icon: DollarSign },
                         { label: 'Tender Document Fee', value: selectedTender.document_fee_raw, icon: Tag },
-                        { label: 'Tender Type (GeM / Non GeM)', value: selectedTender.tender_type || selectedTender.tenderType || 'Unverified', icon: FileText, color: (selectedTender.tender_type || selectedTender.tenderType) === 'GeM' ? '#10b981' : ((selectedTender.tender_type || selectedTender.tenderType) === 'Non GeM' ? '#3b82f6' : '#f59e0b') },
-                        { label: 'Source Portal', value: selectedTender.source ? (selectedTender.source === 'GeM' ? 'GeM Portal' : (selectedTender.source === 'Tender247' ? 'Tender247 Portal' : selectedTender.source)) : 'Not Specified', icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : (selectedTender.source === 'Tender247' ? '#3b82f6' : 'var(--text-muted)') },
+                        { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
+                        { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : 'var(--text-muted)') },
                         { label: 'Source ID', value: selectedTender.source_id, icon: Tag },
                         { label: 'Location / Region', value: selectedTender.location, icon: MapPin },
                         { label: 'Place', value: selectedTender.place, icon: MapPin },
