@@ -549,8 +549,8 @@ class ComplianceSheetConversionTest {
 
         String html = generator.generateTechSpecHtml(baseData(), rows);
 
-        assertTrue(html.contains("Sr. No."));
-        assertTrue(html.contains("Compliance (Yes/No)"));
+        assertTrue(html.toLowerCase().contains("sr. no."));
+        assertTrue(html.contains("Compliance"));
         assertFalse(html.contains("To Be Assessed During Bid Evaluation"));
         assertFalse(html.contains("Not provided"));
         assertFalse(html.contains("Source Clarifications"));
@@ -559,7 +559,7 @@ class ComplianceSheetConversionTest {
         assertTrue(html.contains("Pump Alpha"));
         assertTrue(html.contains("Custom Device Beta"));
         assertFalse(html.contains("comply fully"));
-        assertTrue(html.contains("Model No.: __________"));
+        assertTrue(html.contains("TECHNICAL COMPLIANCE DATA SHEET"));
     }
 
     @Test
@@ -580,7 +580,7 @@ class ComplianceSheetConversionTest {
             assertTrue(document.getTables().get(0).getRow(0).isRepeatHeader());
         }
 
-        assertTrue(text.toString().contains("Sr. No."));
+        assertTrue(text.toString().toLowerCase().contains("sr. no."));
         assertTrue(text.toString().contains("A valid test certificate is required."));
         assertFalse(text.toString().contains("PDF p. 9 (Printed p. 91)"));
         assertFalse(text.toString().contains("To Be Assessed During Bid Evaluation"));

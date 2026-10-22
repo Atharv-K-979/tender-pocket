@@ -69,11 +69,12 @@ import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
+import ProductCatalogue from '@/app/components/ProductCatalogue';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole, canReviewAssignment } from '@/lib/workflowAuthorization';
 
 
-type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
+type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'catalogue';
 
 interface Toast {
   message: string;
@@ -2237,6 +2238,14 @@ export default function Dashboard() {
           )}
 
           <button 
+            className={`menu-item ${activeTab === 'catalogue' ? 'active' : ''}`}
+            onClick={() => setActiveTab('catalogue')}
+          >
+            <Shield size={18} />
+            <span>Product Catalogue</span>
+          </button>
+
+          <button 
             className={`menu-item ${activeTab === 'analytics' ? 'active' : ''}`}
             onClick={() => setActiveTab('analytics')}
           >
@@ -2336,6 +2345,7 @@ export default function Dashboard() {
               {activeTab === 'team' && 'Team Management'}
               {activeTab === 'work-summary' && 'Work Summary'}
               {activeTab === 'approvals' && 'Approvals Center'}
+              {activeTab === 'catalogue' && 'Product Model Catalogue'}
             </h1>
             <p className="page-subtitle">
               {activeTab === 'dashboard' && 'Real-time overview of active bids, alerts, and deadline schedules.'}
@@ -2347,6 +2357,7 @@ export default function Dashboard() {
               {activeTab === 'team' && 'Create and manage account profiles for MIS Team and MIS Executives.'}
               {activeTab === 'work-summary' && 'Executive workload statistics and active assignment mappings.'}
               {activeTab === 'approvals' && 'Review, approve, and action pending workflow requests from your team.'}
+              {activeTab === 'catalogue' && 'Upload manufacturer datasheets, verify authoritative specifications, and manage product models.'}
             </p>
           </div>
 
@@ -4270,6 +4281,13 @@ export default function Dashboard() {
                 onCountsChange={setPendingApprovalsCount}
                 showToast={showToast}
               />
+            )}
+
+            {/* TAB: PRODUCT CATALOGUE */}
+            {activeTab === 'catalogue' && (
+              <div style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+                <ProductCatalogue currentUser={currentUser} />
+              </div>
             )}
 
             {/* TAB: WORK SUMMARY */}

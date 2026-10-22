@@ -73,6 +73,13 @@ public class TenderController {
     @Autowired
     private com.tenderpocket.services.EmailNotificationService emailNotificationService;
 
+    @Autowired(required = false)
+    private com.tenderpocket.services.ProductCatalogueService productCatalogueService;
+
+    public void setProductCatalogueService(com.tenderpocket.services.ProductCatalogueService productCatalogueService) {
+        this.productCatalogueService = productCatalogueService;
+    }
+
     @Value("${aws.s3.enabled:false}")
     private boolean awsS3Enabled;
 
@@ -1502,6 +1509,15 @@ public class TenderController {
         return ResponseEntity.ok(complianceProgressService.snapshot(id));
     }
 
+    public ResponseEntity<?> uploadTechSpec(
+            String userRole, String username, String id,
+            org.springframework.web.multipart.MultipartFile file,
+            String offeredModel, String offeredModelLegacy, String offeredMake,
+            String scheduleNo, String productDescription) {
+        return uploadTechSpec(userRole, username, id, file, offeredModel, offeredModelLegacy,
+                offeredMake, scheduleNo, productDescription, null, null, null, null);
+    }
+
     @PostMapping("/{id}/upload-tech-spec")
     public ResponseEntity<?> uploadTechSpec(
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
@@ -1512,7 +1528,11 @@ public class TenderController {
             @RequestParam(value = "offered_model", required = false) String offeredModelLegacy,
             @RequestParam(value = "offeredMake", required = false) String offeredMake,
             @RequestParam(value = "scheduleNo", required = false) String scheduleNo,
-            @RequestParam(value = "productDescription", required = false) String productDescription) {
+            @RequestParam(value = "productDescription", required = false) String productDescription,
+            @RequestParam(value = "selected_model_id", required = false) Long selectedModelId,
+            @RequestParam(value = "selectedModelId", required = false) Long selectedModelIdCamel,
+            @RequestParam(value = "schedule_models", required = false) String scheduleModelsJson,
+            @RequestParam(value = "scheduleModels", required = false) String scheduleModelsJsonCamel) {
 
         if (!WorkflowPermissions.allowed(UPLOAD_SPEC)) return WorkflowPermissions.denied();
         userRole = WorkflowPermissions.role();
@@ -1520,6 +1540,10 @@ public class TenderController {
         if (offeredModel == null || offeredModel.trim().isEmpty()) {
             offeredModel = offeredModelLegacy;
         }
+
+        Long effectiveSelectedModelId = selectedModelId != null ? selectedModelId : selectedModelIdCamel;
+        String effectiveScheduleModels = (scheduleModelsJson != null && !scheduleModelsJson.isBlank())
+                ? scheduleModelsJson : scheduleModelsJsonCamel;
 
         Optional<Tender> opt = tenderRepository.findById(id);
         Tender tender;
@@ -1570,6 +1594,12 @@ public class TenderController {
             if (offeredModel != null && !offeredModel.trim().isEmpty()) {
                 tender.setOfferedModel(offeredModel.trim());
             }
+            if (effectiveSelectedModelId != null) {
+                tender.setSelectedModelId(effectiveSelectedModelId);
+            }
+            if (effectiveScheduleModels != null && !effectiveScheduleModels.isBlank()) {
+                tender.setScheduleProductModels(effectiveScheduleModels);
+            }
 
             // 2. Build data map for header & reference details
             Map<String, String> data = new java.util.HashMap<>();
@@ -1600,8 +1630,18 @@ public class TenderController {
             data.put("companyEmail", "info@markenworld.com");
             data.put("companyWebsite", "www.markenworld.com");
             data.put("companyContact", "09175559646 / 090111 04332");
-            data.put("signatoryName", "Korra Praveen Naik");
-            data.put("signatoryDesignation", "Partner");
+            data.put("signatoryName", "Shreedhar Shingare");
+            data.put("signatoryDesignation", "Authorized Signatory (Tender manager)");
+            data.put("signatoryAddress", "Nashik Maharashtra.");
+            if (tender.getAuthority() != null && !tender.getAuthority().trim().isEmpty()) {
+                data.put("recipientName", tender.getAuthority().trim());
+            }
+            if (tender.getLocation() != null && !tender.getLocation().trim().isEmpty()) {
+                data.put("recipientAddress", tender.getLocation().trim());
+            }
+            if (tender.getBidQty() != null && tender.getBidQty() > 0) {
+                data.put("qty", String.format(Locale.ROOT, "%02d", tender.getBidQty()));
+            }
 
             // 3. Parse product compliance clauses from specification.pdf (with OCR fallback & tender context)
             List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(
@@ -1609,6 +1649,13 @@ public class TenderController {
                     (stage, message, percent, completed, total, clauses) ->
                             complianceProgressService.update(id, stage, message, percent,
                                     completed, total, clauses), conversionMetrics);
+
+            // 4. Evidence Matching: Match clauses against verified product specifications from catalogue
+            if (productCatalogueService != null && extractedClauses != null && !extractedClauses.isEmpty() && !AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {
+                complianceProgressService.update(id, "MATCHING_EVIDENCE",
+                        "Matching requirements against verified product specifications.", 79, 0, 0, extractedClauses.size());
+                extractedClauses = productCatalogueService.matchTenderClausesWithEvidence(tender, extractedClauses);
+            }
 
             if (AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {
                 String message = "No products found with applicable compliance requirements.";

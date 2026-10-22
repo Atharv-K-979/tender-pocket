@@ -109,6 +109,11 @@ export default function TenderDetailPage() {
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
 
+  // Offered Product Model Catalogue State (Evidence-based Column 4)
+  const [availableModels, setAvailableModels] = useState<Array<{ id: number; model_number: string; make: string; product_category: string; verified_specs?: number }>>([]);
+  const [selectedModelId, setSelectedModelId] = useState<number | ''>('');
+  const [scheduleModels, setScheduleModels] = useState<Record<string, number>>({});
+
   // Editable Tender Specifications & Parameters State
   const [isEditingSpecs, setIsEditingSpecs] = useState(false);
   const [savingSpecs, setSavingSpecs] = useState(false);
@@ -313,6 +318,7 @@ export default function TenderDetailPage() {
       fetchTenderDetails();
       fetchComments(id);
       fetchMisTeamMembers();
+      fetchOfferedModels(id);
 
       // Poll updates every 1.5 seconds for near-instant live sync
       const syncInterval = setInterval(() => {
@@ -505,6 +511,30 @@ export default function TenderDetailPage() {
       }
     } catch (err) {
       console.error('Error fetching users:', err);
+    }
+  };
+
+  const fetchOfferedModels = async (tenderId: string) => {
+    try {
+      const [modelsRes, tenderModelsRes] = await Promise.all([
+        fetchWithAuth('/api/products/models?status=VERIFIED'),
+        fetchWithAuth(`/api/tenders/${tenderId}/offered-models`)
+      ]);
+      if (modelsRes.ok) {
+        const mData = await modelsRes.json();
+        if (mData.success && Array.isArray(mData.models)) {
+          setAvailableModels(mData.models);
+        }
+      }
+      if (tenderModelsRes.ok) {
+        const tData = await tenderModelsRes.json();
+        if (tData.success && tData.data) {
+          if (tData.data.selected_model_id) setSelectedModelId(tData.data.selected_model_id);
+          if (tData.data.schedule_models) setScheduleModels(tData.data.schedule_models);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch offered models:', e);
     }
   };
 
@@ -944,6 +974,12 @@ export default function TenderDetailPage() {
     try {
       const formData = new FormData();
       formData.append('file', fileToUpload);
+      if (selectedModelId) {
+        formData.append('selected_model_id', String(selectedModelId));
+      }
+      if (scheduleModels && Object.keys(scheduleModels).length > 0) {
+        formData.append('schedule_models', JSON.stringify(scheduleModels));
+      }
       const response = await fetchWithAuth(`/api/tenders/${tenderId}/upload-tech-spec`, {
         method: 'POST', body: formData,
       });
@@ -2312,6 +2348,46 @@ export default function TenderDetailPage() {
                             <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: 0 }}>
                               Upload the tender document or specification file to process and generate the technical specification parameters.
                             </p>
+
+                            {/* Offered Product Model Selection for Evidence Matching */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', padding: '10px', background: 'rgba(249, 115, 22, 0.05)', borderRadius: '8px', border: '1px solid rgba(249, 115, 22, 0.2)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '10.5px', color: '#f97316', fontWeight: '700', textTransform: 'uppercase' }}>
+                                  Offered Product Model (Column 4 Evidence Link)
+                                </label>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                  {availableModels.length} verified models
+                                </span>
+                              </div>
+                              <select
+                                value={selectedModelId}
+                                onChange={async (e) => {
+                                  const val = e.target.value ? Number(e.target.value) : '';
+                                  setSelectedModelId(val);
+                                  try {
+                                    await fetchWithAuth(`/api/tenders/${id}/offered-models`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ selected_model_id: val || null, schedule_models: scheduleModels }),
+                                    });
+                                  } catch (ignored) {}
+                                }}
+                                disabled={uploadingTechSpec}
+                                style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px 8px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                              >
+                                <option value="">-- No Model Selected (Column 4 will remain blank) --</option>
+                                {availableModels.map(m => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.model_number} ({m.make}) — {m.product_category} [{m.verified_specs || 0} verified specs]
+                                  </option>
+                                ))}
+                              </select>
+                              <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)' }}>
+                                {selectedModelId
+                                  ? 'Verified specifications from this model’s manufacturer datasheet will be matched and cited in Column 4.'
+                                  : 'Strict evidence rule: Without an offered model, Column 4 strictly remains empty to avoid fabricating specifications.'}
+                              </span>
+                            </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT)</label>
