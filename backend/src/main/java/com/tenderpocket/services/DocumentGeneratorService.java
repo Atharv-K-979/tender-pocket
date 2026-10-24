@@ -1705,8 +1705,17 @@ public class DocumentGeneratorService {
                 return parsePdfSpecificationClauses(fileBytes, data, progress, metrics);
             }
 
+        int docCount = 1;
+        List<String> knownProducts = Collections.emptyList();
+
         if (fileBytes != null && fileBytes.length > 0) {
-            if (fileName != null && (fileName.toLowerCase().endsWith(".docx") || fileName.toLowerCase().endsWith(".doc"))) {
+            String lower = fileName != null ? fileName.toLowerCase(Locale.ROOT) : "";
+            if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+                ExcelExtractionResult excelResult = extractExcelText(fileBytes, fileName, data);
+                text = excelResult.text();
+                docCount = Math.max(1, excelResult.sheetCount());
+                knownProducts = excelResult.productNames();
+            } else if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
                 try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(fileBytes);
                      org.apache.poi.xwpf.usermodel.XWPFDocument docx = new org.apache.poi.xwpf.usermodel.XWPFDocument(bais)) {
                     StringBuilder sb = new StringBuilder();
@@ -1725,30 +1734,36 @@ public class DocumentGeneratorService {
                 } catch (Exception e) {
                     System.err.println("[DocumentGeneratorService] DOCX parsing exception: " + e.getMessage());
                 }
+            } else if (lower.endsWith(".txt")) {
+                if (fileBytes.length >= 8 && ((fileBytes[0] == 0x50 && fileBytes[1] == 0x4B && fileBytes[2] == 0x03 && fileBytes[3] == 0x04)
+                        || ((fileBytes[0] & 0xFF) == 0xD0 && (fileBytes[1] & 0xFF) == 0xCF && (fileBytes[2] & 0xFF) == 0x11 && (fileBytes[3] & 0xFF) == 0xE0))) {
+                    throw new IllegalArgumentException("The file appears to be an Excel workbook renamed with a .txt extension. Please upload it as an .xlsx or .xls file.");
+                }
+                text = new String(fileBytes, java.nio.charset.StandardCharsets.UTF_8);
             }
         }
 
-        // DOCX has already been parsed locally; it is not a PDF input_file.
+        // DOCX, TXT, or Excel has already been parsed locally; it is not a PDF input_file.
         byte[] imageBytesToPass = null;
 
         if (aiSpecificationIntelligenceService == null) {
             aiSpecificationIntelligenceService = new AISpecificationIntelligenceService();
         }
 
-            if (metrics != null) metrics.setDocumentCounts(0, 1);
+            if (metrics != null) metrics.setDocumentCounts(0, docCount);
             progress.onProgress("EXTRACTING", "Sending document to the configured AI provider for requirement extraction.",
-                    20, 0, 1, 0);
+                    20, 0, docCount, 0);
             System.out.println("[DocumentGeneratorService] Executing AI extraction on document (" + (imageBytesToPass != null ? imageBytesToPass.length : 0) + " bytes)...");
             List<String[]> clauses = runAiExtraction(text, imageBytesToPass, data,
-                    Collections.emptyList(), progress, metrics);
+                    knownProducts, progress, metrics);
             if (AISpecificationIntelligenceService.isCompletedEmpty(clauses)) return clauses;
             if (clauses != null && !clauses.isEmpty()) {
                 if (metrics != null) metrics.setResultCounts(0, clauses.size());
                 progress.onProgress("VALIDATING", "Validated " + clauses.size() + " extracted requirements.",
-                        78, 1, 1, clauses.size());
+                        78, docCount, docCount, clauses.size());
                 return SpecificationProductLabels.normalize(clauses);
             }
-            List<String[]> fallback = extractLocalSpecificationClauses(text, data, Collections.emptyList());
+            List<String[]> fallback = extractLocalSpecificationClauses(text, data, knownProducts);
             if (fallback != null && !fallback.isEmpty()) {
                 return SpecificationProductLabels.normalize(fallback);
             }
@@ -2062,19 +2077,35 @@ public class DocumentGeneratorService {
     private List<String[]> extractLocalSpecificationClauses(String text, Map<String, String> data, List<String> knownProducts) {
         if (text == null || text.isBlank()) return Collections.emptyList();
         List<String[]> rows = new ArrayList<>();
-        String productName = (data != null && data.get("productName") != null && !data.get("productName").isBlank())
+        String defaultProductName = (data != null && data.get("productName") != null && !data.get("productName").isBlank())
                 ? data.get("productName") : "Technical Specification Item";
         if (knownProducts != null && !knownProducts.isEmpty()) {
-            productName = knownProducts.get(0);
+            defaultProductName = knownProducts.get(0);
         }
+        String currentProductName = defaultProductName;
         String[] lines = text.split("\\R");
         int count = 0;
+        int scheduleNumber = 1;
         for (String line : lines) {
             String trimmed = line.trim();
+            if (trimmed.startsWith("[SOURCE_PRODUCT name=\"") && trimmed.endsWith("\"]")) {
+                String parsed = trimmed.substring("[SOURCE_PRODUCT name=\"".length(), trimmed.length() - 2).trim();
+                if (!parsed.isBlank()) {
+                    if (!currentProductName.equals(defaultProductName) || count > 0) {
+                        scheduleNumber++;
+                    }
+                    currentProductName = parsed;
+                    count = 0;
+                }
+                continue;
+            }
+            if (trimmed.startsWith("--- Worksheet:") && trimmed.endsWith("---")) {
+                continue;
+            }
             if (trimmed.isBlank() || trimmed.startsWith("[SOURCE_") || trimmed.startsWith("Page ") || trimmed.startsWith("[PRODUCT_") || trimmed.startsWith("[/")) {
                 continue;
             }
-            if (trimmed.length() < 5) continue;
+            if (trimmed.length() < 3) continue;
             count++;
             String ref = String.valueOf(count);
             String req = trimmed;
@@ -2084,17 +2115,274 @@ public class DocumentGeneratorService {
                 "Technical Compliance Sheet",    // 2: requiredEvidence
                 "Complied",                      // 3: reviewerRemarks
                 "1",                             // 4: sectionReference
-                productName,                     // 5: productCategory
+                currentProductName,              // 5: productCategory
                 "Page 1",                        // 6: sourceReference
-                "1",                             // 7: scheduleReference
+                String.valueOf(scheduleNumber),  // 7: scheduleReference
                 "requirement",                   // 8: rowType
                 "Technical Parameters",          // 9: sectionTitle
-                ""                               // 10: extra
+                "",                              // 10: extra
+                String.valueOf(scheduleNumber)   // 11: scheduleNo
             };
             rows.add(row);
-            if (rows.size() >= 100) break;
+            if (rows.size() >= 500) break;
         }
         return rows;
+    }
+
+    record ExcelExtractionResult(String text, int sheetCount, List<String> productNames) {}
+
+    static final int MAX_EXCEL_SHEETS = 50;
+    static final int MAX_EXCEL_ROWS_PER_SHEET = 10000;
+    static final int MAX_EXCEL_TOTAL_CELLS = 100000;
+
+    static ExcelExtractionResult extractExcelText(byte[] fileBytes, String fileName, Map<String, String> data) {
+        if (fileBytes == null || fileBytes.length == 0) {
+            throw new IllegalArgumentException("Uploaded file is empty");
+        }
+        String lowerName = fileName != null ? fileName.toLowerCase(Locale.ROOT) : "";
+        boolean isXlsx = lowerName.endsWith(".xlsx");
+        boolean isXls = lowerName.endsWith(".xls");
+        if (!isXlsx && !isXls) {
+            throw new IllegalArgumentException("Unsupported file format. Expected an .xlsx or .xls file.");
+        }
+
+        validateExcelMagicBytes(fileBytes, isXlsx);
+
+        try {
+            org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(0.01);
+        } catch (Throwable ignored) {}
+
+        try (java.io.InputStream is = new java.io.ByteArrayInputStream(fileBytes);
+             org.apache.poi.ss.usermodel.Workbook workbook = org.apache.poi.ss.usermodel.WorkbookFactory.create(is)) {
+            int sheetCount = workbook.getNumberOfSheets();
+            if (sheetCount == 0) {
+                throw new IllegalArgumentException("The uploaded Excel workbook contains no usable data.");
+            }
+            if (sheetCount > MAX_EXCEL_SHEETS) {
+                throw new IllegalArgumentException(
+                        "Excel workbook contains too many worksheets (" + sheetCount + "; maximum allowed is " + MAX_EXCEL_SHEETS + ").");
+            }
+
+            String defaultProductName = (data != null && data.get("productName") != null && !data.get("productName").isBlank())
+                    ? data.get("productName").trim() : "Technical Specification Item";
+
+            Map<String, List<String>> sheetRowsMap = new LinkedHashMap<>();
+            int totalCellsRead = 0;
+            int totalUsefulRows = 0;
+
+            for (int s = 0; s < sheetCount; s++) {
+                org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(s);
+                String rawSheetName = sheet.getSheetName() != null ? sheet.getSheetName().trim() : ("Sheet" + (s + 1));
+                List<String> validSheetRows = new ArrayList<>();
+
+                int lastRow = sheet.getLastRowNum();
+                int rowsInSheet = 0;
+
+                for (int r = sheet.getFirstRowNum(); r <= lastRow; r++) {
+                    org.apache.poi.ss.usermodel.Row row = sheet.getRow(r);
+                    if (row == null) continue;
+
+                    rowsInSheet++;
+                    if (rowsInSheet > MAX_EXCEL_ROWS_PER_SHEET) {
+                        throw new IllegalArgumentException(
+                                "Worksheet '" + rawSheetName + "' exceeds maximum allowable row limit of " + MAX_EXCEL_ROWS_PER_SHEET + " rows.");
+                    }
+
+                    List<String> cellValues = new ArrayList<>();
+                    short firstCol = row.getFirstCellNum();
+                    short lastCol = row.getLastCellNum();
+                    if (firstCol < 0 || lastCol < 0) continue;
+
+                    for (int c = firstCol; c < lastCol; c++) {
+                        totalCellsRead++;
+                        if (totalCellsRead > MAX_EXCEL_TOTAL_CELLS) {
+                            throw new IllegalArgumentException(
+                                    "Excel workbook exceeds maximum allowable cell limit of " + MAX_EXCEL_TOTAL_CELLS + " cells.");
+                        }
+
+                        org.apache.poi.ss.usermodel.Cell cell = row.getCell(c, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+                        if (cell == null) continue;
+
+                        String val = formatCellValue(cell);
+                        if (!val.isBlank()) {
+                            cellValues.add(val.trim());
+                        }
+                    }
+
+                    if (cellValues.isEmpty()) continue; // Skip blank row
+
+                    String formattedRow = formatExcelRowValues(cellValues);
+                    if (formattedRow != null && formattedRow.length() >= 3) {
+                        validSheetRows.add(formattedRow);
+                    }
+                }
+
+                if (!validSheetRows.isEmpty()) {
+                    sheetRowsMap.put(rawSheetName, validSheetRows);
+                    totalUsefulRows += validSheetRows.size();
+                }
+            }
+
+            if (totalUsefulRows == 0 || sheetRowsMap.isEmpty()) {
+                throw new IllegalArgumentException("The uploaded Excel workbook contains no usable data.");
+            }
+
+            StringBuilder textBuilder = new StringBuilder();
+            List<String> productNames = new ArrayList<>();
+            int usableSheetCount = sheetRowsMap.size();
+
+            for (Map.Entry<String, List<String>> entry : sheetRowsMap.entrySet()) {
+                String sheetName = entry.getKey();
+                List<String> rows = entry.getValue();
+
+                String effectiveProductName;
+                if (usableSheetCount == 1 && isGenericExcelSheetName(sheetName)) {
+                    effectiveProductName = defaultProductName;
+                } else if (!sheetName.isBlank() && !isGenericExcelSheetName(sheetName)) {
+                    effectiveProductName = sheetName;
+                } else {
+                    effectiveProductName = (usableSheetCount > 1)
+                            ? (defaultProductName + " - " + sheetName)
+                            : defaultProductName;
+                }
+
+                productNames.add(effectiveProductName);
+
+                textBuilder.append("[SOURCE_PRODUCT name=\"").append(effectiveProductName).append("\"]\n");
+                textBuilder.append("--- Worksheet: ").append(sheetName).append(" ---\n");
+
+                for (String rowText : rows) {
+                    textBuilder.append(rowText).append("\n");
+                }
+                textBuilder.append("\n");
+            }
+
+            return new ExcelExtractionResult(textBuilder.toString(), usableSheetCount, productNames);
+        } catch (org.apache.poi.EncryptedDocumentException e) {
+            throw new IllegalArgumentException(
+                    "Password-protected Excel workbooks are not supported. Please remove the password protection and try again.", e);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            if (msg.contains("encrypted") || msg.contains("password") || msg.contains("Protected")) {
+                throw new IllegalArgumentException(
+                        "Password-protected Excel workbooks are not supported. Please remove the password protection and try again.", e);
+            }
+            if (msg.contains("NotOLE2FileException") || msg.contains("OLE2NotOfficeXmlException")
+                    || msg.contains("OfficeXmlFileException") || msg.contains("InvalidFormatException")) {
+                throw new IllegalArgumentException(
+                        "The uploaded file is not a valid Excel workbook. Please verify the file is a genuine .xlsx or .xls file.", e);
+            }
+            throw new IllegalArgumentException("The Excel workbook appears to be corrupt or unreadable: " + msg, e);
+        }
+    }
+
+    static String formatCellValue(org.apache.poi.ss.usermodel.Cell cell) {
+        if (cell == null) return "";
+        org.apache.poi.ss.usermodel.CellType type = cell.getCellType();
+        if (type == org.apache.poi.ss.usermodel.CellType.FORMULA) {
+            try {
+                type = cell.getCachedFormulaResultType();
+            } catch (Exception e) {
+                try {
+                    return cell.getCellFormula() != null ? cell.getCellFormula().trim() : "";
+                } catch (Exception ignored) {
+                    return "";
+                }
+            }
+        }
+        if (type == null) return "";
+        switch (type) {
+            case STRING:
+                try {
+                    String str = cell.getStringCellValue();
+                    return str != null ? str.trim() : "";
+                } catch (Exception e) {
+                    return "";
+                }
+            case NUMERIC:
+                try {
+                    if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                        java.util.Date date = cell.getDateCellValue();
+                        if (date != null) {
+                            return new java.text.SimpleDateFormat("yyyy-MM-dd").format(date);
+                        }
+                    }
+                } catch (Exception ignored) {}
+                try {
+                    double num = cell.getNumericCellValue();
+                    if (Double.isNaN(num) || Double.isInfinite(num)) return "";
+                    if (num == Math.floor(num) && num >= Long.MIN_VALUE && num <= Long.MAX_VALUE) {
+                        return Long.toString((long) num);
+                    }
+                    return java.math.BigDecimal.valueOf(num).stripTrailingZeros().toPlainString();
+                } catch (Exception e) {
+                    return "";
+                }
+            case BOOLEAN:
+                try {
+                    return Boolean.toString(cell.getBooleanCellValue());
+                } catch (Exception e) {
+                    return "";
+                }
+            case BLANK:
+            case ERROR:
+            default:
+                return "";
+        }
+    }
+
+    static String formatExcelRowValues(List<String> values) {
+        if (values.isEmpty()) return null;
+        if (values.size() == 1) return values.get(0);
+
+        String first = values.get(0);
+        boolean firstIsIndex = first.matches("^(?:[0-9]+(?:\\.[0-9]+)*[.)]?|[A-Za-z][.)])$");
+
+        if (firstIsIndex) {
+            List<String> remaining = values.subList(1, values.size());
+            if (remaining.isEmpty()) return first;
+            if (remaining.size() == 1) return remaining.get(0);
+            if (remaining.size() == 2) {
+                return remaining.get(0) + ": " + remaining.get(1);
+            }
+            return remaining.get(0) + ": " + String.join(" - ", remaining.subList(1, remaining.size()));
+        }
+
+        if (values.size() == 2) {
+            return values.get(0) + ": " + values.get(1);
+        }
+
+        return values.get(0) + ": " + String.join(" - ", values.subList(1, values.size()));
+    }
+
+    static boolean isGenericExcelSheetName(String sheetName) {
+        if (sheetName == null || sheetName.isBlank()) return true;
+        return sheetName.trim().matches("(?i)^Sheet\\s*\\d*$");
+    }
+
+    static void validateExcelMagicBytes(byte[] fileBytes, boolean isXlsx) {
+        if (fileBytes.length < 8) {
+            throw new IllegalArgumentException(
+                    "The uploaded file is not a valid Excel workbook. Please verify the file is a genuine .xlsx or .xls file.");
+        }
+        if (isXlsx) {
+            boolean isZip = fileBytes[0] == 0x50 && fileBytes[1] == 0x4B && fileBytes[2] == 0x03 && fileBytes[3] == 0x04;
+            boolean isOle2 = (fileBytes[0] & 0xFF) == 0xD0 && (fileBytes[1] & 0xFF) == 0xCF
+                    && (fileBytes[2] & 0xFF) == 0x11 && (fileBytes[3] & 0xFF) == 0xE0;
+            if (!isZip && !isOle2) {
+                throw new IllegalArgumentException(
+                        "The uploaded file is not a valid Excel workbook. Please verify the file is a genuine .xlsx or .xls file.");
+            }
+        } else {
+            boolean isOle2 = (fileBytes[0] & 0xFF) == 0xD0 && (fileBytes[1] & 0xFF) == 0xCF
+                    && (fileBytes[2] & 0xFF) == 0x11 && (fileBytes[3] & 0xFF) == 0xE0;
+            if (!isOle2) {
+                throw new IllegalArgumentException(
+                        "The uploaded file is not a valid Excel workbook. Please verify the file is a genuine .xlsx or .xls file.");
+            }
+        }
     }
 
     static String imageTranscriptionContext(String sourceContext, List<String> missingFields) {

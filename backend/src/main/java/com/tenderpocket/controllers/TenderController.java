@@ -129,8 +129,10 @@ public class TenderController {
     private String resolveContentTypeByExtension(String fileName) {
         String lower = fileName.toLowerCase();
         if (lower.endsWith(".pdf")) return "application/pdf";
-        if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (lower.endsWith(".docx") || lower.endsWith(".doc")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
+        if (lower.endsWith(".txt")) return "text/plain";
         if (lower.endsWith(".zip")) return "application/zip";
         return "application/octet-stream";
     }
@@ -1541,17 +1543,80 @@ public class TenderController {
         if (file.isEmpty()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "Uploaded file is empty"));
         }
+        if (file.getSize() > 50 * 1024 * 1024) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "File exceeds the maximum allowed size of 50MB."));
+        }
 
-        complianceProgressService.start(id,
-                file.getOriginalFilename() != null ? file.getOriginalFilename() : "document");
+        String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "specification.pdf";
+        String lowerFilename = originalFilename.toLowerCase(Locale.ROOT);
+        String ext = "";
+        int dotIdx = lowerFilename.lastIndexOf('.');
+        if (dotIdx >= 0) {
+            ext = lowerFilename.substring(dotIdx);
+        }
+        if (!Set.of(".pdf", ".docx", ".doc", ".txt", ".xlsx", ".xls").contains(ext)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "success", false,
+                    "error", "Unsupported file format: " + (ext.isEmpty() ? "unknown" : ext) + ". Supported formats are PDF, DOCX, TXT, XLSX, and XLS."
+            ));
+        }
+
+        byte[] uploadedBytes;
+        try {
+            uploadedBytes = file.getBytes();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "Could not read uploaded file: " + e.getMessage()));
+        }
+
+        if (uploadedBytes == null || uploadedBytes.length == 0) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "Uploaded file is empty"));
+        }
+        if (uploadedBytes.length > 50 * 1024 * 1024) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "File exceeds the maximum allowed size of 50MB."));
+        }
+
+        // Validate actual file formats / magic bytes where practical
+        if (ext.equals(".xlsx")) {
+            boolean isZip = uploadedBytes.length >= 4 && uploadedBytes[0] == 0x50 && uploadedBytes[1] == 0x4B && uploadedBytes[2] == 0x03 && uploadedBytes[3] == 0x04;
+            boolean isOle2 = uploadedBytes.length >= 8 && (uploadedBytes[0] & 0xFF) == 0xD0 && (uploadedBytes[1] & 0xFF) == 0xCF
+                    && (uploadedBytes[2] & 0xFF) == 0x11 && (uploadedBytes[3] & 0xFF) == 0xE0;
+            if (!isZip && !isOle2) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "The uploaded file is not a valid Excel workbook. Please verify the file is a genuine .xlsx or .xls file."
+                ));
+            }
+        } else if (ext.equals(".xls")) {
+            boolean isOle2 = uploadedBytes.length >= 8 && (uploadedBytes[0] & 0xFF) == 0xD0 && (uploadedBytes[1] & 0xFF) == 0xCF
+                    && (uploadedBytes[2] & 0xFF) == 0x11 && (uploadedBytes[3] & 0xFF) == 0xE0;
+            if (!isOle2) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "The uploaded file is not a valid Excel workbook. Please verify the file is a genuine .xlsx or .xls file."
+                ));
+            }
+        } else if (ext.equals(".txt")) {
+            if (uploadedBytes.length >= 4 && uploadedBytes[0] == 0x50 && uploadedBytes[1] == 0x4B && uploadedBytes[2] == 0x03 && uploadedBytes[3] == 0x04) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "The file appears to be an Excel workbook renamed with a .txt extension. Please upload it as an .xlsx or .xls file."
+                ));
+            }
+            if (uploadedBytes.length >= 8 && (uploadedBytes[0] & 0xFF) == 0xD0 && (uploadedBytes[1] & 0xFF) == 0xCF
+                    && (uploadedBytes[2] & 0xFF) == 0x11 && (uploadedBytes[3] & 0xFF) == 0xE0) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "The file appears to be an Excel workbook renamed with a .txt extension. Please upload it as an .xlsx or .xls file."
+                ));
+            }
+        }
+
+        complianceProgressService.start(id, originalFilename);
         ComplianceConversionMetrics conversionMetrics = complianceProgressService.metricsFor(id);
 
         try {
             Path docDir = Paths.get(uploadDir, id);
             Files.createDirectories(docDir);
-
-            byte[] uploadedBytes = file.getBytes();
-            String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "specification.pdf";
 
             System.out.println("================================================================================");
             System.out.println("⚡ [TECH SPEC LOG] Upload Received for Tender ID: " + id);
@@ -1560,9 +1625,10 @@ public class TenderController {
             System.out.println("================================================================================");
             System.out.flush();
 
-            // 1. Save uploaded input file as specification.pdf
-            String inputDownloadUrl = "/documents/" + id + "/specification.pdf";
-            persistDocument(id, "specification.pdf", uploadedBytes, "application/pdf");
+            String savedFilename = "specification" + (ext.isEmpty() ? ".pdf" : ext);
+            String inputContentType = resolveContentTypeByExtension(savedFilename);
+            String inputDownloadUrl = "/documents/" + id + "/" + savedFilename;
+            persistDocument(id, savedFilename, uploadedBytes, inputContentType);
             complianceProgressService.update(id, "UPLOADED",
                     "Upload saved. Inspecting " + originalFilename + ".", 3, 0, 0, 0);
 
@@ -1613,7 +1679,7 @@ public class TenderController {
             if (AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {
                 String message = "No products found with applicable compliance requirements.";
                 tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(),
-                        List.of(Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf",
+                        List.of(Map.of("name", "Uploaded Input (" + originalFilename + ")", "filename", savedFilename,
                                 "local_path", inputDownloadUrl, "created_date", LocalDate.now().toString()))));
                 tenderRepository.save(tender);
                 complianceProgressService.completeNoProducts(id, message);
@@ -1647,7 +1713,7 @@ public class TenderController {
 
             String createdDate = LocalDate.now().toString();
             List<Map<String, String>> newDocs = new ArrayList<>();
-            newDocs.add(Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf",
+            newDocs.add(Map.of("name", "Uploaded Input (" + originalFilename + ")", "filename", savedFilename,
                     "local_path", inputDownloadUrl, "created_date", createdDate));
             List<com.tenderpocket.services.SpecificationSheetContent.Product> sheets =
                     com.tenderpocket.services.SpecificationSheetContent.fromSourceRequirements(extractedClauses).stream()
@@ -1708,7 +1774,7 @@ public class TenderController {
             ActivityLog log = new ActivityLog(
                     username, userRole, "Uploaded Technical Specification & Generated Documents", id,
                     new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
-                    "Uploaded specification.pdf and generated Technical Specification Sheet PDF, DOCX & XLSX outputs with " + extractedClauses.size() + " extracted clauses."
+                    "Uploaded " + originalFilename + " and generated Technical Specification Sheet PDF, DOCX & XLSX outputs with " + extractedClauses.size() + " extracted clauses."
             );
             activityLogRepository.save(log);
 
@@ -1729,13 +1795,20 @@ public class TenderController {
 
             return ResponseEntity.ok(response);
 
+        } catch (IllegalArgumentException e) {
+            complianceProgressService.fail(id, e.getMessage());
+            Map<String, Object> failure = new LinkedHashMap<>();
+            failure.put("success", false);
+            failure.put("error", e.getMessage());
+            failure.put("metrics", conversionMetrics != null ? conversionMetrics.snapshot() : Map.of());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(failure);
         } catch (Exception e) {
             e.printStackTrace();
             complianceProgressService.fail(id, "Compliance creation failed: " + e.getMessage());
             Map<String, Object> failure = new LinkedHashMap<>();
             failure.put("success", false);
             failure.put("error", "Failed to upload technical specification: " + e.getMessage());
-            failure.put("metrics", conversionMetrics.snapshot());
+            failure.put("metrics", conversionMetrics != null ? conversionMetrics.snapshot() : Map.of());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(failure);
         }
     }
