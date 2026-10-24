@@ -877,6 +877,23 @@ public class TenderController {
             }
         }
 
+        // 8. Participation decision validation: Participating requires an assigned executive
+        if (body.containsKey("status") && "Participating".equalsIgnoreCase(String.valueOf(body.get("status")))) {
+            String targetExec = null;
+            if (body.containsKey("mis_executive")) {
+                Object rawExec = body.get("mis_executive");
+                if (rawExec != null && !rawExec.toString().trim().isEmpty()) {
+                    targetExec = rawExec.toString().trim();
+                }
+            } else if (tender.getMisExecutive() != null && !tender.getMisExecutive().trim().isEmpty()) {
+                targetExec = tender.getMisExecutive().trim();
+            }
+
+            if (targetExec == null) {
+                fieldErrors.put("mis_executive", "Executive assignment is required to participate in this tender.");
+            }
+        }
+
         // If any validation errors exist, REJECT IMMEDIATELY without updating tender
         if (!fieldErrors.isEmpty()) {
             Map<String, Object> errResp = new LinkedHashMap<>();
@@ -894,7 +911,12 @@ public class TenderController {
             tender.setStatus(newStatus);
             logDetails.add("status changed from '" + oldStatus + "' to '" + newStatus + "'");
 
-            if ("Awarded".equalsIgnoreCase(newStatus) || "Won".equalsIgnoreCase(newStatus)) {
+            if ("Participating".equalsIgnoreCase(newStatus)) {
+                if (tender.getCurrentStage() == null || "NEW".equalsIgnoreCase(tender.getCurrentStage()) || "INTAKE".equalsIgnoreCase(tender.getCurrentStage())) {
+                    tender.setCurrentStage("SPEC_CLEARANCE");
+                    logDetails.add("workflow stage auto-advanced to 'SPEC_CLEARANCE'");
+                }
+            } else if ("Awarded".equalsIgnoreCase(newStatus) || "Won".equalsIgnoreCase(newStatus)) {
                 tender.setCurrentStage("WON");
                 tender.setOutcomeStatus("Won");
                 List<TenderApprovalRequest> pending = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.WIN_LOSS_PENDING);
@@ -1106,20 +1128,27 @@ public class TenderController {
         }
 
         if (body.containsKey("mis_executive")) {
-            String newExec = (String) body.get("mis_executive");
-            String currentStatus = tender.getStatus();
-            tender.setMisExecutive(newExec);
-            tender.setAssignedBy(newExec != null && !newExec.trim().isEmpty() ? username : null);
-            tender.setAssignedAt(newExec != null && !newExec.trim().isEmpty() ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) : null);
+            String requestedStatus = body.containsKey("status") ? String.valueOf(body.get("status")) : tender.getStatus();
+            boolean isMarkingNotParticipating = "Not Participating".equalsIgnoreCase(requestedStatus);
+            if (!isMarkingNotParticipating) {
+                String newExec = (String) body.get("mis_executive");
+                String currentStatus = tender.getStatus();
+                tender.setMisExecutive(newExec);
+                tender.setAssignedBy(newExec != null && !newExec.trim().isEmpty() ? username : null);
+                tender.setAssignedAt(newExec != null && !newExec.trim().isEmpty() ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) : null);
 
-            // Auto-participate if currently New, Issued, or Lapsed
-            if (newExec != null && !newExec.trim().isEmpty()) {
-                if (currentStatus == null || "Issued".equalsIgnoreCase(currentStatus) || "New".equalsIgnoreCase(currentStatus) || "Lapsed".equalsIgnoreCase(currentStatus) || "Lapsed (Unreviewed)".equalsIgnoreCase(currentStatus)) {
-                    tender.setStatus("Participating");
-                    logDetails.add("status auto-changed to 'Participating' on executive assignment");
+                // Auto-participate if currently New, Issued, or Lapsed
+                if (newExec != null && !newExec.trim().isEmpty()) {
+                    if (currentStatus == null || "Issued".equalsIgnoreCase(currentStatus) || "New".equalsIgnoreCase(currentStatus) || "Lapsed".equalsIgnoreCase(currentStatus) || "Lapsed (Unreviewed)".equalsIgnoreCase(currentStatus)) {
+                        tender.setStatus("Participating");
+                        if (tender.getCurrentStage() == null || "NEW".equalsIgnoreCase(tender.getCurrentStage()) || "INTAKE".equalsIgnoreCase(tender.getCurrentStage())) {
+                            tender.setCurrentStage("SPEC_CLEARANCE");
+                        }
+                        logDetails.add("status auto-changed to 'Participating' on executive assignment");
+                    }
                 }
+                logDetails.add(newExec != null && !newExec.trim().isEmpty() ? "assigned to executive '" + newExec + "'" : "unassigned executive");
             }
-            logDetails.add(newExec != null && !newExec.trim().isEmpty() ? "assigned to executive '" + newExec + "'" : "unassigned executive");
         }
 
         if (body.containsKey("working_path") || body.containsKey("workingPath")) {

@@ -108,6 +108,7 @@ export default function TenderDetailPage() {
   const [submittingMisPrice, setSubmittingMisPrice] = useState(false);
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
+  const [isParticipatingSubmitting, setIsParticipatingSubmitting] = useState(false);
 
   // Editable Tender Specifications & Parameters State
   const [isEditingSpecs, setIsEditingSpecs] = useState(false);
@@ -1036,20 +1037,8 @@ export default function TenderDetailPage() {
     try {
       setNotesSaving(true);
       const updatedFields: any = {
-        notes: tenderNotes,
-        mis_executive: misExecutive || null,
-        bid_qty: bidQty === '' ? null : Number(bidQty),
-        quoted_qty: quotedQty === '' ? null : Number(quotedQty)
+        notes: tenderNotes
       };
-
-      // If assignment has changed, set assigned_by and assigned_at
-      if (misExecutive !== selectedTender.mis_executive) {
-        updatedFields.assigned_by = misExecutive ? currentUser?.username : null;
-        updatedFields.assigned_at = misExecutive ? new Date().toISOString() : null;
-        if (misExecutive && (selectedTender.status === 'New' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Issued')) {
-          updatedFields.status = 'Participating';
-        }
-      }
 
       const response = await fetchWithAuth(`/api/tenders/${id}`, {
         method: 'PATCH',
@@ -1058,16 +1047,110 @@ export default function TenderDetailPage() {
       });
       const data = await response.json();
       if (data.success) {
-        showToast('Changes saved successfully', 'success');
+        showToast('Notes saved successfully', 'success');
         setSelectedTender(prev => prev ? { ...prev, ...updatedFields } : null);
         fetchTenderDetails();
       } else {
-        showToast(data.error || 'Failed to save changes', 'error');
+        showToast(data.error || 'Failed to save notes', 'error');
       }
     } catch (e) {
-      showToast('Communication error saving changes', 'error');
+      showToast('Communication error saving notes', 'error');
     } finally {
       setNotesSaving(false);
+    }
+  };
+
+  const handleAssignAndParticipate = async () => {
+    if (!id || !selectedTender || isParticipatingSubmitting) return;
+
+    // 1. Validate that an eligible executive has been selected
+    const trimmedExec = (misExecutive || '').trim();
+    if (!trimmedExec) {
+      showToast('Please select an executive to assign.', 'error');
+      return;
+    }
+    if (executivesList.length > 0 && !executivesList.includes(trimmedExec)) {
+      showToast('Selected executive is not in the eligible executives list.', 'error');
+      return;
+    }
+
+    // 2. Validate Bid Quantity
+    const bidQtyErr = validateSpecQuantity(bidQty);
+    if (bidQtyErr) {
+      showToast(`Bid Quantity: ${bidQtyErr}`, 'error');
+      return;
+    }
+
+    // 3. Validate Quoted Quantity
+    const quotedQtyErr = validateSpecQuantity(quotedQty);
+    if (quotedQtyErr) {
+      showToast(`Quoted Quantity: ${quotedQtyErr}`, 'error');
+      return;
+    }
+
+    try {
+      setIsParticipatingSubmitting(true);
+      const updatedFields: any = {
+        status: 'Participating',
+        mis_executive: trimmedExec,
+        bid_qty: bidQty === '' || bidQty === null ? null : Number(bidQty),
+        quoted_qty: quotedQty === '' || quotedQty === null ? null : Number(quotedQty),
+        assigned_by: currentUser?.username || 'MIS Team',
+        assigned_at: new Date().toISOString()
+      };
+
+      const response = await fetchWithAuth(`/api/tenders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        showToast('Tender assigned and marked as Participating!', 'success');
+        setSelectedTender(prev => prev ? { 
+          ...prev, 
+          ...updatedFields,
+          current_stage: prev.current_stage === 'NEW' || !prev.current_stage ? 'SPEC_CLEARANCE' : prev.current_stage 
+        } : null);
+        await fetchTenderDetails();
+      } else {
+        showToast(data.error || 'Failed to assign and participate.', 'error');
+      }
+    } catch (e) {
+      showToast('Communication error while updating participation.', 'error');
+    } finally {
+      setIsParticipatingSubmitting(false);
+    }
+  };
+
+  const handleNotParticipating = async () => {
+    if (!id || !selectedTender || isParticipatingSubmitting) return;
+
+    try {
+      setIsParticipatingSubmitting(true);
+      const updatedFields = {
+        status: 'Not Participating'
+      };
+
+      const response = await fetchWithAuth(`/api/tenders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        showToast('Tender marked as Not Participating.', 'success');
+        setSelectedTender(prev => prev ? { ...prev, status: 'Not Participating' } : null);
+        await fetchTenderDetails();
+      } else {
+        showToast(data.error || 'Failed to update status.', 'error');
+      }
+    } catch (e) {
+      showToast('Communication error while updating status.', 'error');
+    } finally {
+      setIsParticipatingSubmitting(false);
     }
   };
 
@@ -1252,50 +1335,25 @@ export default function TenderDetailPage() {
                 {/* Right Column: Assignment & Notes */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   
-                  {/* Executive & Quantity Assignment */}
-                  <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>Executive & Quantities Assignment</h3>
-                      {(currentUser?.role === 'MIS Team') && (
-                        <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }} onClick={saveNotes} disabled={notesSaving}>
-                          {notesSaving ? 'Saving...' : 'Save Assignment'}
-                        </button>
-                      )}
-                    </div>
+                  {/* Executive & Quantity Assignment - Viewable only for non-MIS roles; for MIS Team, assignment is unified in the Participation Decision Pending section */}
+                  {!isMisRole && (
+                    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>Executive & Quantities Assignment</h3>
+                      </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                            MIS Executive
-                          </label>
-                          {selectedTender.mis_executive && selectedTender.assigned_by && (
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                              Assigned by {selectedTender.assigned_by} {selectedTender.assigned_at ? `on ${new Date(selectedTender.assigned_at).toLocaleDateString()}` : ''}
-                            </span>
-                          )}
-                        </div>
-                        {currentUser?.role === 'MIS Team' ? (
-                          <select
-                            value={misExecutive}
-                            onChange={(e) => setMisExecutive(e.target.value)}
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-color)',
-                              background: 'var(--bg-app)',
-                              color: 'var(--text-primary)',
-                              fontSize: '13px',
-                              outline: 'none',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <option value="">-- Unassigned --</option>
-                            {executivesList.map(exec => (
-                              <option key={exec} value={exec}>{exec}</option>
-                            ))}
-                          </select>
-                        ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              MIS Executive
+                            </label>
+                            {selectedTender.mis_executive && selectedTender.assigned_by && (
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                Assigned by {selectedTender.assigned_by} {selectedTender.assigned_at ? `on ${new Date(selectedTender.assigned_at).toLocaleDateString()}` : ''}
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="text"
                             disabled
@@ -1310,57 +1368,55 @@ export default function TenderDetailPage() {
                               cursor: 'not-allowed'
                             }}
                           />
-                        )}
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                            Bid Quantity
-                          </label>
-                          <input
-                            id="bid-qty-input"
-                            type="number"
-                            placeholder="Bid Qty"
-                            value={bidQty}
-                            disabled={currentUser?.role !== 'MIS Team'}
-                            onChange={(e) => setBidQty(e.target.value === '' ? '' : Number(e.target.value))}
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-color)',
-                              background: 'var(--bg-app)',
-                              color: 'var(--text-primary)',
-                              fontSize: '13px',
-                              opacity: currentUser?.role !== 'MIS Team' ? 0.7 : 1
-                            }}
-                          />
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                            Quoted Quantity
-                          </label>
-                          <input
-                            id="quoted-qty-input"
-                            type="number"
-                            placeholder="Quoted Qty"
-                            value={quotedQty}
-                            disabled={currentUser?.role !== 'MIS Team'}
-                            onChange={(e) => setQuotedQty(e.target.value === '' ? '' : Number(e.target.value))}
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-color)',
-                              background: 'var(--bg-app)',
-                              color: 'var(--text-primary)',
-                              fontSize: '13px',
-                              opacity: currentUser?.role !== 'MIS Team' ? 0.7 : 1
-                            }}
-                          />
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              Bid Quantity
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="Bid Qty"
+                              value={bidQty}
+                              disabled
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--bg-app)',
+                                color: 'var(--text-primary)',
+                                fontSize: '13px',
+                                opacity: 0.7,
+                                cursor: 'not-allowed'
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              Quoted Quantity
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="Quoted Qty"
+                              value={quotedQty}
+                              disabled
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--bg-app)',
+                                color: 'var(--text-primary)',
+                                fontSize: '13px',
+                                opacity: 0.7,
+                                cursor: 'not-allowed'
+                              }}
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Internal Bidding Notes */}
                   <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
@@ -2181,34 +2237,175 @@ export default function TenderDetailPage() {
             {/* ==================== SECTION 2: WORKFLOW PIPELINE ==================== */}
             <div style={{ borderTop: '2px dashed var(--border-color)', paddingTop: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
-              {/* Participation Decision Banner for New / Unreviewed Tenders - Exclusive to MIS Team */}
+              {/* Participation Decision Section - Exclusive to MIS Team */}
               {isMisRole && (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: '12px', flexWrap: 'wrap', gap: '12px' }}>
+                <div 
+                  id="participation-decision-section"
+                  style={{ 
+                    background: 'var(--bg-card)', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: '12px', 
+                    padding: '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px'
+                  }}
+                >
+                  {/* Header & Supporting Text */}
                   <div>
-                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                      {selectedTender.status === 'Not Participating' ? 'Tender Marked as Not Participating' : 'Participation Decision Pending'}
-                    </h4>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      {selectedTender.status === 'Not Participating' ? 'You declined this tender. Click below to reactivate and participate.' : 'Review this tender requirement and accept participation to activate technical specs and documentation.'}
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                      Participation Decision Pending
+                    </h3>
+                    <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                      Review this tender, assign it to an executive, and decide whether to participate.
                     </p>
                   </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                      className="btn btn-primary"
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 16px' }}
-                      onClick={() => updateTenderField({ status: 'Participating' })}
-                    >
-                      <CheckCircle2 size={16} /> Accept & Participate
-                    </button>
-                    {selectedTender.status !== 'Not Participating' && (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 16px', color: 'var(--accent-red)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
-                        onClick={() => updateTenderField({ status: 'Not Participating' })}
+
+                  {/* Form Controls Grid: Assign to, Bid Quantity, Quoted Quantity */}
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
+                    gap: '16px', 
+                    alignItems: 'flex-start' 
+                  }}>
+                    {/* 1. Assign to: */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label 
+                          htmlFor="assign-to-select" 
+                          style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}
+                        >
+                          Assign to:
+                        </label>
+                        {selectedTender.mis_executive && selectedTender.assigned_by && (
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            Assigned by {selectedTender.assigned_by} {selectedTender.assigned_at ? `on ${new Date(selectedTender.assigned_at).toLocaleDateString()}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <select
+                        id="assign-to-select"
+                        value={misExecutive}
+                        disabled={isParticipatingSubmitting}
+                        onChange={(e) => setMisExecutive(e.target.value)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-app)',
+                          color: 'var(--text-primary)',
+                          fontSize: '13px',
+                          outline: 'none',
+                          cursor: isParticipatingSubmitting ? 'not-allowed' : 'pointer',
+                          width: '100%'
+                        }}
                       >
-                        <XCircle size={16} /> Decline / Not Participating
-                      </button>
-                    )}
+                        <option value="">-- Unassigned --</option>
+                        {executivesList.map(exec => (
+                          <option key={exec} value={exec}>{exec}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 2. Bid Quantity */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label 
+                        htmlFor="bid-qty-input" 
+                        style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}
+                      >
+                        Bid Quantity
+                      </label>
+                      <input
+                        id="bid-qty-input"
+                        type="number"
+                        placeholder="Bid Qty"
+                        value={bidQty}
+                        disabled={isParticipatingSubmitting}
+                        onChange={(e) => setBidQty(e.target.value === '' ? '' : Number(e.target.value))}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-app)',
+                          color: 'var(--text-primary)',
+                          fontSize: '13px',
+                          outline: 'none',
+                          width: '100%',
+                          cursor: isParticipatingSubmitting ? 'not-allowed' : 'text'
+                        }}
+                      />
+                    </div>
+
+                    {/* 3. Quoted Quantity */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label 
+                        htmlFor="quoted-qty-input" 
+                        style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}
+                      >
+                        Quoted Quantity
+                      </label>
+                      <input
+                        id="quoted-qty-input"
+                        type="number"
+                        placeholder="Quoted Qty"
+                        value={quotedQty}
+                        disabled={isParticipatingSubmitting}
+                        onChange={(e) => setQuotedQty(e.target.value === '' ? '' : Number(e.target.value))}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-app)',
+                          color: 'var(--text-primary)',
+                          fontSize: '13px',
+                          outline: 'none',
+                          width: '100%',
+                          cursor: isParticipatingSubmitting ? 'not-allowed' : 'text'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', paddingTop: '4px' }}>
+                    <button
+                      id="btn-assign-participate"
+                      className="btn btn-primary"
+                      disabled={isParticipatingSubmitting}
+                      onClick={handleAssignAndParticipate}
+                      style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '6px', 
+                        fontSize: '12.5px', 
+                        padding: '8px 16px',
+                        fontWeight: '600',
+                        opacity: isParticipatingSubmitting ? 0.7 : 1,
+                        cursor: isParticipatingSubmitting ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <CheckCircle2 size={16} /> Assign & Participate
+                    </button>
+                    <button
+                      id="btn-not-participating"
+                      className="btn btn-secondary"
+                      disabled={isParticipatingSubmitting}
+                      onClick={handleNotParticipating}
+                      style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '6px', 
+                        fontSize: '12.5px', 
+                        padding: '8px 16px', 
+                        color: 'var(--accent-red)', 
+                        borderColor: 'rgba(239, 68, 68, 0.3)',
+                        fontWeight: '600',
+                        opacity: isParticipatingSubmitting ? 0.7 : 1,
+                        cursor: isParticipatingSubmitting ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <XCircle size={16} /> Not Participating
+                    </button>
                   </div>
                 </div>
               )}

@@ -501,6 +501,120 @@ public class TenderControllerTest {
     }
 
     @Test
+    void testAssignAndParticipateSavesAssigneeQuantitiesAndSetsParticipating() {
+        authenticate("misteam", "MIS Team");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", "Participating");
+        body.put("mis_executive", "exec_specialist");
+        body.put("bid_qty", 25);
+        body.put("quoted_qty", 20);
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T3", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertTrue((Boolean) respBody.get("success"));
+        assertEquals("Participating", tender3.getStatus());
+        assertEquals("exec_specialist", tender3.getMisExecutive());
+        assertEquals(25, tender3.getBidQty());
+        assertEquals(20, tender3.getQuotedQty());
+        assertEquals("SPEC_CLEARANCE", tender3.getCurrentStage());
+        verify(tenderRepository, atLeastOnce()).save(tender3);
+    }
+
+    @Test
+    void testParticipatingRejectedWhenAssigneeIsMissing() {
+        authenticate("misteam", "MIS Team");
+
+        // T3 has no misExecutive assigned
+        assertNull(tender3.getMisExecutive());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", "Participating");
+        body.put("bid_qty", 10);
+        body.put("quoted_qty", 10);
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T3", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertFalse((Boolean) respBody.get("success"));
+        assertTrue(respBody.get("error").toString().contains("Executive assignment is required to participate"));
+        // Ensure tender status was NOT partially updated
+        assertNotEquals("Participating", tender3.getStatus());
+    }
+
+    @Test
+    void testParticipatingRejectedWhenQuantityIsInvalid() {
+        authenticate("misteam", "MIS Team");
+
+        // 1. Negative quantity rejected
+        Map<String, Object> bodyNegative = new HashMap<>();
+        bodyNegative.put("status", "Participating");
+        bodyNegative.put("mis_executive", "exec_valid");
+        bodyNegative.put("bid_qty", -5);
+
+        ResponseEntity<?> respNegative = tenderController.updateTender("MIS Team", "misteam", "T3", bodyNegative);
+        assertEquals(HttpStatus.BAD_REQUEST, respNegative.getStatusCode());
+        Map<?, ?> respBodyNeg = (Map<?, ?>) respNegative.getBody();
+        assertFalse((Boolean) respBodyNeg.get("success"));
+        assertTrue(respBodyNeg.get("error").toString().contains("Quantity cannot be negative"));
+
+        // 2. Decimal / non-integer quantity rejected
+        Map<String, Object> bodyDecimal = new HashMap<>();
+        bodyDecimal.put("status", "Participating");
+        bodyDecimal.put("mis_executive", "exec_valid");
+        bodyDecimal.put("quoted_qty", "12.75");
+
+        ResponseEntity<?> respDecimal = tenderController.updateTender("MIS Team", "misteam", "T3", bodyDecimal);
+        assertEquals(HttpStatus.BAD_REQUEST, respDecimal.getStatusCode());
+        Map<?, ?> respBodyDec = (Map<?, ?>) respDecimal.getBody();
+        assertFalse((Boolean) respBodyDec.get("success"));
+        assertTrue(respBodyDec.get("error").toString().contains("Quantity must be an integer"));
+    }
+
+    @Test
+    void testNotParticipatingSavesStatusWithoutAssigningExecutiveOrAdvancingStage() {
+        authenticate("misteam", "MIS Team");
+
+        assertNull(tender3.getMisExecutive());
+        assertEquals("NEW", tender3.getCurrentStage());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", "Not Participating");
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T3", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertTrue((Boolean) respBody.get("success"));
+        assertEquals("Not Participating", tender3.getStatus());
+        assertNull(tender3.getMisExecutive());
+        assertEquals("NEW", tender3.getCurrentStage());
+    }
+
+    @Test
+    void testUnauthorizedRolesCannotPerformParticipationDecisionOrAssignment() {
+        // Tender Executive cannot set Participating
+        authenticate("exec1", "Tender Executive");
+        Map<String, Object> bodyExec = new HashMap<>();
+        bodyExec.put("status", "Participating");
+        bodyExec.put("mis_executive", "exec1");
+
+        ResponseEntity<?> respExec = tenderController.updateTender("Tender Executive", "exec1", "T3", bodyExec);
+        assertEquals(HttpStatus.FORBIDDEN, respExec.getStatusCode());
+
+        // Clearance Team cannot set Not Participating
+        authenticate("spec1", "Clearance Team");
+        Map<String, Object> bodySpec = new HashMap<>();
+        bodySpec.put("status", "Not Participating");
+
+        ResponseEntity<?> respSpec = tenderController.updateTender("Clearance Team", "spec1", "T3", bodySpec);
+        assertEquals(HttpStatus.FORBIDDEN, respSpec.getStatusCode());
+    }
+
+    @Test
     void testUpdateTenderEmptyBodyDoesNotThrowNPE() {
         authenticate("misteam", "MIS Team");
 

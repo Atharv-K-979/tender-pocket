@@ -152,7 +152,13 @@ export function forbiddenPatchFields(role: string, body: Record<string, unknown>
     }
   }
 
-  if (['Won', 'Lost', 'Awarded', 'Not Awarded', 'Disqualified', 'Missed Opportunity'].includes(String(body.status))
+  // Assignment and quantity fields (editable ONLY by MIS Team)
+  const assignFields = ['mis_executive', 'bid_qty', 'quoted_qty'];
+  for (const f of assignFields) {
+    if (f in body && !isMis) denied.push(f);
+  }
+
+  if (['Participating', 'Not Participating', 'Won', 'Lost', 'Awarded', 'Not Awarded', 'Disqualified', 'Missed Opportunity'].includes(String(body.status))
       && !isMis) denied.push('status');
   if (['Submitted', 'Filed'].includes(String(body.status))
       && !isMis && !isExec) denied.push('status');
