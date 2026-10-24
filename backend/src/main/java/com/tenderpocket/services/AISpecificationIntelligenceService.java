@@ -3,6 +3,10 @@ package com.tenderpocket.services;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.tenderpocket.dto.ProductSpecificationDto;
+import com.tenderpocket.dto.ClauseMatchResultDto;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -807,7 +811,9 @@ public class AISpecificationIntelligenceService {
 
     enum AzureOutput {
         COMPLIANCE_ROWS,
-        PRODUCTS
+        PRODUCTS,
+        DATASHEET_SPECS,
+        MATCH_CLAUSES
     }
 
     /** Builds an Azure Responses API request with strict structured output and optional native file input. */
@@ -822,16 +828,24 @@ public class AISpecificationIntelligenceService {
         boolean imageRecovery = fileBytes != null && detectMimeType(fileBytes).startsWith("image/");
         root.putObject("reasoning").put("effort", imageRecovery ? "medium" : "low");
         root.put("store", false);
-        root.put("max_output_tokens", output == AzureOutput.COMPLIANCE_ROWS ? MAX_OUTPUT_TOKENS : 2048);
+        root.put("max_output_tokens", (output == AzureOutput.COMPLIANCE_ROWS || output == AzureOutput.MATCH_CLAUSES) ? MAX_OUTPUT_TOKENS : 4096);
 
         com.fasterxml.jackson.databind.node.ArrayNode input = root.putArray("input");
         com.fasterxml.jackson.databind.node.ObjectNode message = input.addObject();
         message.put("role", "user");
         com.fasterxml.jackson.databind.node.ArrayNode content = message.putArray("content");
-        content.addObject().put("type", "input_text").put("text", prompt
-                + (output == AzureOutput.COMPLIANCE_ROWS
-                ? "\nReturn the extracted array in the required rows property."
-                : "\nReturn the product-name array in the required products property."));
+        
+        String suffixText;
+        if (output == AzureOutput.COMPLIANCE_ROWS) {
+            suffixText = "\nReturn the extracted array in the required rows property.";
+        } else if (output == AzureOutput.PRODUCTS) {
+            suffixText = "\nReturn the product-name array in the required products property.";
+        } else if (output == AzureOutput.DATASHEET_SPECS) {
+            suffixText = "\nReturn the extracted specifications in the required specifications property.";
+        } else {
+            suffixText = "\nReturn the matched clauses in the required matches property.";
+        }
+        content.addObject().put("type", "input_text").put("text", prompt + suffixText);
 
         if (fileBytes != null && fileBytes.length > 0) {
             String mimeType = detectMimeType(fileBytes);
@@ -847,7 +861,10 @@ public class AISpecificationIntelligenceService {
 
         com.fasterxml.jackson.databind.node.ObjectNode format = root.putObject("text").putObject("format");
         format.put("type", "json_schema");
-        format.put("name", output == AzureOutput.COMPLIANCE_ROWS ? "compliance_rows" : "tender_products");
+        String schemaName = output == AzureOutput.COMPLIANCE_ROWS ? "compliance_rows"
+                : (output == AzureOutput.PRODUCTS ? "tender_products"
+                : (output == AzureOutput.DATASHEET_SPECS ? "datasheet_specs" : "clause_matches"));
+        format.put("name", schemaName);
         format.put("strict", true);
 
         com.fasterxml.jackson.databind.node.ObjectNode schema = format.putObject("schema");
@@ -862,6 +879,40 @@ public class AISpecificationIntelligenceService {
             required.add("products");
             properties.putObject("readable").put("type", "boolean");
             required.add("readable");
+        } else if (output == AzureOutput.DATASHEET_SPECS) {
+            properties.putObject("readable").put("type", "boolean");
+            required.add("readable");
+            com.fasterxml.jackson.databind.node.ObjectNode specs = properties.putObject("specifications");
+            specs.put("type", "array");
+            com.fasterxml.jackson.databind.node.ObjectNode specItem = specs.putObject("items");
+            specItem.put("type", "object");
+            specItem.put("additionalProperties", false);
+            com.fasterxml.jackson.databind.node.ObjectNode specProps = specItem.putObject("properties");
+            specProps.putObject("parameterName").put("type", "string");
+            specProps.putObject("parameterValue").put("type", "string");
+            specProps.putObject("sourcePage").put("type", "string");
+            specProps.putObject("rawEvidence").put("type", "string");
+            com.fasterxml.jackson.databind.node.ArrayNode specReq = specItem.putArray("required");
+            specReq.add("parameterName").add("parameterValue").add("sourcePage").add("rawEvidence");
+            required.add("specifications");
+        } else if (output == AzureOutput.MATCH_CLAUSES) {
+            com.fasterxml.jackson.databind.node.ObjectNode matches = properties.putObject("matches");
+            matches.put("type", "array");
+            com.fasterxml.jackson.databind.node.ObjectNode matchItem = matches.putObject("items");
+            matchItem.put("type", "object");
+            matchItem.put("additionalProperties", false);
+            com.fasterxml.jackson.databind.node.ObjectNode matchProps = matchItem.putObject("properties");
+            matchProps.putObject("clauseIndex").put("type", "integer");
+            matchProps.putObject("isMatched").put("type", "boolean");
+            matchProps.putObject("matchedParameter").put("type", "string");
+            matchProps.putObject("offeredSpecification").put("type", "string");
+            matchProps.putObject("complianceStatus").put("type", "string");
+            matchProps.putObject("deviations").put("type", "string");
+            matchProps.putObject("sourceCitation").put("type", "string");
+            com.fasterxml.jackson.databind.node.ArrayNode matchReq = matchItem.putArray("required");
+            matchReq.add("clauseIndex").add("isMatched").add("matchedParameter")
+                    .add("offeredSpecification").add("complianceStatus").add("deviations").add("sourceCitation");
+            required.add("matches");
         } else {
             properties.putObject("readable").put("type", "boolean");
             required.add("readable");
@@ -2213,5 +2264,275 @@ public class AISpecificationIntelligenceService {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&apos;");
+    }
+
+    public String extractTextFromPdfBytes(byte[] fileBytes) {
+        if (fileBytes == null || fileBytes.length == 0) return "";
+        try (PDDocument doc = PDDocument.load(fileBytes)) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            StringBuilder sb = new StringBuilder();
+            int pages = doc.getNumberOfPages();
+            for (int p = 1; p <= pages; p++) {
+                stripper.setStartPage(p);
+                stripper.setEndPage(p);
+                sb.append("[SOURCE_PAGE ").append(p).append("]\n");
+                sb.append(stripper.getText(doc)).append("\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            System.err.println("[AISpecificationIntelligence] PDF text extraction error: " + e.getMessage());
+            return "";
+        }
+    }
+
+    public List<ProductSpecificationDto> extractDatasheetSpecifications(byte[] fileBytes, String fileName,
+                                                                        String make, String model, String category) {
+        String text = extractTextFromPdfBytes(fileBytes);
+        String prompt = "You are an expert technical specification auditor extracting factual manufacturer specifications from a product datasheet.\n"
+                + "Product Context:\n"
+                + "- Make: " + (make != null ? make : "MarkEn") + "\n"
+                + "- Model: " + (model != null ? model : "Standard") + "\n"
+                + "- Category: " + (category != null ? category : "Medical Equipment") + "\n\n"
+                + "Instructions:\n"
+                + "1. Extract all factual technical parameters, features, dimensions, electrical ratings, environmental tolerances, standards, and performance specifications stated in this datasheet.\n"
+                + "2. For each specification:\n"
+                + "   - parameterName: Clean canonical parameter name (e.g., 'Illumination Intensity', 'Color Temperature', 'Input Voltage', 'Battery Backup', 'Weight').\n"
+                + "   - parameterValue: Exact stated technical value or range (e.g., '160,000 Lux', '4,500 K', '100-240 V AC, 50/60 Hz', '3 Hours').\n"
+                + "   - sourcePage: Page number where this parameter appears (e.g., 'Page 1', 'Page 2').\n"
+                + "   - rawEvidence: Verbatim quotation or sentence from the datasheet text confirming this exact specification.\n"
+                + "3. DO NOT extrapolate, infer, or invent specifications not explicitly written in the document.\n"
+                + "4. Output JSON strictly adhering to the schema.\n\n"
+                + "DATASHEET TEXT:\n" + text;
+
+        try {
+            String aiResponse = postAiResponse(prompt, fileBytes, AzureOutput.DATASHEET_SPECS, Collections.emptyList());
+            if (aiResponse != null && !aiResponse.isBlank()) {
+                String modelText = extractModelText(aiResponse);
+                JsonNode root = JSON.readTree(modelText.replaceAll("(?s)```(?:json)?", "").trim());
+                JsonNode specsNode = root.path("specifications");
+                if (specsNode.isArray() && specsNode.size() > 0) {
+                    List<ProductSpecificationDto> result = new ArrayList<>();
+                    int order = 0;
+                    for (JsonNode item : specsNode) {
+                        String name = item.path("parameterName").asText("").trim();
+                        String val = item.path("parameterValue").asText("").trim();
+                        String page = item.path("sourcePage").asText("Page 1").trim();
+                        String evidence = item.path("rawEvidence").asText("").trim();
+                        if (!name.isEmpty() && !val.isEmpty()) {
+                            result.add(new ProductSpecificationDto(null, name, val, page, evidence, false, ++order));
+                        }
+                    }
+                    if (!result.isEmpty()) {
+                        System.out.println("[AISpecificationIntelligence] Successfully extracted " + result.size() + " specifications from datasheet via AI.");
+                        return result;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[AISpecificationIntelligence] AI datasheet extraction issue: " + e.getMessage() + "; falling back to deterministic extraction.");
+        }
+
+        return extractDatasheetSpecificationsDeterministically(text);
+    }
+
+    public List<ProductSpecificationDto> extractDatasheetSpecificationsDeterministically(String text) {
+        List<ProductSpecificationDto> list = new ArrayList<>();
+        if (text == null || text.isBlank()) return list;
+
+        String currentPage = "Page 1";
+        Pattern pagePattern = Pattern.compile("\\[SOURCE_PAGE\\s+(\\d+)\\]");
+        Pattern kvPattern = Pattern.compile("^\\s*([A-Za-z0-9][A-Za-z0-9 /&().,%-]{2,60})\\s*[:=–—\\t]\\s*(.{2,150})$");
+
+        String[] lines = text.split("\r?\n");
+        int order = 0;
+        Set<String> seenParams = new HashSet<>();
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+
+            Matcher pageMatcher = pagePattern.matcher(trimmed);
+            if (pageMatcher.find()) {
+                currentPage = "Page " + pageMatcher.group(1);
+                continue;
+            }
+
+            Matcher kvMatcher = kvPattern.matcher(trimmed);
+            if (kvMatcher.matches()) {
+                String key = kvMatcher.group(1).trim().replaceAll("^[-*#\\s]+", "");
+                String value = kvMatcher.group(2).trim();
+
+                if (key.length() < 3 || value.length() < 1) continue;
+                if (key.equalsIgnoreCase("page") || key.equalsIgnoreCase("date") || key.equalsIgnoreCase("version") || key.equalsIgnoreCase("tel") || key.equalsIgnoreCase("fax") || key.equalsIgnoreCase("email")) {
+                    continue;
+                }
+
+                String normKey = key.toLowerCase(Locale.ROOT);
+                if (seenParams.add(normKey)) {
+                    list.add(new ProductSpecificationDto(null, key, value, currentPage, trimmed, false, ++order));
+                }
+            }
+        }
+        return list;
+    }
+
+    public List<ClauseMatchResultDto> matchClausesWithProductSpecifications(
+            String make, String model, String category,
+            List<ProductSpecificationDto> verifiedSpecs,
+            List<String[]> clauses) {
+        if (clauses == null || clauses.isEmpty()) return Collections.emptyList();
+        if (verifiedSpecs == null || verifiedSpecs.isEmpty()) {
+            List<ClauseMatchResultDto> emptyMatches = new ArrayList<>();
+            for (int i = 0; i < clauses.size(); i++) {
+                emptyMatches.add(new ClauseMatchResultDto(i, "", "", "",
+                        "No verified datasheet specifications available for this product model.", "", false));
+            }
+            return emptyMatches;
+        }
+
+        try {
+            StringBuilder promptBuilder = new StringBuilder();
+            promptBuilder.append("You are an expert technical compliance auditor matching tender requirements against verified product specifications.\n");
+            promptBuilder.append("Model Context:\n");
+            promptBuilder.append("- Make: ").append(make != null ? make : "MarkEn").append("\n");
+            promptBuilder.append("- Model: ").append(model != null ? model : "").append("\n");
+            promptBuilder.append("- Category: ").append(category != null ? category : "").append("\n\n");
+            promptBuilder.append("VERIFIED PRODUCT SPECIFICATIONS (Authoritative Evidence):\n");
+            for (ProductSpecificationDto spec : verifiedSpecs) {
+                promptBuilder.append("- ").append(spec.getParameterName()).append(": ").append(spec.getParameterValue())
+                        .append(" [").append(spec.getSourcePage() != null ? spec.getSourcePage() : "Datasheet").append("] Evidence: ")
+                        .append(spec.getRawEvidence() != null ? spec.getRawEvidence() : "").append("\n");
+            }
+            promptBuilder.append("\nTENDER REQUIREMENTS TO MATCH:\n");
+            for (int i = 0; i < clauses.size(); i++) {
+                String[] row = clauses.get(i);
+                promptBuilder.append("Clause ").append(i).append(" (Ref ").append(row[0]).append("): ").append(row[1]).append("\n");
+            }
+            promptBuilder.append("\nRULES:\n");
+            promptBuilder.append("1. If a verified specification directly addresses or supports the clause, set isMatched=true, matchedParameter, offeredSpecification with citation (e.g. '160,000 Lux [Page 2]'), complianceStatus='Complied' (or 'Partially Complied'/'Not Complied'), and deviations='None'.\n");
+            promptBuilder.append("2. If NO verified specification supports the clause, set isMatched=false, offeredSpecification='', complianceStatus='', and deviations='No datasheet evidence found; manual verification required.'\n");
+            promptBuilder.append("3. NEVER copy the buyer's requirement wording into offeredSpecification. Only output verified evidence from the catalogue.\n");
+
+            String aiResponse = postAiResponse(promptBuilder.toString(), null, AzureOutput.MATCH_CLAUSES, Collections.emptyList());
+            if (aiResponse != null && !aiResponse.isBlank()) {
+                String modelText = extractModelText(aiResponse);
+                JsonNode root = JSON.readTree(modelText.replaceAll("(?s)```(?:json)?", "").trim());
+                JsonNode matchesNode = root.path("matches");
+                if (matchesNode.isArray() && matchesNode.size() == clauses.size()) {
+                    List<ClauseMatchResultDto> results = new ArrayList<>();
+                    for (JsonNode m : matchesNode) {
+                        int idx = m.path("clauseIndex").asInt();
+                        boolean isMatched = m.path("isMatched").asBoolean(false);
+                        String param = m.path("matchedParameter").asText("").trim();
+                        String offeredSpec = isMatched ? m.path("offeredSpecification").asText("").trim() : "";
+                        String compliance = isMatched ? m.path("complianceStatus").asText("").trim() : "";
+                        String dev = m.path("deviations").asText("").trim();
+                        String citation = m.path("sourceCitation").asText("").trim();
+
+                        String reqWording = (idx >= 0 && idx < clauses.size()) ? clauses.get(idx)[1] : "";
+                        if (offeredSpec.equalsIgnoreCase(reqWording.trim())) {
+                            offeredSpec = "";
+                            compliance = "";
+                        }
+                        results.add(new ClauseMatchResultDto(idx, param, offeredSpec, compliance, dev, citation, isMatched));
+                    }
+                    System.out.println("[AISpecificationIntelligence] Successfully matched " + results.size() + " clauses with AI.");
+                    return results;
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[AISpecificationIntelligence] AI clause matching issue: " + e.getMessage() + "; falling back to deterministic matching.");
+        }
+
+        return matchClausesDeterministically(make, model, category, verifiedSpecs, clauses);
+    }
+
+    public List<ClauseMatchResultDto> matchClausesDeterministically(
+            String make, String model, String category,
+            List<ProductSpecificationDto> verifiedSpecs,
+            List<String[]> clauses) {
+        List<ClauseMatchResultDto> results = new ArrayList<>();
+        if (clauses == null) return results;
+
+        for (int i = 0; i < clauses.size(); i++) {
+            String[] clause = clauses.get(i);
+            String reqText = (clause != null && clause.length > 1 && clause[1] != null) ? clause[1].toLowerCase(Locale.ROOT) : "";
+
+            ProductSpecificationDto bestMatch = null;
+            for (ProductSpecificationDto spec : verifiedSpecs) {
+                if (spec.getParameterName() == null) continue;
+                String paramLower = spec.getParameterName().toLowerCase(Locale.ROOT);
+                if (reqText.contains(paramLower)) {
+                    bestMatch = spec;
+                    break;
+                }
+
+                String[] paramKeywords = paramLower.split("[\\s/(),.-]+");
+                int matchCount = 0;
+                for (String kw : paramKeywords) {
+                    if (kw.length() >= 3 && reqText.contains(kw)) matchCount++;
+                }
+                if (paramKeywords.length > 0 && (double) matchCount / paramKeywords.length >= 0.5 && matchCount >= 1) {
+                    bestMatch = spec;
+                    break;
+                }
+
+                if ((reqText.contains("lux") || reqText.contains("illuminance") || reqText.contains("intensity")) &&
+                    (paramLower.contains("lux") || paramLower.contains("illuminan") || paramLower.contains("intensity"))) {
+                    bestMatch = spec;
+                    break;
+                }
+                if ((reqText.contains("color temp") || reqText.contains("cct") || reqText.contains("kelvin")) &&
+                    (paramLower.contains("color temp") || paramLower.contains("cct") || paramLower.contains("kelvin"))) {
+                    bestMatch = spec;
+                    break;
+                }
+                if ((reqText.contains("battery") || reqText.contains("backup")) &&
+                    (paramLower.contains("battery") || paramLower.contains("backup"))) {
+                    bestMatch = spec;
+                    break;
+                }
+                if ((reqText.contains("voltage") || reqText.contains("power supply") || reqText.contains("input power")) &&
+                    (paramLower.contains("voltage") || paramLower.contains("power supply") || paramLower.contains("input power"))) {
+                    bestMatch = spec;
+                    break;
+                }
+                if ((reqText.contains("spot") || reqText.contains("diameter") || reqText.contains("field size")) &&
+                    (paramLower.contains("spot") || paramLower.contains("diameter") || paramLower.contains("field size"))) {
+                    bestMatch = spec;
+                    break;
+                }
+                if ((reqText.contains("depth of illumination")) &&
+                    (paramLower.contains("depth of illumination") || paramLower.contains("depth"))) {
+                    bestMatch = spec;
+                    break;
+                }
+                if ((reqText.contains("cri") || reqText.contains("color rendering")) &&
+                    (paramLower.contains("cri") || paramLower.contains("color rendering"))) {
+                    bestMatch = spec;
+                    break;
+                }
+                if ((reqText.contains("life") || reqText.contains("service life") || reqText.contains("bulb life")) &&
+                    (paramLower.contains("life") || paramLower.contains("service life") || paramLower.contains("bulb life"))) {
+                    bestMatch = spec;
+                    break;
+                }
+                if ((reqText.contains("ce") || reqText.contains("iso") || reqText.contains("certif")) &&
+                    (paramLower.contains("certif") || paramLower.contains("standard") || paramLower.contains("ce") || paramLower.contains("iso"))) {
+                    bestMatch = spec;
+                    break;
+                }
+            }
+
+            if (bestMatch != null) {
+                String citation = (model != null && !model.isBlank() ? model + " " : "")
+                        + "[" + (bestMatch.getSourcePage() != null && !bestMatch.getSourcePage().isBlank() ? bestMatch.getSourcePage() : "Datasheet") + "]";
+                String offered = bestMatch.getParameterValue() + " (Source: " + citation + ")";
+                results.add(new ClauseMatchResultDto(i, bestMatch.getParameterName(), offered, "Complied", "None", citation, true));
+            } else {
+                results.add(new ClauseMatchResultDto(i, "", "", "", "No datasheet evidence found; manual verification required.", "", false));
+            }
+        }
+        return results;
     }
 }

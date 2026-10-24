@@ -217,6 +217,12 @@ public class Tender {
     @Column(name = "spec_verification_status")
     private String specVerificationStatus = "None";
 
+    @Column(name = "selected_model_id")
+    private Long selectedModelId;
+
+    @Column(name = "schedule_product_models", columnDefinition = "TEXT")
+    private String scheduleProductModels;
+
     public Tender() {}
 
     // Additional Getters and Setters
@@ -430,4 +436,10 @@ public class Tender {
 
     public String getCurrentStage() { return currentStage; }
     public void setCurrentStage(String currentStage) { this.currentStage = currentStage; }
+
+    public Long getSelectedModelId() { return selectedModelId; }
+    public void setSelectedModelId(Long selectedModelId) { this.selectedModelId = selectedModelId; }
+
+    public String getScheduleProductModels() { return scheduleProductModels; }
+    public void setScheduleProductModels(String scheduleProductModels) { this.scheduleProductModels = scheduleProductModels; }
 }
