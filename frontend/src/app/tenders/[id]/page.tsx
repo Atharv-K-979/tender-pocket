@@ -109,6 +109,12 @@ export default function TenderDetailPage() {
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
   const [isParticipatingSubmitting, setIsParticipatingSubmitting] = useState(false);
+  const [isTechSpecDragOver, setIsTechSpecDragOver] = useState(false);
+
+  // Offered Product Model Catalogue State (Evidence-based Column 4)
+  const [availableModels, setAvailableModels] = useState<Array<{ id: number; model_number: string; make: string; product_category: string; verified_specs?: number }>>([]);
+  const [selectedModelId, setSelectedModelId] = useState<number | ''>('');
+  const [scheduleModels, setScheduleModels] = useState<Record<string, number>>({});
 
   // Editable Tender Specifications & Parameters State
   const [isEditingSpecs, setIsEditingSpecs] = useState(false);
@@ -314,6 +320,7 @@ export default function TenderDetailPage() {
       fetchTenderDetails();
       fetchComments(id);
       fetchMisTeamMembers();
+      fetchOfferedModels(id);
 
       // Poll updates every 1.5 seconds for near-instant live sync
       const syncInterval = setInterval(() => {
@@ -506,6 +513,30 @@ export default function TenderDetailPage() {
       }
     } catch (err) {
       console.error('Error fetching users:', err);
+    }
+  };
+
+  const fetchOfferedModels = async (tenderId: string) => {
+    try {
+      const [modelsRes, tenderModelsRes] = await Promise.all([
+        fetchWithAuth('/api/products/models?status=VERIFIED'),
+        fetchWithAuth(`/api/tenders/${tenderId}/offered-models`)
+      ]);
+      if (modelsRes.ok) {
+        const mData = await modelsRes.json();
+        if (mData.success && Array.isArray(mData.models)) {
+          setAvailableModels(mData.models);
+        }
+      }
+      if (tenderModelsRes.ok) {
+        const tData = await tenderModelsRes.json();
+        if (tData.success && tData.data) {
+          if (tData.data.selected_model_id) setSelectedModelId(tData.data.selected_model_id);
+          if (tData.data.schedule_models) setScheduleModels(tData.data.schedule_models);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch offered models:', e);
     }
   };
 
@@ -914,8 +945,18 @@ export default function TenderDetailPage() {
     }
   };
 
+  const isValidTechSpecFile = (file: File) => {
+    const name = file.name.toLowerCase();
+    return name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
+           name.endsWith('.txt') || name.endsWith('.xlsx') || name.endsWith('.xls');
+  };
+
   const handleTechSpecUpload = async (fileToUpload: File) => {
-    if (!selectedTender || techSpecUploadInFlight.current) return;
+    if (!selectedTender || !fileToUpload || techSpecUploadInFlight.current) return;
+    if (!isValidTechSpecFile(fileToUpload)) {
+      showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+      return;
+    }
     const tenderId = selectedTender.id;
     techSpecUploadInFlight.current = true;
     setUploadingTechSpec(true);
@@ -945,6 +986,12 @@ export default function TenderDetailPage() {
     try {
       const formData = new FormData();
       formData.append('file', fileToUpload);
+      if (selectedModelId) {
+        formData.append('selected_model_id', String(selectedModelId));
+      }
+      if (scheduleModels && Object.keys(scheduleModels).length > 0) {
+        formData.append('schedule_models', JSON.stringify(scheduleModels));
+      }
       const response = await fetchWithAuth(`/api/tenders/${tenderId}/upload-tech-spec`, {
         method: 'POST', body: formData,
       });
@@ -2502,7 +2549,47 @@ export default function TenderDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                         {(!selectedTender.has_tech_spec && selectedTender.spec_verification_status !== 'Pending' && selectedTender.spec_verification_status !== 'Generated') ? (
                           /* PHASE 1: UPLOAD DOCUMENT TO GENERATE TECHNICAL SPECIFICATION */
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(99, 102, 241, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                          <div 
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(false);
+                              if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                const droppedFile = e.dataTransfer.files[0];
+                                if (!isValidTechSpecFile(droppedFile)) {
+                                  showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+                                  return;
+                                }
+                                const inputEl = document.getElementById('tech-spec-file-input-detail') as HTMLInputElement;
+                                if (inputEl) {
+                                  const dt = new DataTransfer();
+                                  dt.items.add(droppedFile);
+                                  inputEl.files = dt.files;
+                                }
+                                handleTechSpecUpload(droppedFile);
+                              }
+                            }}
+                            style={{ 
+                              display: 'flex', 
+                              flexDirection: 'column', 
+                              gap: '10px', 
+                              background: isTechSpecDragOver ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.05)', 
+                              padding: '12px', 
+                              borderRadius: '8px', 
+                              border: isTechSpecDragOver ? '2px dashed var(--primary)' : '1px solid rgba(99, 102, 241, 0.2)',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
                             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary)', textTransform: 'uppercase' }}>
                               Step 1: Upload Document to Generate Technical Specification
                             </span>
@@ -2510,14 +2597,63 @@ export default function TenderDetailPage() {
                               Upload the tender document or specification file to process and generate the technical specification parameters.
                             </p>
 
+                            {/* Offered Product Model Selection for Evidence Matching */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', padding: '10px', background: 'rgba(249, 115, 22, 0.05)', borderRadius: '8px', border: '1px solid rgba(249, 115, 22, 0.2)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '10.5px', color: '#f97316', fontWeight: '700', textTransform: 'uppercase' }}>
+                                  Offered Product Model (Column 4 Evidence Link)
+                                </label>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                  {availableModels.length} verified models
+                                </span>
+                              </div>
+                              <select
+                                value={selectedModelId}
+                                onChange={async (e) => {
+                                  const val = e.target.value ? Number(e.target.value) : '';
+                                  setSelectedModelId(val);
+                                  try {
+                                    await fetchWithAuth(`/api/tenders/${id}/offered-models`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ selected_model_id: val || null, schedule_models: scheduleModels }),
+                                    });
+                                  } catch (ignored) {}
+                                }}
+                                disabled={uploadingTechSpec}
+                                style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px 8px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                              >
+                                <option value="">-- No Model Selected (Column 4 will remain blank) --</option>
+                                {availableModels.map(m => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.model_number} ({m.make}) — {m.product_category} [{m.verified_specs || 0} verified specs]
+                                  </option>
+                                ))}
+                              </select>
+                              <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)' }}>
+                                {selectedModelId
+                                  ? 'Verified specifications from this model’s manufacturer datasheet will be matched and cited in Column 4.'
+                                  : 'Strict evidence rule: Without an offered model, Column 4 strictly remains empty to avoid fabricating specifications.'}
+                              </span>
+                            </div>
+
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT)</label>
+                              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT / XLS / XLSX)</label>
                               <input 
                                 type="file" 
                                 id="tech-spec-file-input-detail"
                                 disabled={uploadingTechSpec}
-                                accept=".pdf,.docx,.doc,.txt"
+                                accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
                                 style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const file = e.target.files[0];
+                                    if (!isValidTechSpecFile(file)) {
+                                      showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+                                      e.target.value = '';
+                                    }
+                                  }
+                                }}
                               />
                             </div>
 
@@ -2530,6 +2666,10 @@ export default function TenderDetailPage() {
                                 const fileToUpload = inputEl?.files?.[0];
                                 if (!fileToUpload) {
                                   showToast('Please select a specification document to upload first.', 'error');
+                                  return;
+                                }
+                                if (!isValidTechSpecFile(fileToUpload)) {
+                                  showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
                                   return;
                                 }
                                 await handleTechSpecUpload(fileToUpload);

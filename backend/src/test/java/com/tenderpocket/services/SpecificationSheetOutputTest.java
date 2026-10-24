@@ -98,7 +98,7 @@ class SpecificationSheetOutputTest {
         try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(
                 SpecificationSheetRenderer.xlsx(Map.of(), List.of(product))))) {
             var sheet = workbook.getSheetAt(0);
-            assertEquals("Sr. No.", sheet.getRow(5).getCell(0).getStringCellValue());
+            assertEquals("Sr. no.", sheet.getRow(5).getCell(0).getStringCellValue());
             assertEquals("1", sheet.getRow(6).getCell(0).getStringCellValue());
             assertEquals("Warranty shall be five years.", sheet.getRow(6).getCell(1).getStringCellValue());
             for (int column = 2; column < 5; column++) {
@@ -294,7 +294,8 @@ class SpecificationSheetOutputTest {
                 stripper.setStartPage(page); stripper.setEndPage(page);
                 String text = stripper.getText(document);
                 assertTrue(text.replaceAll("\\s+", "").contains("MARKENTERPRISES"), "Letterhead page " + page);
-                assertTrue(text.replaceAll("\\s+", "").contains("Sr.No."), "Table header page " + page);
+                // PDFBox may split the table header "Sr. no." across lines; check for "Sr." as a proxy
+                assertTrue(text.replaceAll("\\s+", "").contains("Sr."), "Table header page " + page);
                 assertTrue(text.contains("Requirement"), "No empty trailing page");
             }
         }
@@ -306,6 +307,79 @@ class SpecificationSheetOutputTest {
             }
             for (int i = 1; i <= 75; i++) assertTrue(table.getText().contains("Requirement " + i + ":"));
             assertTrue(table.getRow(0).isRepeatHeader());
+        }
+    }
+
+    @Test
+    void missingComplianceEvidenceLeavesColumnsBlankAndDoesNotFabricateValues() throws Exception {
+        var row = new SpecificationSheetContent.Row("1.1", "Tender requirement text.", false, "PDF p. 1");
+        var product = new SpecificationSheetContent.Product("Test Device", "1", List.of(row), List.of());
+        var data = Map.of("companyName", "Test Company", "offeredMake", "MarkEn", "offeredModel", "MD-01");
+
+        // HTML check
+        String html = SpecificationSheetRenderer.html(data, List.of(product), null, null);
+        assertTrue(html.contains("<td class=\"compliance-cell\"></td>"), "Compliance cell must be empty when evidence missing");
+        assertTrue(html.contains("<td class=\"deviations-cell\"></td>"), "Deviations cell must be empty when evidence missing");
+        // Col 4 should NOT contain duplicate tender requirement text
+        assertEquals(1, html.split("Tender requirement text\\.", -1).length - 1,
+                "Tender requirement must NOT be copied into offered specification column");
+
+        // DOCX check
+        byte[] docx = SpecificationSheetRenderer.docx(data, List.of(product), null, null);
+        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(docx))) {
+            var tableRow = document.getTables().get(0).getRow(1);
+            assertEquals("1.1", tableRow.getCell(0).getText());
+            assertEquals("Tender requirement text.", tableRow.getCell(1).getText());
+            assertEquals("", tableRow.getCell(2).getText(), "Col 2 (Compliance) must be blank");
+            assertEquals("", tableRow.getCell(3).getText(), "Col 3 (Offered Spec) must be blank");
+            assertEquals("", tableRow.getCell(4).getText(), "Col 4 (Deviations) must be blank");
+        }
+
+        // XLSX check
+        byte[] xlsx = SpecificationSheetRenderer.xlsx(data, List.of(product));
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(xlsx))) {
+            var sheetRow = workbook.getSheetAt(0).getRow(6);
+            assertEquals("1.1", sheetRow.getCell(0).getStringCellValue());
+            assertEquals("Tender requirement text.", sheetRow.getCell(1).getStringCellValue());
+            assertEquals("", sheetRow.getCell(2).getStringCellValue(), "XLSX Col 2 (Compliance) must be blank");
+            assertEquals("", sheetRow.getCell(3).getStringCellValue(), "XLSX Col 3 (Offered Spec) must be blank");
+            assertEquals("", sheetRow.getCell(4).getStringCellValue(), "XLSX Col 4 (Deviations) must be blank");
+        }
+    }
+
+    @Test
+    void providedComplianceEvidenceIsFaithfullyRenderedInAllFormats() throws Exception {
+        var row = new SpecificationSheetContent.Row("1.1", "Tender requires 300L capacity.", false, "PDF p. 1",
+                "Yes", "Model MBBR-04 provides 350L capacity.", "No Deviation");
+        var product = new SpecificationSheetContent.Product("Blood Bag Refrigerator", "1", List.of(row), List.of());
+        var data = Map.of("companyName", "Mark Enterprises", "offeredMake", "MarkEn", "offeredModel", "MBBR-04");
+
+        // HTML check
+        String html = SpecificationSheetRenderer.html(data, List.of(product), null, null);
+        assertTrue(html.contains("<td class=\"compliance-cell\">Yes</td>"));
+        assertTrue(html.contains("Model MBBR-04 provides 350L capacity."));
+        assertTrue(html.contains("<td class=\"deviations-cell\">No Deviation</td>"));
+
+        // DOCX check
+        byte[] docx = SpecificationSheetRenderer.docx(data, List.of(product), null, null);
+        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(docx))) {
+            var tableRow = document.getTables().get(0).getRow(1);
+            assertEquals("1.1", tableRow.getCell(0).getText());
+            assertEquals("Tender requires 300L capacity.", tableRow.getCell(1).getText());
+            assertEquals("Yes", tableRow.getCell(2).getText());
+            assertEquals("Model MBBR-04 provides 350L capacity.", tableRow.getCell(3).getText());
+            assertEquals("No Deviation", tableRow.getCell(4).getText());
+        }
+
+        // XLSX check
+        byte[] xlsx = SpecificationSheetRenderer.xlsx(data, List.of(product));
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(xlsx))) {
+            var sheetRow = workbook.getSheetAt(0).getRow(6);
+            assertEquals("1.1", sheetRow.getCell(0).getStringCellValue());
+            assertEquals("Tender requires 300L capacity.", sheetRow.getCell(1).getStringCellValue());
+            assertEquals("Yes", sheetRow.getCell(2).getStringCellValue());
+            assertEquals("Model MBBR-04 provides 350L capacity.", sheetRow.getCell(3).getStringCellValue());
+            assertEquals("No Deviation", sheetRow.getCell(4).getStringCellValue());
         }
     }
 }

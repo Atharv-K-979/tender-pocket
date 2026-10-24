@@ -7,7 +7,12 @@ import java.util.regex.*;
 public final class SpecificationSheetContent {
     private SpecificationSheetContent() {}
 
-    public record Row(String reference, String wording, boolean heading, String sources) {}
+    public record Row(String reference, String wording, boolean heading, String sources,
+                      String compliance, String offeredSpecification, String deviations) {
+        public Row(String reference, String wording, boolean heading, String sources) {
+            this(reference, wording, heading, sources, "", "", "");
+        }
+    }
     public record Product(String name, String schedule, List<Row> rows, List<String> clarifications) {
         public int clauseCount() { return (int) rows.stream().filter(row -> !row.heading()).count(); }
         public String fileStem(int ordinal) {
@@ -36,7 +41,8 @@ public final class SpecificationSheetContent {
             int serial = 0;
             for (Row row : product.rows()) {
                 if (row.heading()) continue;
-                rows.add(new Row(String.valueOf(++serial), row.wording(), false, row.sources()));
+                rows.add(new Row(String.valueOf(++serial), row.wording(), false, row.sources(),
+                        row.compliance(), row.offeredSpecification(), row.deviations()));
             }
         }
         return new Product("Combined Technical Specifications", "", List.copyOf(rows), List.of());
@@ -100,7 +106,10 @@ public final class SpecificationSheetContent {
             }
             if (preserveRequirements) {
                 List<Row> rows = assembled.stream().map(row ->
-                        new Row(value(row, 0), value(row, 1), false, value(row, 7))).toList();
+                        new Row(value(row, 0), value(row, 1), false, value(row, 7),
+                                resolveCompliance(value(row, 3)),
+                                resolveOfferedSpec(value(row, 2)),
+                                resolveDeviations(value(row, 4)))).toList();
                 if (!rows.isEmpty()) {
                     ordinal++;
                     products.add(new Product(entry.getKey(), schedule.isBlank() ? String.valueOf(ordinal) : schedule,
@@ -122,7 +131,10 @@ public final class SpecificationSheetContent {
                 }
                 boolean heading = "heading".equals(value(row, 8));
                 if (heading) headings.add(value(row, 0) + "|" + normalized(value(row, 1)));
-                Row content = new Row(value(row, 0), value(row, 1), heading, value(row, 7));
+                Row content = new Row(value(row, 0), value(row, 1), heading, value(row, 7),
+                        heading ? "" : resolveCompliance(value(row, 3)),
+                        heading ? "" : resolveOfferedSpec(value(row, 2)),
+                        heading ? "" : resolveDeviations(value(row, 4)));
                 if (!heading && !content.reference().isBlank()) {
                     Row earlier = byReference.putIfAbsent(content.reference(), content);
                     if (earlier != null && !normalized(earlier.wording()).equals(normalized(content.wording()))) {
@@ -138,7 +150,8 @@ public final class SpecificationSheetContent {
             for (Row row : unique.values()) {
                 displayPosition++;
                 displayedRows.add(row.reference().isBlank()
-                        ? new Row(String.valueOf(displayPosition), row.wording(), row.heading(), row.sources())
+                        ? new Row(String.valueOf(displayPosition), row.wording(), row.heading(), row.sources(),
+                                row.compliance(), row.offeredSpecification(), row.deviations())
                         : row);
             }
             ordinal++;
@@ -148,11 +161,35 @@ public final class SpecificationSheetContent {
         return List.copyOf(products);
     }
 
+    private static String resolveCompliance(String value) {
+        if (value == null || value.isBlank() || "To Be Assessed During Bid Evaluation".equalsIgnoreCase(value.trim())) {
+            return "";
+        }
+        return value.trim();
+    }
+
+    private static String resolveOfferedSpec(String value) {
+        if (value == null || value.isBlank() || value.trim().startsWith("Not provided") || "-".equals(value.trim())) {
+            return "";
+        }
+        return value.trim();
+    }
+
+    private static String resolveDeviations(String value) {
+        if (value == null || value.isBlank() || "To be assessed during bid evaluation.".equalsIgnoreCase(value.trim()) || "-".equals(value.trim())) {
+            return "";
+        }
+        return value.trim();
+    }
+
     private static void add(Map<String, Row> rows, Row row) {
         String key = row.heading() + "|" + row.reference() + "|" + normalized(row.wording());
         Row previous = rows.get(key);
         rows.put(key, previous == null ? row : new Row(previous.reference(), previous.wording(),
-                previous.heading(), sources(previous.sources(), row.sources())));
+                previous.heading(), sources(previous.sources(), row.sources()),
+                previous.compliance().isBlank() ? row.compliance() : previous.compliance(),
+                previous.offeredSpecification().isBlank() ? row.offeredSpecification() : previous.offeredSpecification(),
+                previous.deviations().isBlank() ? row.deviations() : previous.deviations()));
     }
 
     private static String normalized(String text) {
@@ -187,6 +224,6 @@ public final class SpecificationSheetContent {
     // Match source text spans only; emphasis never modifies the requirement itself.
     public static final Pattern EMPHASIS = Pattern.compile(
             "(?i)(?:WHO(?:/PQS)?[/\\w.()-]+|\\b(?:IS|IEC|ISO|BIS)\\s*\\d+[\\w:./-]*"
-            + "|[+\\-\\u00b1]?\\d+(?:[.,]\\d+)*(?:\\s*[-\\u2013]\\s*\\d+(?:\\.\\d+)?)?"
-            + "(?:\\s*(?:\\u00b0C|deg(?:ree)?s?\\.?\\s*C|lit(?:er|re)s?|Ltr|CuM|mm|cms?|hrs?\\.?|hours?|volts?|VAC|Hz|%|kg|dBA))?)");
+            + "|(?<![a-zA-Z0-9])[+\\-\\u00b1]?\\d+(?:[.,]\\d+)*(?:\\s*[-\\u2013]\\s*\\d+(?:\\.\\d+)?)?"
+            + "(?:\\s*(?:\\u00b0C|deg(?:ree)?s?\\.?\\s*C|lit(?:er|re)s?|Ltr|CuM|mm|cms?|hrs?\\.?|hours?|volts?|VAC|Hz|%|kg|dBA))?(?![a-zA-Z0-9]))");
 }
