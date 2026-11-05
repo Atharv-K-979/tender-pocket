@@ -69,13 +69,15 @@ import {
 import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
+import CompanyDocs from '@/app/components/CompanyDocs';
+import { FolderOpen } from 'lucide-react';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
 import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
 
 
-type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
+type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs';
 
 interface Toast {
   message: string;
@@ -559,7 +561,7 @@ export default function Dashboard() {
 
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '');
-      const validTabs: TabType[] = ['dashboard', 'tenders', 'analytics', 'settings', 'audit', 'team', 'work-summary', 'approvals'];
+      const validTabs: TabType[] = ['dashboard', 'tenders', 'analytics', 'settings', 'audit', 'team', 'work-summary', 'approvals', 'company-docs'];
       if (validTabs.includes(hash as TabType)) {
         setActiveTab(hash as TabType);
       }
@@ -2348,7 +2350,15 @@ export default function Dashboard() {
             </button>
           )}
 
-          <button 
+          <button
+            className={`menu-item ${activeTab === 'company-docs' ? 'active' : ''}`}
+            onClick={() => setActiveTab('company-docs')}
+          >
+            <FolderOpen size={18} />
+            <span>Company Docs</span>
+          </button>
+
+          <button
             className={`menu-item ${activeTab === 'analytics' ? 'active' : ''}`}
             onClick={() => setActiveTab('analytics')}
           >
@@ -2448,6 +2458,7 @@ export default function Dashboard() {
               {activeTab === 'team' && 'Team Management'}
               {activeTab === 'work-summary' && 'Work Summary'}
               {activeTab === 'approvals' && 'Approvals Center'}
+              {activeTab === 'company-docs' && 'Company Docs'}
             </h1>
             <p className="page-subtitle">
               {activeTab === 'dashboard' && 'Real-time overview of active bids, alerts, and deadline schedules.'}
@@ -2459,6 +2470,7 @@ export default function Dashboard() {
               {activeTab === 'team' && 'Create and manage account profiles for MIS Team and MIS Executives.'}
               {activeTab === 'work-summary' && 'Executive workload statistics and active assignment mappings.'}
               {activeTab === 'approvals' && 'Review, approve, and action pending workflow requests from your team.'}
+              {activeTab === 'company-docs' && 'Company profile documents and certificates. Uploaded by the MIS Team, view-only for everyone else.'}
             </p>
           </div>
 
@@ -4542,6 +4554,11 @@ export default function Dashboard() {
                 onCountsChange={setPendingApprovalsCount}
                 showToast={showToast}
               />
+            )}
+
+            {/* TAB: COMPANY DOCS */}
+            {activeTab === 'company-docs' && (
+              <CompanyDocs fetchWithAuth={fetchWithAuth} showToast={showToast} />
             )}
 
             {/* TAB: WORK SUMMARY */}

@@ -47,3 +47,6 @@ tenders.db
 
 # local tender documents
 /public/documents/
+
+# company docs uploaded at runtime
+/company-docs/

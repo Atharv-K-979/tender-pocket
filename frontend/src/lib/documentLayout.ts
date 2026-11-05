@@ -192,11 +192,17 @@ export class DocumentLayoutRenderer {
   public getGlobalStyles(orientation?: 'portrait' | 'landscape'): string {
     const isLandscape = (orientation || this.orientation) === 'landscape';
     const isThemeA = this.profile.theme === 'A';
-    const bodyFont = isThemeA ? "'Times New Roman', Times, serif" : "Cambria, Georgia, serif";
-    const bodySize = isLandscape ? (isThemeA ? "11pt" : "10pt") : (isThemeA ? "12pt" : "10pt");
+    // Bid documents: Cambria (Headings) + Cambria (Body) for both companies.
+    // Portrait A4: 12pt body, 16pt headings. Landscape keeps its compact sizes, since the single-page
+    // declarations do not fit an A4 landscape page at 12pt.
+    const bodyFont = "Cambria, 'Cambria Math', Georgia, serif";
+    const headingFont = bodyFont;
+    const bodySize = isLandscape ? (isThemeA ? "11pt" : "10pt") : "12pt";
+    const headingSize = isLandscape ? "14pt" : "16pt";
+    const bodyLineHeight = '1.15';
     const bodyAlign = "justify";
     const sideMargin = isLandscape ? (isThemeA ? "12mm" : "14mm") : (isThemeA ? "10mm" : "17.5mm");
-    const bottomPadding = isLandscape ? (isThemeA ? "14mm" : "42mm") : (isThemeA ? "18mm" : "40mm");
+    const bottomPadding = isLandscape ? (isThemeA ? "9mm" : "41mm") : (isThemeA ? "9mm" : "32mm");
 
     return `
       @page {
@@ -217,7 +223,7 @@ export class DocumentLayoutRenderer {
         font-family: ${bodyFont};
         font-size: ${bodySize};
         color: #000000;
-        line-height: ${isLandscape ? (isThemeA ? '1.20' : '1.25') : (isThemeA ? '1.15' : '1.22')};
+        line-height: ${bodyLineHeight};
       }
 
       @media screen {
@@ -247,7 +253,7 @@ export class DocumentLayoutRenderer {
         min-height: 100%;
         padding-left: ${sideMargin};
         padding-right: ${sideMargin};
-        padding-top: ${isLandscape ? '5mm' : '8mm'};
+        padding-top: ${isLandscape ? '5mm' : (isThemeA ? '8mm' : '6mm')};
         padding-bottom: ${bottomPadding};
         display: flex;
         flex-direction: column;
@@ -336,7 +342,7 @@ export class DocumentLayoutRenderer {
       .theme-b-date-row {
         width: 100%;
         text-align: right;
-        font-size: 10pt;
+        font-size: ${bodySize};
         font-weight: normal;
         margin-bottom: 4px;
         color: #000;
@@ -348,8 +354,8 @@ export class DocumentLayoutRenderer {
         margin: ${isThemeA ? '8px 0 6px 0' : '10px 0 6px 0'};
       }
       .doc-title {
-        font-family: ${bodyFont};
-        font-size: 14pt;
+        font-family: ${headingFont};
+        font-size: ${headingSize};
         font-weight: bold;
         text-decoration: underline;
         text-transform: uppercase;
@@ -358,8 +364,8 @@ export class DocumentLayoutRenderer {
         letter-spacing: 0.2px;
       }
       .doc-subtitle {
-        font-family: ${bodyFont};
-        font-size: ${isThemeA ? '14pt' : '10.5pt'};
+        font-family: ${headingFont};
+        font-size: 14pt;
         font-style: italic;
         font-weight: ${isThemeA ? 'bold' : 'normal'};
         margin: 3px 0 0 0;
@@ -369,7 +375,7 @@ export class DocumentLayoutRenderer {
       .address-block {
         margin-bottom: ${isThemeA ? '7pt' : '6pt'};
         font-size: ${bodySize};
-        line-height: ${isThemeA ? '1.15' : '1.20'};
+        line-height: ${bodyLineHeight};
       }
       .address-block strong {
         font-weight: bold;
@@ -377,7 +383,7 @@ export class DocumentLayoutRenderer {
       .subject-ref-block {
         margin-bottom: ${isThemeA ? '7pt' : '6pt'};
         font-size: ${bodySize};
-        line-height: ${isThemeA ? '1.15' : '1.20'};
+        line-height: ${bodyLineHeight};
       }
       .subject-ref-table {
         width: 100%;
@@ -395,18 +401,18 @@ export class DocumentLayoutRenderer {
       /* CONTENT BODY WITH STRICT FOOTER CLEARANCE */
       .doc-body {
         font-size: ${bodySize};
-        line-height: ${isThemeA ? '1.15' : '1.22'};
+        line-height: ${bodyLineHeight};
         text-align: ${bodyAlign};
       }
       .doc-body p {
         margin: 0 0 ${isThemeA ? '7pt' : '6pt'} 0;
-        line-height: ${isThemeA ? '1.15' : '1.22'};
+        line-height: ${bodyLineHeight};
       }
       .doc-body p.justify {
         text-align: justify;
         text-justify: inter-word;
         margin-bottom: ${isThemeA ? '7pt' : '6pt'};
-        line-height: ${isThemeA ? '1.15' : '1.22'};
+        line-height: ${bodyLineHeight};
       }
       .doc-body p.center {
         text-align: center;
@@ -421,7 +427,7 @@ export class DocumentLayoutRenderer {
       }
       .doc-body li {
         margin-bottom: 3.5px;
-        line-height: ${isThemeA ? '1.15' : '1.22'};
+        line-height: ${bodyLineHeight};
       }
       .closing-line {
         font-family: ${bodyFont};
@@ -434,24 +440,24 @@ export class DocumentLayoutRenderer {
       /* COMPACT DOCUMENT STYLES - preserves matching font sizes with clean paragraph gaps */
       .compact-doc .doc-body {
         font-size: ${bodySize};
-        line-height: ${isThemeA ? '1.15' : '1.20'};
+        line-height: ${bodyLineHeight};
       }
       .compact-doc .doc-body p {
-        margin: 0 0 ${isThemeA ? '5.5pt' : '4pt'} 0;
+        margin: 0 0 ${isThemeA ? '5.5pt' : '3pt'} 0;
       }
       .compact-doc .doc-body p.justify {
-        margin-bottom: ${isThemeA ? '5.5pt' : '4pt'};
-        line-height: ${isThemeA ? '1.15' : '1.20'};
+        margin-bottom: ${isThemeA ? '5.5pt' : '3pt'};
+        line-height: ${bodyLineHeight};
       }
       .compact-doc .address-block {
         margin-bottom: ${isThemeA ? '5.5pt' : '4pt'};
         font-size: ${bodySize};
-        line-height: ${isThemeA ? '1.15' : '1.18'};
+        line-height: ${bodyLineHeight};
       }
       .compact-doc .subject-ref-block {
         margin-bottom: ${isThemeA ? '5.5pt' : '4pt'};
         font-size: ${bodySize};
-        line-height: ${isThemeA ? '1.15' : '1.18'};
+        line-height: ${bodyLineHeight};
       }
       .compact-doc .doc-title-container {
         margin: ${isThemeA ? '5px 0 3px 0' : '6px 0 4px 0'};
@@ -464,7 +470,7 @@ export class DocumentLayoutRenderer {
       }
       .compact-doc .signature-block p {
         margin: 0;
-        line-height: ${isThemeA ? '1.15' : '1.18'};
+        line-height: ${bodyLineHeight};
         font-size: ${bodySize};
       }
       .compact-doc .sign-stamp-wrap.theme-a-sign-wrap {
@@ -473,12 +479,12 @@ export class DocumentLayoutRenderer {
         margin: 1px 0 2px 0;
       }
       .compact-doc .sign-img.theme-a-sign {
-        width: 72px !important;
-        height: 46px !important;
+        width: 100px !important;
+        height: 66px !important;
       }
       .compact-doc .stamp-img.theme-a-stamp {
-        width: 48px !important;
-        height: 48px !important;
+        width: 70px !important;
+        height: 70px !important;
       }
       .compact-doc .sign-stamp-wrap.theme-b-sign-wrap {
         min-height: 36px;
@@ -486,21 +492,40 @@ export class DocumentLayoutRenderer {
         margin: 1px 0 2px 0;
       }
       .compact-doc .sign-img.theme-b-sign {
-        width: 95px;
-        height: 31px;
+        width: 133px;
+        height: 44px;
       }
       .compact-doc .stamp-img.theme-b-stamp {
-        width: 44px;
-        height: 44px;
+        width: 70px;
+        height: 70px;
       }
       .compact-doc .stamp-sig-img,
       .compact-doc .theme-a-stamp-sig,
       .compact-doc .signature-block img[alt="Signature &amp; Stamp"],
       .compact-doc .signature-block img[alt="Signature & Stamp"] {
-        width: 120px !important;
-        height: 52px !important;
+        width: 170px !important;
+        height: 74px !important;
         object-fit: contain;
       }
+      ${!isThemeA && !isLandscape ? `
+      /* Healthtech Bid Form (first page): larger signature, close to the other pages' 210x98. */
+      .page-doc-4.compact-doc .signature-block img[alt="Signature &amp; Stamp"],
+      .page-doc-4.compact-doc .signature-block img[alt="Signature & Stamp"] {
+        width: 190px !important;
+        height: 88px !important;
+      }
+      ` : ''}
+      ${!isLandscape ? `
+      /* Bid Form is the longest single-page document (and repeats the product name): slightly tighter
+         lines so long item lists and the signature still fit on the page. */
+      .page-doc-4.compact-doc .doc-body,
+      .page-doc-4.compact-doc .doc-body p,
+      .page-doc-4.compact-doc .doc-body p.justify,
+      .page-doc-4.compact-doc .address-block,
+      .page-doc-4.compact-doc .subject-ref-block {
+        line-height: 1.1;
+      }
+      ` : ''}
 
       /* TABLES */
       table.data-table {
@@ -508,8 +533,8 @@ export class DocumentLayoutRenderer {
         border-collapse: collapse;
         border: 1px solid #000000;
         margin: 6px 0 8px 0;
-        font-size: ${isLandscape ? "12pt" : "11.5pt"};
-        line-height: ${isLandscape ? "1.3" : "1.25"};
+        font-size: ${bodySize};
+        line-height: 1.25;
         page-break-inside: avoid;
         background-color: transparent !important;
       }
@@ -521,7 +546,17 @@ export class DocumentLayoutRenderer {
         border: 1px solid #000000;
         text-align: left;
       }
-      table.data-table th.center, table.data-table td.center {
+      /* Table cells never inherit the justified body alignment: justified text in narrow
+         columns stretches word gaps (e-mail ids, names, item lists). */
+      .doc-body table td,
+      .doc-body table th,
+      .doc-body table td p,
+      .doc-body table td div {
+        text-align: left;
+        text-justify: auto;
+      }
+      table.data-table th.center, table.data-table td.center,
+      .doc-body table td.center, .doc-body table th.center {
         text-align: center;
       }
       table.data-table td {
@@ -577,13 +612,13 @@ export class DocumentLayoutRenderer {
       table.table-bidder-info th,
       table.table-bidder-info td {
         padding: ${isThemeA ? (isLandscape ? '8px 12px' : '9px 12px') : (isLandscape ? '7px 10px' : '8px 10px')} !important;
-        font-size: ${isThemeA ? '12pt' : '10pt'} !important;
+        font-size: ${bodySize} !important;
         line-height: ${isThemeA ? '1.22' : '1.22'} !important;
       }
       .portrait-mode table.table-bidder-info th,
       .portrait-mode table.table-bidder-info td {
         padding: ${isThemeA ? '9px 12px' : '8px 10px'} !important;
-        font-size: ${isThemeA ? '12pt' : '10pt'} !important;
+        font-size: ${bodySize} !important;
         line-height: ${isThemeA ? '1.22' : '1.22'} !important;
       }
       /* Clean white tables without blue fill (OEM Declaration & HT Local Content) */
@@ -591,17 +626,17 @@ export class DocumentLayoutRenderer {
         background-color: transparent !important;
         color: #000000 !important;
         font-weight: bold;
-        font-size: ${isThemeA ? '12pt' : '10pt'};
+        font-size: ${bodySize};
       }
       /* Theme B Escalation Matrix (#C5D9EF header with black text) */
       table.table-ht-matrix th {
         background-color: #C5D9EF !important;
         color: #000000 !important;
         font-weight: bold;
-        font-size: 10pt !important;
+        font-size: ${isLandscape ? '10pt' : '11pt'} !important;
       }
       table.table-ht-matrix td {
-        font-size: 9.8pt !important;
+        font-size: ${isLandscape ? '9.8pt' : '11pt'} !important;
       }
       /* Theme B Service Stations (#D4DCE3 header with black text) */
       table.table-ht-stations {
@@ -613,7 +648,7 @@ export class DocumentLayoutRenderer {
       table.table-ht-stations td {
         border: 1px solid #000000 !important;
         padding: 2.5px 4px !important;
-        font-size: 9.2pt !important;
+        font-size: ${isLandscape ? '9.2pt' : '10.5pt'} !important;
         line-height: 1.15 !important;
         vertical-align: middle;
       }
@@ -621,7 +656,7 @@ export class DocumentLayoutRenderer {
         background-color: #D4DCE3 !important;
         color: #000000 !important;
         font-weight: bold;
-        font-size: 9.5pt !important;
+        font-size: ${isLandscape ? '9.5pt' : '10.5pt'} !important;
         padding: 3px 4px !important;
       }
       table.table-ht-stations tr {
@@ -635,17 +670,17 @@ export class DocumentLayoutRenderer {
         border: 1px solid #4F81BD !important;
         background-color: #4F81BD !important;
         color: #ffffff !important;
-        font-size: 12pt !important;
+        font-size: ${bodySize} !important;
       }
       table.table-me-matrix td {
         border: 1px solid #95B3D7 !important;
-        font-size: 12pt !important;
+        font-size: ${bodySize} !important;
       }
       /* Theme A Service Stations with #4F81BD header */
       table.table-me-stations th,
       table.table-me-stations td {
         padding: 2.5px 4px !important;
-        font-size: 10.5pt !important;
+        font-size: ${isLandscape ? '10.5pt' : '11pt'} !important;
         line-height: 1.15 !important;
         vertical-align: middle;
       }
@@ -653,7 +688,7 @@ export class DocumentLayoutRenderer {
         background-color: #4F81BD !important;
         color: #ffffff !important;
         font-weight: bold;
-        font-size: 11pt !important;
+        font-size: ${isLandscape ? '10.5pt' : '11pt'} !important;
         padding: 3.5px 4px !important;
       }
       table.table-me-stations tr {
@@ -671,7 +706,7 @@ export class DocumentLayoutRenderer {
       }
       .signature-block p {
         margin: 0;
-        line-height: ${isThemeA ? '1.15' : '1.20'};
+        line-height: ${bodyLineHeight};
         font-size: ${bodySize};
       }
       .sign-stamp-wrap {
@@ -692,24 +727,24 @@ export class DocumentLayoutRenderer {
         display: inline-block;
       }
       .sign-img.theme-a-sign {
-        width: 78px;
-        height: 52px;
+        width: 110px;
+        height: 73px;
       }
       .sign-img.theme-b-sign {
-        width: 105px;
-        height: 35px;
+        width: 147px;
+        height: 49px;
       }
       .stamp-img {
         object-fit: contain;
         display: inline-block;
       }
       .stamp-img.theme-a-stamp {
-        width: 58px;
-        height: 58px;
+        width: 82px;
+        height: 82px;
       }
       .stamp-img.theme-b-stamp {
-        width: 58px;
-        height: 58px;
+        width: 82px;
+        height: 82px;
       }
 
       /* FOOTERS */
@@ -845,7 +880,7 @@ export class DocumentLayoutRenderer {
             </tr>
           </table>
           <div class="theme-a-divider"></div>
-          ${formattedDate ? `<div class="theme-a-date-row" style="text-align: right; font-size: 11pt; margin: 2px 0 6px 0;">Date: ${formattedDate}</div>` : ''}
+          ${formattedDate ? `<div class="theme-a-date-row" style="text-align: right; font-size: 12pt; margin: 2px 0 6px 0;">Date: ${formattedDate}</div>` : ''}
         </div>
         <!-- HEADER_END -->
       `;
@@ -920,16 +955,16 @@ export class DocumentLayoutRenderer {
       if (isThemeA) {
         return `
           <div class="signature-block signature-block-landscape" style="margin-top: 4px;">
-            <p style="margin-bottom: 2px; font-size: 12.5pt;">On behalf of <strong>${this.profile.shortName}</strong></p>
+            <p style="margin-bottom: 2px; font-size: 12pt;">On behalf of <strong>${this.profile.shortName}</strong></p>
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
               <div style="font-size: 11.5pt; line-height: 1.25; min-width: 190px;">
                 <div>Name: <strong>${this.profile.signatoryName}</strong></div>
                 <div>${this.profile.signatoryDesignation}</div>
                 <div>Place: ${extraLines.place || this.profile.place} | Date: ${formatDate(extraLines.date || opts.docDate || '26-09-2026')}</div>
               </div>
-              ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="130" height="66" class="stamp-sig-img" style="width: 130px; height: 66px; object-fit: contain; margin-left: 6px;" />` : `
-                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="84" height="50" class="sign-img theme-a-sign" style="width: 84px; height: 50px; object-fit: contain;" />` : ''}
-                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="54" height="54" class="stamp-img theme-a-stamp" style="width: 54px; height: 54px; object-fit: contain;" />` : ''}
+              ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="185" height="94" class="stamp-sig-img" style="width: 185px; height: 94px; object-fit: contain; margin-left: 6px;" />` : `
+                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="118" height="70" class="sign-img theme-a-sign" style="width: 118px; height: 70px; object-fit: contain;" />` : ''}
+                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="76" height="76" class="stamp-img theme-a-stamp" style="width: 76px; height: 76px; object-fit: contain;" />` : ''}
               `}
             </div>
           </div>
@@ -944,9 +979,9 @@ export class DocumentLayoutRenderer {
                 <div style="font-weight: bold;">${this.profile.signatoryName}</div>
                 <div>${this.profile.signatoryDesignation}</div>
               </div>
-              ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="135" height="65" class="stamp-sig-img" style="width: 135px; height: 65px; object-fit: contain; margin-left: 6px;" alt="Signature &amp; Stamp" />` : `
-                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="95" height="46" class="sign-img theme-b-sign" style="width: 95px; height: 46px; object-fit: contain;" />` : ''}
-                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="54" height="54" class="stamp-img theme-b-stamp" style="width: 54px; height: 54px; object-fit: contain;" />` : ''}
+              ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="190" height="92" class="stamp-sig-img" style="width: 190px; height: 92px; object-fit: contain; margin-left: 6px;" alt="Signature &amp; Stamp" />` : `
+                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="133" height="64" class="sign-img theme-b-sign" style="width: 133px; height: 64px; object-fit: contain;" />` : ''}
+                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="76" height="76" class="stamp-img theme-b-stamp" style="width: 76px; height: 76px; object-fit: contain;" />` : ''}
               `}
             </div>
           </div>
@@ -959,10 +994,10 @@ export class DocumentLayoutRenderer {
         <div class="signature-block">
           <p style="margin-bottom: 2px; font-size: 12pt;">On behalf of <strong>${this.profile.shortName}</strong></p>
           <div style="margin: 2px 0 3px 0;">
-            ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="130" height="56" class="stamp-sig-img theme-a-stamp-sig" style="width: 130px; height: 56px; object-fit: contain; display: block;" alt="Signature &amp; Stamp" />` : `
+            ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="185" height="80" class="stamp-sig-img theme-a-stamp-sig" style="width: 185px; height: 80px; object-fit: contain; display: block;" alt="Signature &amp; Stamp" />` : `
               <div class="sign-stamp-wrap theme-a-sign-wrap">
-                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="78" height="52" class="sign-img theme-a-sign" style="width: 78px; height: 52px;" />` : ''}
-                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="58" height="58" class="stamp-img theme-a-stamp" style="width: 58px; height: 58px;" />` : ''}
+                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="110" height="73" class="sign-img theme-a-sign" style="width: 110px; height: 73px;" />` : ''}
+                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="82" height="82" class="stamp-img theme-a-stamp" style="width: 82px; height: 82px;" />` : ''}
               </div>
             `}
           </div>
@@ -976,18 +1011,18 @@ export class DocumentLayoutRenderer {
       // Theme B
       return `
         <div class="signature-block">
-          <p style="margin-bottom: 2px; font-weight: bold; font-size: 10pt;">Yours faithfully,</p>
-          <p style="margin-top: 0; margin-bottom: 3px; font-weight: bold; font-size: 10pt;">For and on behalf of ${this.profile.legalName}</p>
+          <p style="margin-bottom: 2px; font-weight: bold; font-size: 12pt;">Yours faithfully,</p>
+          <p style="margin-top: 0; margin-bottom: 3px; font-weight: bold; font-size: 12pt;">For and on behalf of ${this.profile.legalName}</p>
           <div style="margin: 2px 0 3px 0;">
-            ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="150" height="70" style="width: 150px; height: 70px; object-fit: contain; display: block;" alt="Signature &amp; Stamp" />` : `
+            ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="210" height="98" style="width: 210px; height: 98px; object-fit: contain; display: block;" alt="Signature &amp; Stamp" />` : `
               <div class="sign-stamp-wrap theme-b-sign-wrap">
-                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="105" height="35" class="sign-img theme-b-sign" style="width: 105px; height: 35px;" />` : ''}
-                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="58" height="58" class="stamp-img theme-b-stamp" style="width: 58px; height: 58px;" />` : ''}
+                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="147" height="49" class="sign-img theme-b-sign" style="width: 147px; height: 49px;" />` : ''}
+                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="82" height="82" class="stamp-img theme-b-stamp" style="width: 82px; height: 82px;" />` : ''}
               </div>
             `}
           </div>
-          <p style="margin: 0; line-height: 1.20; font-size: 10pt;">${this.profile.signatoryName}</p>
-          <p style="margin: 0; line-height: 1.20; font-size: 10pt;">${this.profile.signatoryDesignation}</p>
+          <p style="margin: 0; line-height: 1.20; font-size: 12pt;">${this.profile.signatoryName}</p>
+          <p style="margin: 0; line-height: 1.20; font-size: 12pt;">${this.profile.signatoryDesignation}</p>
         </div>
       `;
     }
@@ -1012,7 +1047,7 @@ export class DocumentLayoutRenderer {
             </div>
           ` : ''}
           ${shouldPlaceDateBelow && formattedDate ? `
-            <div class="theme-b-date-row" style="text-align: right; margin: 2px 0 8px 0; font-size: 10pt;">Date: ${formattedDate}</div>
+            <div class="theme-b-date-row" style="text-align: right; margin: 2px 0 8px 0; font-size: 12pt;">Date: ${formattedDate}</div>
           ` : ''}
           <div class="doc-body">
             ${content}
