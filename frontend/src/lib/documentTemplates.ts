@@ -498,9 +498,9 @@ export function generateHtmlTemplates(data: any): string {
   // Doc 14: Declaration Certificate for Local Content (Page 1)
   const renderDocLocalContentP1 = () => {
     const isPppMsme = preferencePolicy.toUpperCase().includes('MSME');
-    const itemFontSize = isThemeA ? '9pt' : '9.8pt';
-    const itemMargin = isThemeA ? '3px' : '5px';
-    const itemLineHeight = isThemeA ? '1.2' : '1.28';
+    const itemFontSize = orientation === 'landscape' ? (isThemeA ? '9pt' : '9.8pt') : '12pt';
+    const itemMargin = '4px';
+    const itemLineHeight = '1.2';
 
     return renderer.wrapPage(`
       <p class="justify" style="font-size: ${itemFontSize}; line-height: ${itemLineHeight}; margin-bottom: ${itemMargin};">This declaration must form part of all tenders &amp; it contains general information and serves as a declaration form for all bidders. (Before completing this declaration, bidders must study the General Conditions, Definitions, Govt. Directives applicable in respect of Local Content &amp; prescribed tender conditions).</p>
@@ -540,7 +540,24 @@ export function generateHtmlTemplates(data: any): string {
         </tr>
       </table>
 
-      ${!isThemeA ? `<p class="justify" style="margin-top: 6px; font-size: ${itemFontSize}; line-height: ${itemLineHeight};">e) The local content calculated using the definition given above are as under:</p>` : ''}
+      <!-- Local content table kept on page 1 directly under its introducing line -->
+      <p class="justify" style="margin-top: 6px; font-size: ${itemFontSize}; line-height: ${itemLineHeight};">${isThemeA ? 'g)' : 'e)'} The local content calculated using the definition given above are as under:</p>
+      <table class="data-table ${!isThemeA ? 'table-white-header' : ''}" style="margin: 4px 0 8px 0;">
+        <thead>
+          <tr>
+            <th style="width: 30%;"><strong>Tender No</strong></th>
+            <th style="width: 25%;" class="center"><strong>Local Content Calculated as above %</strong></th>
+            <th style="width: 45%;"><strong>Location of Local Value Addition</strong></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>${bidNumber}</strong><br/>Dated: ${bidDate}</td>
+            <td class="center" style="font-size: 12pt; font-weight: bold;">${localContentPct}</td>
+            <td>${localContentLocation}</td>
+          </tr>
+        </tbody>
+      </table>
     `, {
       title: 'DECLARATION CERTIFICATE FOR LOCAL CONTENT',
       docDate: docDate,
@@ -550,24 +567,6 @@ export function generateHtmlTemplates(data: any): string {
 
   // Doc 15: Declaration Certificate for Local Content (Page 2)
   const renderDocLocalContentP2 = () => renderer.wrapPage(`
-    ${isThemeA ? '<p style="margin-bottom: 4px;">g) The local content calculated using the definition given above are as under:</p>' : ''}
-    <table class="data-table ${!isThemeA ? 'table-white-header' : ''}" style="margin: 4px 0 8px 0;">
-      <thead>
-        <tr>
-          <th style="width: 30%;"><strong>Tender No</strong></th>
-          <th style="width: 25%;" class="center"><strong>Local Content Calculated as above %</strong></th>
-          <th style="width: 45%;"><strong>Location of Local Value Addition</strong></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong>${bidNumber}</strong><br/>Dated: ${bidDate}</td>
-          <td class="center" style="font-size: 12pt; font-weight: bold;">${localContentPct}</td>
-          <td>${localContentLocation}</td>
-        </tr>
-      </tbody>
-    </table>
-
     <p class="justify">h) I accept that the Procurement Authority / Institution / MDL / Nodal Ministry has the right to request that the local content be verified in terms of the requirements of revised Public Procurement (preference to Make in India) Order 2017 dtd.16.09.2020 and I shall furnish the document / information on demand. Failure on my part to furnish the data will be treated as false declaration as per PPP MII Order 2017. In case of contract being awarded, I undertake to retain the relevant documents for 7 years from date of execution.</p>
     <p class="justify">i) I understand that the submission of incorrect data, or data that are not verifiable as described in revised Public Procurement (preference to Make in India) Order 2017, may result in the Procurement Authority / Nodal Ministry / MDL imposing any or all of the remedies as provided for in Clause 9 of the Revised Public Procurement (preference to Make in India) Order 2017 dated 16.09.2020.</p>
     <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
@@ -602,7 +601,7 @@ export function generateHtmlTemplates(data: any): string {
           <td>Mr. Sanjay Sadade</td>
           <td>General Manager</td>
           <td>Administration</td>
-          <td>09225126772</td>
+          <td>9225126772</td>
           <td><strong>support@markenworld.com</strong></td>
         </tr>
         <tr>
@@ -610,7 +609,7 @@ export function generateHtmlTemplates(data: any): string {
           <td>${isThemeA ? '<strong>Mr. Shreedhar Shingare</strong>' : 'Mr. Shridhar Shingare'}</td>
           <td>Tender Manager</td>
           <td>Institution Business Division</td>
-          <td>${isThemeA ? '<strong>+91 90111 04332</strong>' : '09011104332'}</td>
+          <td>${isThemeA ? '<strong>+91 90111 04332</strong>' : '9011104332'}</td>
           <td><strong>${isThemeA ? 'info@markworld.com' : 'info@markenworld.com'}</strong></td>
         </tr>
         <tr>
@@ -618,7 +617,7 @@ export function generateHtmlTemplates(data: any): string {
           <td>Mr. Eknath Mandal</td>
           <td>Production Manager</td>
           <td>Delays of machine design and Technical Error.</td>
-          <td>09225102371</td>
+          <td>9225102371</td>
           <td><strong>support@markenworld.com</strong></td>
         </tr>
         <tr>
@@ -626,7 +625,7 @@ export function generateHtmlTemplates(data: any): string {
           <td>Mr. Sachin Shisode</td>
           <td>Service Head</td>
           <td>Servicing Delay</td>
-          <td>08390900347</td>
+          <td>8390900347</td>
           <td><strong>support@markenworld.com</strong></td>
         </tr>
       </tbody>
@@ -686,7 +685,7 @@ export function generateHtmlTemplates(data: any): string {
 
   // Doc 17: Details of After Sales Service Station (Page 1)
   const renderDocAfterSalesP1 = () => renderer.wrapPage(`
-    <table class="data-table ${isThemeA ? 'table-me-stations' : 'table-ht-stations'}" style="font-size: 8.8pt; line-height: 1.16; margin: 4px 0 6px 0;">
+    <table class="data-table ${isThemeA ? 'table-me-stations' : 'table-ht-stations'}" style="line-height: 1.16; margin: 4px 0 6px 0;">
       <thead>
         <tr>
           <th rowspan="2" style="width: 4%; padding: 3px 2px;" class="center">Sr. No.</th>
@@ -707,8 +706,8 @@ export function generateHtmlTemplates(data: any): string {
             <td style="padding: 2.5px 4px;"><strong>${st.city}</strong></td>
             <td style="padding: 2.5px 4px; line-height: 1.15;">${st.addr}</td>
             <td style="padding: 2.5px 4px;">${st.contact.replace(/\n/g, '<br/>')}</td>
-            <td style="padding: 2.5px 4px;"><div style="white-space: nowrap; font-size: 8.2pt; line-height: 1.18;"><strong><span class="${isThemeA ? 'link-blue' : ''}">${st.email.replace(/\n/g, '<br/>')}</span></strong></div></td>
-            <td style="padding: 2.5px 3px;"><div style="white-space: nowrap; font-size: 8.2pt; line-height: 1.18;"><strong>${st.mob.replace(/\n/g, '<br/>')}</strong></div></td>
+            <td style="padding: 2.5px 4px;"><div style="white-space: nowrap; line-height: 1.18;"><strong><span class="${isThemeA ? 'link-blue' : ''}">${st.email.replace(/\n/g, '<br/>')}</span></strong></div></td>
+            <td style="padding: 2.5px 3px;"><div style="white-space: nowrap; line-height: 1.18;"><strong>${st.mob.replace(/\n/g, '<br/>')}</strong></div></td>
           </tr>
         `).join('')}
       </tbody>
@@ -721,7 +720,7 @@ export function generateHtmlTemplates(data: any): string {
 
   // Doc 18: Details of After Sales Service Station (Page 2)
   const renderDocAfterSalesP2 = () => renderer.wrapPage(`
-    <table class="data-table ${isThemeA ? 'table-me-stations' : 'table-ht-stations'}" style="font-size: 8.8pt; line-height: 1.16; margin: 4px 0 6px 0;">
+    <table class="data-table ${isThemeA ? 'table-me-stations' : 'table-ht-stations'}" style="line-height: 1.16; margin: 4px 0 6px 0;">
       <thead>
         <tr>
           <th rowspan="2" style="width: 4%; padding: 3px 2px;" class="center">Sr. No.</th>
@@ -742,8 +741,8 @@ export function generateHtmlTemplates(data: any): string {
             <td style="padding: 2.5px 4px;"><strong>${st.city}</strong></td>
             <td style="padding: 2.5px 4px; line-height: 1.15;">${st.addr}</td>
             <td style="padding: 2.5px 4px;">${st.contact.replace(/\n/g, '<br/>')}</td>
-            <td style="padding: 2.5px 4px;"><div style="white-space: nowrap; font-size: 8.2pt; line-height: 1.18;"><strong><span class="${isThemeA ? 'link-blue' : ''}">${st.email.replace(/\n/g, '<br/>')}</span></strong></div></td>
-            <td style="padding: 2.5px 3px;"><div style="white-space: nowrap; font-size: 8.2pt; line-height: 1.18;"><strong>${st.mob.replace(/\n/g, '<br/>')}</strong></div></td>
+            <td style="padding: 2.5px 4px;"><div style="white-space: nowrap; line-height: 1.18;"><strong><span class="${isThemeA ? 'link-blue' : ''}">${st.email.replace(/\n/g, '<br/>')}</span></strong></div></td>
+            <td style="padding: 2.5px 3px;"><div style="white-space: nowrap; line-height: 1.18;"><strong>${st.mob.replace(/\n/g, '<br/>')}</strong></div></td>
           </tr>
         `).join('')}
       </tbody>

@@ -12,7 +12,7 @@ import os
 import json
 import argparse
 import docx
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt, RGBColor, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.enum.section import WD_ORIENT
@@ -102,6 +102,117 @@ def set_repeat_header(row):
     trPr.append(parse_xml(f'<w:tblHeader {nsdecls("w")}/>'))
 
 # ---------------------------------------------------------------------------
+# Bid document typography (both companies): Cambria headings + Cambria body,
+# Portrait A4: 12pt body text, 16pt headings (subtitles 14pt). Landscape keeps its compact sizes
+# because the single-page declarations do not fit an A4 landscape page at 12pt.
+# ---------------------------------------------------------------------------
+
+BID_FONT = 'Cambria'
+BID_BODY_PT = 12
+BID_HEADING_MIN_PT = 14
+BID_HEADING_MAX_PT = 16
+_FIXED_SIZE_TABLES = set()
+
+
+def set_page_break_before(paragraph_element):
+    """Start a new page at this paragraph (pageBreakBefore) instead of inserting a separate break paragraph.
+
+    A separate break paragraph lands on a fresh page when the previous page is exactly full, which
+    produced blank pages between bid documents.
+    """
+    pPr = paragraph_element.get_or_add_pPr()
+    if pPr.find(qn('w:pageBreakBefore')) is None:
+        pPr.insert(0, OxmlElement('w:pageBreakBefore'))
+
+
+def first_paragraph_after(body, marker):
+    """First w:p appended to the body after the element `marker` (searching into tables)."""
+    started = marker is None
+    for child in body.iterchildren():
+        if not started:
+            started = child is marker
+            continue
+        if child.tag == qn('w:p'):
+            return child
+        if child.tag == qn('w:tbl'):
+            p_in_tbl = child.find('.//' + qn('w:p'))
+            if p_in_tbl is not None:
+                return p_in_tbl
+    return None
+
+
+def fix_table_grid(tbl, widths):
+    """Lock a table to explicit column widths (fixed layout) so Word cannot widen it past the margins.
+
+    Widths are applied to the grid and to every cell, including merged header cells (gridSpan).
+    """
+    total = sum(int(w) for w in widths)
+    tblPr = tbl._tbl.tblPr
+    for tag in ('w:tblW', 'w:tblLayout'):
+        old = tblPr.find(qn(tag))
+        if old is not None:
+            tblPr.remove(old)
+    tblPr.append(parse_xml(f'<w:tblW {nsdecls("w")} w:w="{total // 635}" w:type="dxa"/>'))
+    tblPr.append(parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'))
+    old_mar = tblPr.find(qn('w:tblCellMar'))
+    if old_mar is not None:
+        tblPr.remove(old_mar)
+    # Narrow side padding (2.5pt) so long e-mail ids and 10-digit mobile numbers stay on one line
+    tblPr.append(parse_xml(f'<w:tblCellMar {nsdecls("w")}><w:left w:w="50" w:type="dxa"/><w:right w:w="50" w:type="dxa"/></w:tblCellMar>'))
+    for gc, w in zip(tbl._tbl.tblGrid.findall(qn('w:gridCol')), widths):
+        gc.set(qn('w:w'), str(int(w) // 635))
+    for tr in tbl._tbl.tr_lst:
+        col = 0
+        for tc in tr.tc_lst:
+            span = tc.grid_span
+            if col < len(widths):
+                tc.width = Emu(sum(int(w) for w in widths[col:col + span]))
+            col += span
+
+
+def keep_table_font_size(tbl):
+    """Exclude a dense directory table (service stations, matrix) from the 12pt normalisation."""
+    _FIXED_SIZE_TABLES.add(tbl._tbl)
+
+
+def apply_bid_typography(doc, body_pt=BID_BODY_PT, heading_min_pt=BID_HEADING_MIN_PT):
+    """Force Cambria on every body run and normalise sizes: body text -> 12pt, headings -> 14-16pt.
+
+    Letterhead header/footer parts are separate XML parts and are not touched.
+    """
+    from docx.text.run import Run
+    # Word's "single" spacing for Cambria is already ~1.17x the font size, so multiples above 1.0
+    # (1.15 / 1.18 / 1.2) make lines ~15% taller than the PDF version. Normalise to single spacing.
+    for spacing in doc.element.body.iter(qn('w:spacing')):
+        line = spacing.get(qn('w:line'))
+        rule = spacing.get(qn('w:lineRule'))
+        if line is not None and rule in (None, 'auto') and int(line) > 240:
+            spacing.set(qn('w:line'), '240')
+    # Table cells are always left aligned: justified text in narrow columns stretches the word gaps.
+    for tbl in doc.element.body.iter(qn('w:tbl')):
+        for jc in tbl.iter(qn('w:jc')):
+            if jc.getparent().tag == qn('w:pPr') and jc.get(qn('w:val')) in ('both', 'distribute'):
+                jc.set(qn('w:val'), 'left')
+    for r_elm in doc.element.body.iter(qn('w:r')):
+        if r_elm.find(qn('w:t')) is None:
+            continue
+        run = Run(r_elm, None)
+        run.font.name = BID_FONT
+        rFonts = run._r.get_or_add_rPr().get_or_add_rFonts()
+        for attr in ('w:eastAsia', 'w:cs'):
+            rFonts.set(qn(attr), BID_FONT)
+        anc = r_elm.getparent()
+        while anc is not None and anc.tag != qn('w:tbl'):
+            anc = anc.getparent()
+        if anc is not None and anc in _FIXED_SIZE_TABLES:
+            continue
+        size = run.font.size.pt if run.font.size is not None else None
+        if size is not None and size >= 13:
+            run.font.size = Pt(min(BID_HEADING_MAX_PT, max(heading_min_pt, size)))
+        else:
+            run.font.size = Pt(body_pt)
+
+# ---------------------------------------------------------------------------
 # Formatting Helpers
 # ---------------------------------------------------------------------------
 
@@ -119,9 +230,9 @@ def add_heading(doc, text, is_theme_a, subtitle=None, doc_date=None):
         p_blank = doc.add_paragraph()
         p_blank.paragraph_format.space_before = Pt(0)
         p_blank.paragraph_format.space_after = Pt(0)
-        p_blank.paragraph_format.line_spacing = Pt(12)
+        p_blank.paragraph_format.line_spacing = Pt(4)
         r_blank = p_blank.add_run()
-        r_blank.font.size = Pt(11)
+        r_blank.font.size = Pt(2)
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -131,8 +242,8 @@ def add_heading(doc, text, is_theme_a, subtitle=None, doc_date=None):
 
     r = p.add_run(text)
     r.bold = True
-    r.font.name = 'Times New Roman' if is_theme_a else 'Cambria'
-    r.font.size = Pt(13) if landscape else Pt(14)
+    r.font.name = BID_FONT
+    r.font.size = Pt(14) if landscape else Pt(16)
     r.font.color.rgb = RGBColor(0, 0, 0)
     r.font.underline = True
 
@@ -145,8 +256,8 @@ def add_heading(doc, text, is_theme_a, subtitle=None, doc_date=None):
         r_sub = p_sub.add_run(subtitle)
         r_sub.bold = True
         r_sub.italic = True if is_theme_a else False
-        r_sub.font.name = 'Times New Roman' if is_theme_a else 'Cambria'
-        r_sub.font.size = Pt(14) if is_theme_a else (Pt(10) if landscape else Pt(10.5))
+        r_sub.font.name = BID_FONT
+        r_sub.font.size = Pt(14) if (is_theme_a or not landscape) else Pt(10)
         r_sub.font.color.rgb = RGBColor(0, 0, 0)
 
     if doc_date and not is_theme_a:
@@ -166,10 +277,10 @@ def add_address_block(doc, authority_name, authority_dept, authority_address, is
     p = doc.add_paragraph()
     p.paragraph_format.space_before = Pt(1) if landscape else Pt(2)
     p.paragraph_format.space_after = Pt(2) if landscape else Pt(4)
-    p.paragraph_format.line_spacing = 1.15 if is_theme_a else 1.20
+    p.paragraph_format.line_spacing = 1.15
     p.paragraph_format.keep_with_next = True
 
-    font_name = 'Times New Roman' if is_theme_a else 'Cambria'
+    font_name = BID_FONT
     font_size = (Pt(11) if is_theme_a else Pt(10)) if landscape else (Pt(12) if is_theme_a else Pt(10))
 
     r_to = p.add_run("To,\n" if is_theme_a else "To\n")
@@ -198,10 +309,14 @@ def add_address_block(doc, authority_name, authority_dept, authority_address, is
         r_addr.font.name = font_name
         r_addr.font.size = font_size
 
+    # Drop the trailing line break so the block does not end with an empty line
+    if p.runs and p.runs[-1].text.endswith('\n'):
+        p.runs[-1].text = p.runs[-1].text[:-1]
+
 def add_subject_ref(doc, subject, ref_label, bid_number, bid_date, is_theme_a):
     """Add subject and reference line."""
     landscape = is_doc_landscape(doc)
-    font_name = 'Times New Roman' if is_theme_a else 'Cambria'
+    font_name = BID_FONT
     font_size = (Pt(11) if is_theme_a else Pt(10)) if landscape else (Pt(12) if is_theme_a else Pt(10))
 
     if subject:
@@ -239,14 +354,14 @@ def add_body_paragraph(doc, text, is_theme_a, bold=False, italic=False, space_af
     p.paragraph_format.space_before = Pt(0)
     
     act_space_after = min(space_after, 4) if landscape else space_after
-    act_line_spacing = line_spacing if line_spacing is not None else (1.15 if is_theme_a else 1.20)
+    act_line_spacing = line_spacing if line_spacing is not None else (1.15)
 
     p.paragraph_format.space_after = Pt(act_space_after)
     p.paragraph_format.line_spacing = act_line_spacing
     if keep_with_next:
         p.paragraph_format.keep_with_next = True
 
-    font_name = 'Times New Roman' if is_theme_a else 'Cambria'
+    font_name = BID_FONT
     if font_size is None:
         font_size = (Pt(11) if is_theme_a else Pt(10)) if landscape else (Pt(12) if is_theme_a else Pt(10))
 
@@ -266,11 +381,11 @@ def add_body_paragraph(doc, text, is_theme_a, bold=False, italic=False, space_af
 def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_landscape=False):
     """Add side-by-side signature & stamp block with horizontal details alignment in landscape."""
     landscape = is_landscape or is_doc_landscape(doc)
-    font_name = 'Times New Roman' if is_theme_a else 'Cambria'
+    font_name = BID_FONT
 
     # Header line: "On behalf of..."
     p_hdr = doc.add_paragraph()
-    p_hdr.paragraph_format.space_before = Pt(2) if landscape else Pt(6)
+    p_hdr.paragraph_format.space_before = Pt(2) if landscape else Pt(3)
     p_hdr.paragraph_format.space_after = Pt(2)
     p_hdr.paragraph_format.keep_with_next = True
     
@@ -302,7 +417,7 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
             set_row_cant_split(tbl.rows[0])
 
             w_det = Inches(2.55 if is_theme_a else 3.2)
-            w_sig = Inches(2.0 if is_theme_a else 2.2)
+            w_sig = Inches(2.45 if is_theme_a else 2.2)
 
             c_det = tbl.rows[0].cells[0]
             c_det.width = w_det
@@ -343,7 +458,7 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
 
             try:
                 r_img = p_img.add_run()
-                r_img.add_picture(stamp_sig_path, width=Inches(1.85 if is_theme_a else 1.55))
+                r_img.add_picture(stamp_sig_path, width=Inches(2.3 if is_theme_a else 2.0))
             except Exception:
                 p_img.add_run("(Signature & Stamp)")
         else:
@@ -355,8 +470,8 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
             set_row_cant_split(tbl.rows[0])
 
             w_det = Inches(3.0)
-            w_sig = Inches(1.5)
-            w_st = Inches(1.2)
+            w_sig = Inches(1.85)
+            w_st = Inches(1.4)
 
             c_det = tbl.rows[0].cells[0]
             c_det.width = w_det
@@ -395,7 +510,7 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
             if sig_file and os.path.exists(sig_file):
                 try:
                     r_img = p_sig.add_run()
-                    r_img.add_picture(sig_file, width=Inches(1.35))
+                    r_img.add_picture(sig_file, width=Inches(1.7))
                 except Exception:
                     p_sig.add_run("(Signature)")
             else:
@@ -411,7 +526,7 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
             if stamp_file and os.path.exists(stamp_file):
                 try:
                     r_st = p_stamp.add_run()
-                    r_st.add_picture(stamp_file, width=Inches(0.95))
+                    r_st.add_picture(stamp_file, width=Inches(1.2))
                 except Exception:
                     p_stamp.add_run("(Seal / Stamp)")
             else:
@@ -427,11 +542,11 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
         ])
         if stamp_sig_path and os.path.exists(stamp_sig_path):
             p_img = doc.add_paragraph()
-            p_img.paragraph_format.space_before = Pt(2)
-            p_img.paragraph_format.space_after = Pt(2)
+            p_img.paragraph_format.space_before = Pt(1)
+            p_img.paragraph_format.space_after = Pt(1)
             p_img.paragraph_format.keep_with_next = True
             r_img = p_img.add_run()
-            r_img.add_picture(stamp_sig_path, width=Inches(1.85))
+            r_img.add_picture(stamp_sig_path, width=Inches(2.3 if is_theme_a else 2.05))
         else:
             # Fallback 2 columns [Signature | Stamp]
             tbl = doc.add_table(rows=1, cols=2)
@@ -441,7 +556,7 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
             set_row_cant_split(tbl.rows[0])
 
             c_sig = tbl.rows[0].cells[0]
-            c_sig.width = Inches(2.2)
+            c_sig.width = Inches(2.6)
             c_sig.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             p_sig = c_sig.paragraphs[0]
             p_sig.paragraph_format.space_before = Pt(0)
@@ -450,7 +565,7 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
             if sig_file and os.path.exists(sig_file):
                 try:
                     r_img = p_sig.add_run()
-                    r_img.add_picture(sig_file, width=Inches(1.8))
+                    r_img.add_picture(sig_file, width=Inches(2.25))
                 except Exception:
                     p_sig.add_run("(Signature)")
             else:
@@ -466,17 +581,17 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
             if stamp_file and os.path.exists(stamp_file):
                 try:
                     r_st = p_stamp.add_run()
-                    r_st.add_picture(stamp_file, width=Inches(1.15))
+                    r_st.add_picture(stamp_file, width=Inches(1.45))
                 except Exception:
                     p_stamp.add_run("(Seal / Stamp)")
             else:
                 p_stamp.add_run("(Seal / Stamp)")
 
         p_det = doc.add_paragraph()
-        p_det.paragraph_format.space_before = Pt(2)
-        p_det.paragraph_format.space_after = Pt(3)
+        p_det.paragraph_format.space_before = Pt(1)
+        p_det.paragraph_format.space_after = Pt(0)
         p_det.paragraph_format.line_spacing = 1.15
-        p_det.paragraph_format.keep_with_next = True
+        # last paragraph of the document: must not be kept with the next document's first line
 
         r_nm = p_det.add_run(f"Name: {profile['signatory_name']}\n")
         r_nm.bold = True
@@ -522,7 +637,7 @@ def build_doc_1(doc, p, d, a):
         tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
         tbl.autofit = False
 
-        font_name = 'Times New Roman'
+        font_name = BID_FONT
         hdr_color = '4F81BD'
 
         hdr_cells = tbl.rows[0].cells
@@ -664,7 +779,7 @@ def build_doc_2(doc, p, d, a):
     set_row_cant_split(tbl.rows[0])
     set_row_cant_split(tbl.rows[1])
 
-    font_name = 'Times New Roman' if a else 'Cambria'
+    font_name = BID_FONT
     headers = ["Sr no", "List of quoted items", "Model", "Mfg. Brand / Make", "Qty"]
     widths = [Inches(0.9), Inches(4.7), Inches(1.9), Inches(2.1), Inches(1.0)] if is_landscape else [Inches(0.7), Inches(3.1), Inches(1.3), Inches(1.4), Inches(0.7)]
 
@@ -723,8 +838,8 @@ def build_doc_4(doc, p, d, a):
     add_subject_ref(doc, "Bid Form", p['ref_label'], d.get('bidNumber'), d.get('bidDate'), a)
     
     fs = (Pt(11) if a else Pt(9.5)) if is_landscape else (Pt(12) if a else Pt(10))
-    ls = 1.05 if (is_landscape and a) else (1.15 if a else 1.20)
-    sa = 1.5 if is_landscape else (3.0 if a else 4.0)
+    ls = 1.05 if is_landscape else 1.15
+    sa = 1.5 if is_landscape else (3.0 if a else 1.5)
 
     add_body_paragraph(doc, p['salutation'], a, bold=True, space_after=sa, font_size=fs, line_spacing=ls)
     add_body_paragraph(doc, f"We, the undersigned have examined the above mentioned bidding document, including amendment/corrigendum (if any), the receipt of which is hereby confirmed. We now offer to supply and deliver {d.get('productDescription', 'Equipment / Goods')} in conformity with your above referred document for the sum as shown in the Price Schedules attached herewith and made part of this bid. If our bid is accepted, we undertake to supply the goods and perform the services as mentioned in the bidding documents, in accordance with the delivery schedule specified in the List of Requirements.", a, space_after=sa, font_size=fs, line_spacing=ls)
@@ -859,7 +974,7 @@ def build_doc_10(doc, p, d, a):
     add_heading(doc, title, a, subtitle=subtitle, doc_date=d.get('date'))
     add_address_block(doc, d.get('authorityName'), d.get('authorityDept'), d.get('authorityAddress'), a)
     add_subject_ref(doc, "Declaration for Demonstration", p['ref_label'], d.get('bidNumber'), d.get('bidDate'), a)
-    sa = 2.0 if is_landscape else (5.5 if not a else 3.0)
+    sa = 2.0 if is_landscape else 3.0
     add_body_paragraph(doc, p['salutation'], a, bold=True, space_after=sa)
     add_body_paragraph(doc, f"We {p['short_name']} having registered office at {p['manufacturer_address']}.", a, space_after=sa)
     add_body_paragraph(doc, "We, the undersigned, hereby declare our commitment to arranging a demonstration of our product at our own expense. We understand the importance of showcasing the features and capabilities of our product to your satisfaction.", a, space_after=sa)
@@ -925,71 +1040,8 @@ def build_doc_13(doc, p, d, a):
     add_body_paragraph(doc, "Thanking you and assuring you of our best services at all the times.", a)
     add_signatory_block(doc, p, a, d['root_dir'], d.get('place', p['place']), d.get('date'), is_landscape=is_landscape)
 
-def build_doc_14(doc, p, d, a):
-    """Doc 14: Declaration Certificate for Local Content (Page 1)"""
-    is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
-    add_heading(doc, "DECLARATION CERTIFICATE FOR LOCAL CONTENT", a, doc_date=d.get('date'))
-    add_body_paragraph(doc, "This declaration must form part of the bid documentation. It serves as a declaration for the bidder and local content.", a, bold=True, space_after=3)
-    add_body_paragraph(doc, "General: -", a, bold=True, space_after=2)
-    add_body_paragraph(doc, "I the undersigned, in submitting the accompanying bid do hereby make the following statements that I certify to be true and complete in every respect:", a, bullet="a)", space_after=2)
-    add_body_paragraph(doc, "I have read and understood the requirement of local content (LC) and same is specified as percentage calculated in accordance with the definition provided at clause 2 of revised Public Procurement (preference to Make in India) Order 2017.", a, bullet="b)", space_after=2)
-    add_body_paragraph(doc, "“Local content” as per above order means the amount of value added in India which shall be the total value of items procured (excluding net domestic indirect taxes) minus the value of imported content in the item (including all customs duties) as a proportion of the total value in percent.", a, bullet="c)", space_after=2)
-    add_body_paragraph(doc, "I have satisfied myself that the goods/services/works to be delivered in terms of the above-specified bid comply with the local content requirements as specified in the tender for ‘Class-I Local Supplier’ / ‘Class-II Local Supplier’, and as above.", a, bullet="d)", space_after=2)
-    add_body_paragraph(doc, "I understand that a bidder can seek benefit of either Public Procurement Policy for MSEs–Order 2012 or Public Procurement (preference to Make in India) Order 2017 and not both and once the option is declared / selected it is not permitted to be modified subsequently. Accordingly, I seek the benefit from the below declared purchase preference policy only.", a, bullet="e)", space_after=2)
-    add_body_paragraph(doc, "I seek benefits against the following policy only (Select only one Option):", a, bullet="f)", space_after=3)
-
-    pref_policy = d.get('preferencePolicy', p.get('preferencePolicy', 'PPP MII 2017'))
-    is_msme = 'MSME' in pref_policy.upper()
-
-    # Policy Checkbox Table
-    cb_tbl = doc.add_table(rows=2, cols=2)
-    set_table_borders_none(cb_tbl)
-    cb_tbl.autofit = False
-
-    font_name = 'Times New Roman' if a else 'Cambria'
-    rows_def = [
-        ("[✔]" if is_msme else "[  ]", "1) PPP MSME Order 2012 (applicable for MSE manufacturers)"),
-        ("[✔]" if not is_msme else "[  ]", "2) PPP MII 2017 (applicable for Class I suppliers as well as MSE manufacturers)")
-    ]
-    w0 = Inches(0.8) if is_landscape else Inches(0.6)
-    w1 = Inches(9.8) if is_landscape else Inches(6.5)
-
-    for r_i, (box, label) in enumerate(rows_def):
-        c0, c1 = cb_tbl.rows[r_i].cells
-        c0.width = w0
-        c1.width = w1
-        c0.text = box
-        c1.text = label
-        set_cell_margins(c0, top=30, bottom=30, left=40, right=40)
-        set_cell_margins(c1, top=30, bottom=30, left=40, right=40)
-        for r in c0.paragraphs[0].runs:
-            r.bold = True
-            r.font.name = font_name
-            r.font.size = Pt(11)
-        for r in c1.paragraphs[0].runs:
-            r.bold = True
-            r.font.name = font_name
-            r.font.size = Pt(9.5)
-
-    if not a:
-        add_body_paragraph(doc, "e) The local content calculated using the definition given above are as under:", a, space_after=2, font_size=Pt(9.8))
-
-def build_doc_15(doc, p, d, a):
-    """Doc 15: Declaration Certificate for Local Content (Page 2)"""
-    is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
-    if not a:
-        add_heading(doc, "DECLARATION CERTIFICATE FOR LOCAL CONTENT (CONTD.)", a, doc_date=d.get('date'))
-    elif not is_landscape:
-        p_blank = doc.add_paragraph()
-        p_blank.paragraph_format.space_before = Pt(0)
-        p_blank.paragraph_format.space_after = Pt(0)
-        p_blank.paragraph_format.line_spacing = Pt(12)
-        r_blank = p_blank.add_run()
-        r_blank.font.size = Pt(11)
-    if a:
-        add_body_paragraph(doc, "g) The local content calculated using the definition given above are as under:", a, space_after=2 if is_landscape else 4)
-
-    # Local content table
+def add_local_content_table(doc, p, d, a, is_landscape):
+    """Local content table (Tender No | Local Content % | Location of Local Value Addition)."""
     tbl = doc.add_table(rows=2, cols=3)
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
     tbl.autofit = False
@@ -999,7 +1051,7 @@ def build_doc_15(doc, p, d, a):
 
     hdr_color = '4F81BD' if a else 'FFFFFF'
     hdr_text_color = RGBColor(0xFF, 0xFF, 0xFF) if a else RGBColor(0, 0, 0)
-    font_name = 'Times New Roman' if a else 'Cambria'
+    font_name = BID_FONT
     headers = ["Tender No", "Local Content Calculated as above %", "Location of Local Value Addition"]
     widths = [Inches(3.2), Inches(3.2), Inches(4.2)] if is_landscape else [Inches(2.2), Inches(2.2), Inches(2.8)]
 
@@ -1036,6 +1088,69 @@ def build_doc_15(doc, p, d, a):
                 if idx in (0, 1):
                     r.bold = True
 
+def build_doc_14(doc, p, d, a):
+    """Doc 14: Declaration Certificate for Local Content (Page 1)"""
+    is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
+    add_heading(doc, "DECLARATION CERTIFICATE FOR LOCAL CONTENT", a, doc_date=d.get('date'))
+    add_body_paragraph(doc, "This declaration must form part of the bid documentation. It serves as a declaration for the bidder and local content.", a, bold=True, space_after=3)
+    add_body_paragraph(doc, "General: -", a, bold=True, space_after=2)
+    add_body_paragraph(doc, "I the undersigned, in submitting the accompanying bid do hereby make the following statements that I certify to be true and complete in every respect:", a, bullet="a)", space_after=2)
+    add_body_paragraph(doc, "I have read and understood the requirement of local content (LC) and same is specified as percentage calculated in accordance with the definition provided at clause 2 of revised Public Procurement (preference to Make in India) Order 2017.", a, bullet="b)", space_after=2)
+    add_body_paragraph(doc, "“Local content” as per above order means the amount of value added in India which shall be the total value of items procured (excluding net domestic indirect taxes) minus the value of imported content in the item (including all customs duties) as a proportion of the total value in percent.", a, bullet="c)", space_after=2)
+    add_body_paragraph(doc, "I have satisfied myself that the goods/services/works to be delivered in terms of the above-specified bid comply with the local content requirements as specified in the tender for ‘Class-I Local Supplier’ / ‘Class-II Local Supplier’, and as above.", a, bullet="d)", space_after=2)
+    add_body_paragraph(doc, "I understand that a bidder can seek benefit of either Public Procurement Policy for MSEs–Order 2012 or Public Procurement (preference to Make in India) Order 2017 and not both and once the option is declared / selected it is not permitted to be modified subsequently. Accordingly, I seek the benefit from the below declared purchase preference policy only.", a, bullet="e)", space_after=2)
+    add_body_paragraph(doc, "I seek benefits against the following policy only (Select only one Option):", a, bullet="f)", space_after=3)
+
+    pref_policy = d.get('preferencePolicy', p.get('preferencePolicy', 'PPP MII 2017'))
+    is_msme = 'MSME' in pref_policy.upper()
+
+    # Policy Checkbox Table
+    cb_tbl = doc.add_table(rows=2, cols=2)
+    set_table_borders_none(cb_tbl)
+    cb_tbl.autofit = False
+
+    font_name = BID_FONT
+    rows_def = [
+        ("[✔]" if is_msme else "[  ]", "1) PPP MSME Order 2012 (applicable for MSE manufacturers)"),
+        ("[✔]" if not is_msme else "[  ]", "2) PPP MII 2017 (applicable for Class I suppliers as well as MSE manufacturers)")
+    ]
+    w0 = Inches(0.8) if is_landscape else Inches(0.6)
+    w1 = Inches(9.8) if is_landscape else Inches(6.5)
+
+    for r_i, (box, label) in enumerate(rows_def):
+        c0, c1 = cb_tbl.rows[r_i].cells
+        c0.width = w0
+        c1.width = w1
+        c0.text = box
+        c1.text = label
+        set_cell_margins(c0, top=30, bottom=30, left=40, right=40)
+        set_cell_margins(c1, top=30, bottom=30, left=40, right=40)
+        for r in c0.paragraphs[0].runs:
+            r.bold = True
+            r.font.name = font_name
+            r.font.size = Pt(11)
+        for r in c1.paragraphs[0].runs:
+            r.bold = True
+            r.font.name = font_name
+            r.font.size = Pt(9.5)
+
+    # The local content table stays on page 1 directly under the line that introduces it
+    intro = "g)" if a else "e)"
+    add_body_paragraph(doc, f"{intro} The local content calculated using the definition given above are as under:", a, space_after=2 if is_landscape else 4, keep_with_next=True)
+    add_local_content_table(doc, p, d, a, is_landscape)
+
+def build_doc_15(doc, p, d, a):
+    """Doc 15: Declaration Certificate for Local Content (Page 2)"""
+    is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
+    if not a:
+        add_heading(doc, "DECLARATION CERTIFICATE FOR LOCAL CONTENT (CONTD.)", a, doc_date=d.get('date'))
+    elif not is_landscape:
+        p_blank = doc.add_paragraph()
+        p_blank.paragraph_format.space_before = Pt(0)
+        p_blank.paragraph_format.space_after = Pt(0)
+        p_blank.paragraph_format.line_spacing = Pt(12)
+        r_blank = p_blank.add_run()
+        r_blank.font.size = Pt(11)
     add_body_paragraph(doc, "h) I accept that the Procurement Authority / Institution / MDL / Nodal Ministry has the right to request that the local content be verified in terms of the requirements of revised Public Procurement (preference to Make in India) Order 2017 dtd.16.09.2020 and I shall furnish the document / information on demand. Failure on my part to furnish the data will be treated as false declaration as per PPP MII Order 2017. In case of contract being awarded, I undertake to retain the relevant documents for 7 years from date of execution.", a)
     add_body_paragraph(doc, "i) I understand that the submission of incorrect data, or data that are not verifiable as described in revised Public Procurement (preference to Make in India) Order 2017, may result in the Procurement Authority / Nodal Ministry / MDL imposing any or all of the remedies as provided for in Clause 9 of the Revised Public Procurement (preference to Make in India) Order 2017 dated 16.09.2020.", a)
     add_body_paragraph(doc, "Thanking you and assuring you of our best services at all the times.", a)
@@ -1053,13 +1168,15 @@ def build_doc_16(doc, p, d, a):
     add_body_paragraph(doc, "We hereby submit the Escalation Matrix with Telephone Numbers for Service Support for our quoted product as under:", a, space_after=4)
 
     matrix_data = [
-        ("1.", "Mr. Sanjay Sadade", "General Manager", "Administration", "09225126772", "support@markenworld.com"),
-        ("2.", "Mr. Shridhar Shingare", "Tender Manager", "Institution Business Division", "09011104332", "info@markenworld.com"),
-        ("3.", "Mr. Eknath Mandal", "Production Manager", "Delays of machine design and Technical Error.", "09225102371", "support@markenworld.com"),
-        ("4.", "Mr. Sachin Shisode", "Service Head", "Servicing Delay", "08390900347", "support@markenworld.com")
+        ("1.", "Mr. Sanjay Sadade", "General Manager", "Administration", "9225126772", "support@markenworld.com"),
+        ("2.", "Mr. Shridhar Shingare", "Tender Manager", "Institution Business Division", "9011104332", "info@markenworld.com"),
+        ("3.", "Mr. Eknath Mandal", "Production Manager", "Delays of machine design and Technical Error.", "9225102371", "support@markenworld.com"),
+        ("4.", "Mr. Sachin Shisode", "Service Head", "Servicing Delay", "8390900347", "support@markenworld.com")
     ]
 
     tbl = doc.add_table(rows=len(matrix_data) + 1, cols=6)
+    if not a:
+        keep_table_font_size(tbl)
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
     tbl.autofit = False
     set_repeat_header(tbl.rows[0])
@@ -1067,10 +1184,18 @@ def build_doc_16(doc, p, d, a):
 
     hdr_color = '4F81BD' if a else 'C5D9EF'
     hdr_text_color = RGBColor(0xFF, 0xFF, 0xFF) if a else RGBColor(0, 0, 0)
-    font_name = 'Times New Roman' if a else 'Cambria'
+    font_name = BID_FONT
     border_color = '4F81BD' if a else 'A0A0A0'
     headers = ["Sr. No", "Name of Responsible Person", "Designation", "Triggers When", "Contact Number", "Email ID's"]
-    widths = [Inches(0.8), Inches(2.7), Inches(1.9), Inches(1.9), Inches(1.5), Inches(1.8)] if is_landscape else [Inches(0.6), Inches(1.8), Inches(1.3), Inches(1.3), Inches(1.0), Inches(1.2)]
+    # Portrait widths fit the printable width (ME 7.48in, Healthtech 6.99in) with each e-mail id on one line
+    if is_landscape:
+        widths = [Inches(0.8), Inches(2.3), Inches(1.9), Inches(1.9), Inches(1.4), Inches(2.3)]
+    elif a:
+        # 12pt Cambria: e-mail id needs 2.14in, a 10-digit number 1.04in (incl. cell padding)
+        widths = [Inches(0.45), Inches(1.4), Inches(1.2), Inches(1.2), Inches(1.05), Inches(2.15)]
+    else:
+        # 11pt Cambria: e-mail id needs 1.97in, a 10-digit number 0.96in (incl. cell padding)
+        widths = [Inches(0.45), Inches(1.3), Inches(1.1), Inches(1.12), Inches(0.98), Inches(2.0)]
 
     for idx, c in enumerate(tbl.rows[0].cells):
         c.text = headers[idx]
@@ -1084,7 +1209,7 @@ def build_doc_16(doc, p, d, a):
             for r in p_elem.runs:
                 r.bold = True
                 r.font.name = font_name
-                r.font.size = Pt(9.5) if is_landscape else (Pt(12) if a else Pt(10))
+                r.font.size = Pt(9.5) if is_landscape else (Pt(12) if a else Pt(11))
                 r.font.color.rgb = hdr_text_color
 
     for r_i, row_val in enumerate(matrix_data):
@@ -1101,8 +1226,9 @@ def build_doc_16(doc, p, d, a):
                 p_elem.alignment = WD_ALIGN_PARAGRAPH.CENTER if c_i in (0, 4) else WD_ALIGN_PARAGRAPH.LEFT
                 for r in p_elem.runs:
                     r.font.name = font_name
-                    r.font.size = Pt(9) if is_landscape else (Pt(11.5) if a else Pt(9.8))
+                    r.font.size = Pt(9) if is_landscape else (Pt(12) if a else Pt(11))
 
+    fix_table_grid(tbl, widths)
     add_body_paragraph(doc, "Thanking you and assuring you of our best services at all the times.", a)
     add_signatory_block(doc, p, a, d['root_dir'], d.get('place', p['place']), d.get('date'), is_landscape=is_landscape)
 
@@ -1149,18 +1275,26 @@ def build_doc_17_18(doc, p, d, a):
     """Doc 17 & 18: Details of After Sales Service Stations (Page 1 & 2)"""
     is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
     stations = get_stations_data(a)
-    split_idx = 8 if is_landscape else (9 if a else 10)
+    split_idx = 8 if is_landscape else (10 if a else 9)
     p1_stations = stations[:split_idx]
     p2_stations = stations[split_idx:]
 
     hdr_color = '4F81BD' if a else 'D4DCE3'
     hdr_text_color = RGBColor(0xFF, 0xFF, 0xFF) if a else RGBColor(0, 0, 0)
-    font_name = 'Times New Roman' if a else 'Cambria'
-    widths = [Inches(0.7), Inches(1.9), Inches(3.2), Inches(1.6), Inches(2.2), Inches(1.0)] if is_landscape else [Inches(0.4), Inches(1.2), Inches(2.1), Inches(1.0), Inches(1.8), Inches(0.8)]
+    font_name = BID_FONT
+    # Portrait widths must fit the printable width (ME 7.48in, Healthtech 6.99in); the e-mail column
+    # is wide enough for "support@markenworld.com" on one line.
+    if is_landscape:
+        widths = [Inches(0.7), Inches(1.9), Inches(3.2), Inches(1.6), Inches(2.2), Inches(1.0)]
+    elif a:
+        widths = [Inches(0.4), Inches(1.1), Inches(1.85), Inches(1.05), Inches(2.1), Inches(0.95)]
+    else:
+        widths = [Inches(0.38), Inches(1.0), Inches(1.6), Inches(0.95), Inches(2.05), Inches(1.0)]
 
     # Page 1
     add_heading(doc, "DETAILS OF AFTER SALES SERVICE STATION", a, doc_date=d.get('date'))
     tbl1 = doc.add_table(rows=len(p1_stations) + 2, cols=6)
+    keep_table_font_size(tbl1)
     tbl1.alignment = WD_TABLE_ALIGNMENT.CENTER
     tbl1.autofit = False
     set_repeat_header(tbl1.rows[0])
@@ -1204,7 +1338,7 @@ def build_doc_17_18(doc, p, d, a):
                 for r in p_elem.runs:
                     r.bold = True
                     r.font.name = font_name
-                    r.font.size = Pt(8.8) if is_landscape else (Pt(11) if a else Pt(9.5))
+                    r.font.size = Pt(8.8) if is_landscape else (Pt(11) if a else Pt(10.5))
                     r.font.color.rgb = hdr_text_color
 
     for r_i, st in enumerate(p1_stations):
@@ -1222,7 +1356,7 @@ def build_doc_17_18(doc, p, d, a):
                 p_elem.alignment = WD_ALIGN_PARAGRAPH.CENTER if c_i in (0, 5) else WD_ALIGN_PARAGRAPH.LEFT
                 for r in p_elem.runs:
                     r.font.name = font_name
-                    r.font.size = Pt(8.5) if is_landscape else (Pt(10.5) if a else Pt(9.2))
+                    r.font.size = Pt(8.5) if is_landscape else (Pt(11) if a else Pt(10.5))
                     if c_i in (0, 1):
                         r.bold = True
                     if c_i == 4 and a:
@@ -1230,8 +1364,12 @@ def build_doc_17_18(doc, p, d, a):
                     elif c_i == 4 and not a:
                         r.font.color.rgb = RGBColor(0x05, 0x63, 0xC1)
 
-    # Page Break to Page 2
-    doc.add_page_break()
+    # Continuation page: the next paragraph carries the page break
+    p_brk = doc.add_paragraph()
+    p_brk.paragraph_format.space_before = Pt(0)
+    p_brk.paragraph_format.space_after = Pt(0)
+    p_brk.paragraph_format.line_spacing = Pt(2)
+    set_page_break_before(p_brk._p)
 
     # Page 2
     if not a:
@@ -1245,6 +1383,7 @@ def build_doc_17_18(doc, p, d, a):
         r_blank.font.size = Pt(11)
 
     tbl2 = doc.add_table(rows=len(p2_stations) + 2, cols=6)
+    keep_table_font_size(tbl2)
     tbl2.alignment = WD_TABLE_ALIGNMENT.CENTER
     tbl2.autofit = False
     set_repeat_header(tbl2.rows[0])
@@ -1288,7 +1427,7 @@ def build_doc_17_18(doc, p, d, a):
                 for r in p_elem.runs:
                     r.bold = True
                     r.font.name = font_name
-                    r.font.size = Pt(8.8) if is_landscape else (Pt(11) if a else Pt(9.5))
+                    r.font.size = Pt(8.8) if is_landscape else (Pt(11) if a else Pt(10.5))
                     r.font.color.rgb = hdr_text_color
 
     for r_i, st in enumerate(p2_stations):
@@ -1306,7 +1445,7 @@ def build_doc_17_18(doc, p, d, a):
                 p_elem.alignment = WD_ALIGN_PARAGRAPH.CENTER if c_i in (0, 5) else WD_ALIGN_PARAGRAPH.LEFT
                 for r in p_elem.runs:
                     r.font.name = font_name
-                    r.font.size = Pt(8.5) if is_landscape else (Pt(10.5) if a else Pt(9.2))
+                    r.font.size = Pt(8.5) if is_landscape else (Pt(11) if a else Pt(10.5))
                     if c_i in (0, 1):
                         r.bold = True
                     if c_i == 4 and a:
@@ -1314,6 +1453,8 @@ def build_doc_17_18(doc, p, d, a):
                     elif c_i == 4 and not a:
                         r.font.color.rgb = RGBColor(0x05, 0x63, 0xC1)
 
+    fix_table_grid(tbl1, widths)
+    fix_table_grid(tbl2, widths)
     add_signatory_block(doc, p, a, d['root_dir'], d.get('place', p['place']), d.get('date'), is_landscape=is_landscape)
 
 def build_doc_19(doc, p, d, a):
@@ -1763,7 +1904,7 @@ def main():
         sec.page_height = Inches(8.27)
         if is_theme_a:
             sec.top_margin = Pt(92)
-            sec.bottom_margin = Pt(30)
+            sec.bottom_margin = Pt(26)
             sec.left_margin = Pt(36)
             sec.right_margin = Pt(36)
         else:
@@ -1777,20 +1918,28 @@ def main():
         sec.page_height = Inches(11.69)
         if is_theme_a:
             sec.top_margin = Pt(92)
-            sec.bottom_margin = Pt(36)
+            sec.bottom_margin = Pt(26) # ~9mm: body ends just above the 5.5mm footer bar
             sec.left_margin = Pt(28.3)
             sec.right_margin = Pt(28.3)
         else:
-            sec.top_margin = Pt(65)
-            sec.bottom_margin = Pt(110) # Prevents content from overflowing under 89.6pt footer graphic
+            sec.top_margin = Pt(58) # logo artwork ends at ~53pt
+            sec.bottom_margin = Pt(88) # Footer graphic is 89.6pt and its top ~8pt is blank, so text keeps a clear gap
             sec.left_margin = Pt(49.6) # 17.5mm matching sample PDF
             sec.right_margin = Pt(42.5) # 15.0mm matching sample PDF
+
+    # The Healthtech letterhead footer artwork is anchored with "wrap square", which makes Word reserve the
+    # whole footer band and stop body text ~40pt above the artwork. Render it without text wrapping so
+    # the body uses the page down to the bottom margin (artwork position and size are unchanged).
+    for section in doc.sections:
+        for wrap in list(section.footer._element.iter(qn('wp:wrapSquare'))):
+            wrap.getparent().replace(wrap, OxmlElement('wp:wrapNone'))
 
     # Set document default font
     style = doc.styles['Normal']
     font = style.font
-    font.name = 'Times New Roman' if is_theme_a else 'Cambria'
-    font.size = (Pt(11) if is_theme_a else Pt(9.5)) if is_landscape else (Pt(12) if is_theme_a else Pt(10))
+    body_pt = (11 if is_theme_a else 9.5) if is_landscape else BID_BODY_PT
+    font.name = BID_FONT
+    font.size = Pt(body_pt)
 
     # 1. Build documents sequentially with page breaks
     if is_theme_a:
@@ -1835,10 +1984,18 @@ def main():
             build_doc_16        # 16. Escalation Matrix for Service Support
         ]
 
+    body = doc.element.body
     for idx, builder in enumerate(builders):
-        if idx > 0:
-            doc.add_page_break()
+        marker = body[-2] if len(body) >= 2 else None  # last content element before sectPr
         builder(doc, profile, data, is_theme_a)
+        if idx > 0:
+            first_p = first_paragraph_after(body, marker)
+            if first_p is not None:
+                set_page_break_before(first_p)
+            else:
+                doc.add_page_break()
+
+    apply_bid_typography(doc, body_pt=body_pt, heading_min_pt=(13 if is_landscape else BID_HEADING_MIN_PT))
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output_bid)), exist_ok=True)
     doc.save(args.output_bid)
