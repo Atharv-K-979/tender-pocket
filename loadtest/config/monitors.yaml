@@ -1,0 +1,33 @@
+# Monitors (Part 5). agent.py runs ON EC2-2 (stdlib only); generator.py on the load generator.
+interval_seconds: 5
+agent:
+  containers: ["tender-pocket-backend", "tender-pocket-frontend", "tender-pocket-postgres"]   # docker stats
+  # Read-only psql sampling (session default_transaction_read_only=on): pg_stat_activity,
+  # blocked locks, pg_stat_database deltas, pg_stat_user_tables deltas for these tables.
+  pg_tables: ["tenders", "tender_approval_requests", "tender_workflow_states", "tender_comments",
+              "tender_workflow_comments", "status_history", "activity_log", "tender_document_manifest",
+              "users", "db_change_log"]
+  remote_dir: "monitor"            # under env.yaml remote.workdir
+generator:
+  process_names: ["k6", "chrome", "chromium", "chromium-browser", "headless_shell", "python3"]
+
+# Patterns collected from container logs for the run window (logs.py). Severity drives validity.
+log_patterns:
+  backend:
+    hikari_timeout: "Connection is not available, request timed out"
+    hikari_leak: "Connection leak detection triggered"
+    oom: "OutOfMemoryError"
+    exception: "Exception"
+    scheduler: "\\[Scheduler\\]"
+    autoupdate: "\\[AutoUpdate\\]"
+    sqlite: "Falling back to SQLite|Configured SQLite DataSource"
+    unexpected_rollback: "UnexpectedRollbackException"
+    optimistic_lock: "ObjectOptimisticLockingFailureException"
+  frontend:
+    proxy_error: "Backend proxy error|proxyToBackend"
+    exception: "Error:|ECONNRESET|ETIMEDOUT|UND_ERR"
+    oom: "JavaScript heap out of memory|FATAL ERROR"
+  postgres:
+    deadlock: "deadlock detected"
+    too_many_connections: "too many connections|remaining connection slots"
+    fatal: "FATAL"

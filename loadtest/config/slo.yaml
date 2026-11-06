@@ -1,0 +1,37 @@
+# Service classification (report/build_report.py). Steady-state window only (warm-up excluded).
+# Expected 4xx from deliberate RBAC probes (tag expected=rbac_403) are excluded from error rates.
+
+healthy:
+  # APPROVED criteria for the tender list (S1–S2):
+  S1: { p95_ms: 2000, p99_ms: 5000, success_min: 0.995, http5xx_max: 0.001 }
+  S2: { p95_ms: 2000, p99_ms: 5000, success_min: 0.995, http5xx_max: 0.001, pagination_ok_min: 1.0 }
+  # Placeholders, to be replaced after the 100-tier baseline.            # PROPOSED – not approved
+  default_read:  { p95_ms: 5000,  p99_ms: 15000, success_min: 0.99, http5xx_max: 0.005 }   # PROPOSED – not approved
+  default_write: { p95_ms: 10000, p99_ms: 30000, success_min: 0.99, http5xx_max: 0.005 }  # PROPOSED – not approved
+  S18: { p95_ms: 300000, success_min: 0.95 }                                              # PROPOSED – not approved
+  S19: { p95_ms: 120000, success_min: 0.95 }                                              # PROPOSED – not approved
+write_services: [S9, S13, S14, S15]
+
+broken:                                                                     # PROPOSED – not approved
+  error_rate_gt: 0.01
+  any_timeout: true          # status 0 / k6 error_code 1050 (300 s timeout, G7)
+  p95_ms_gt: 60000
+  correctness_failure: true  # any lt_correctness_ok=false tagged to the service, or pagination < 100 % (S2)
+  track_b:                   # S18, S19
+    failure_gt: 0.05
+    stuck_job: true          # lt_spec_upload_stuck > 0
+    oom_or_restart: true
+  system_wide:               # any of these marks EVERY service Broken for the run
+    container_crash: true
+    pool_exhaustion: true    # backend log "Connection is not available, request timed out"
+    sqlite_fallback: true
+
+breaking_point:
+  min_repeats_broken: 2      # Broken in both repeats …
+  confirm_next_tier: true    # … AND still Broken at the next tier
+
+poll_overrun_marker:
+  services: [S1, S5, S6, S10, S11]
+  median_ms_gt: 1500
+
+min_samples: 20              # a service with fewer steady samples is "n/a"
