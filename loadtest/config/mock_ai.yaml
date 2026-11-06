@@ -1,0 +1,43 @@
+# Mock Azure OpenAI Responses API (Part 3). Runs on the load generator.
+# All results produced with this mock are labelled "simulated provider latency".
+listen_host: "0.0.0.0"
+listen_port: 8800
+# The backend appends /responses to AZURE_OPENAI_ENDPOINT (AISpecificationIntelligenceService.java:1685-1693);
+# with AZURE_OPENAI_ENDPOINT=http://<gen>:8800/v1 requests arrive at POST /v1/responses.
+# Any path ending in /responses is accepted.
+log_dir: "mock-ai/logs"
+seed: 7
+
+# Latency model per output schema (text.format.name in the request).
+# kind: fixed {ms} | normal {mean_ms, sd_ms, min_ms} | longtail {median_ms, sigma, max_ms} (lognormal)
+latency:                                              # PROPOSED – not approved
+  default:          { kind: longtail, median_ms: 9000, sigma: 0.6, max_ms: 120000 }
+  compliance_rows:  { kind: longtail, median_ms: 12000, sigma: 0.6, max_ms: 150000 }
+  tender_products:  { kind: normal, mean_ms: 4000, sd_ms: 1200, min_ms: 800 }
+  datasheet_specs:  { kind: normal, mean_ms: 6000, sd_ms: 1500, min_ms: 1000 }
+  clause_matches:   { kind: normal, mean_ms: 6000, sd_ms: 1500, min_ms: 1000 }
+# Optional extra latency per MiB of attached file (models upload/processing cost).
+latency_per_file_mib_ms: 400                          # PROPOSED – not approved
+
+# Provider-side concurrency cap. Requests above the cap either queue (wait for a slot) or
+# are rejected with 429 + Retry-After, like a TPM/RPM-limited deployment.
+max_concurrency: 40                                   # PROPOSED – not approved
+over_capacity: "queue"                                # queue | reject_429
+over_capacity_retry_after_s: 5
+
+# Fault injection — independent probabilities per request (sum ≤ 1). Default: none.
+faults:                                               # PROPOSED – not approved
+  rate_429: 0.0          # 429 with Retry-After header (backend retries once if wait ≤ 75 s, 05 §6)
+  retry_after_s: 3
+  rate_500: 0.0          # non-retryable -> Azure returns null -> Gemini fallback (must be unset!)
+  rate_503: 0.0          # retryable once
+  rate_timeout: 0.0      # sleep past the backend's 180 s read timeout (05 §6)
+  timeout_sleep_s: 200
+  rate_empty: 0.0        # 200 with an empty body (05 §8 condition 6)
+  rate_unreadable: 0.0   # status completed but readable:false (forces OCR recovery, 05 §9)
+
+# Content shaping for compliance_rows.
+content:
+  included_share: 1.0    # share of SOURCE CLAUSE KEYS marked "included" (rest "excluded")
+  generic_rows_when_no_keys: [1, 3]
+  default_product: "Medical Equipment"
