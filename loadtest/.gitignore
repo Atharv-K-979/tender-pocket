@@ -1,0 +1,16 @@
+# Secrets and hosts (G4)
+config/env.yaml
+.env
+*.env
+
+# Generated data and results
+results/
+seeder/out/
+k6/data/*.pdf
+k6/build/
+mock-ai/logs/
+audit/out/
+*.csv.gz
+*.sql.gz
+*.jsonl.gz
+__pycache__/

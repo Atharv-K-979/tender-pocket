@@ -1,0 +1,4 @@
+# Generator-side Python dependencies (G8). Python 3.10+.
+# The EC2-2 monitor agent (orchestrator/monitors/agent.py) and the mock AI server use the
+# standard library only and need nothing from this file.
+PyYAML==6.0.2

@@ -1,0 +1,27 @@
+# Service catalogue S1–S19 used for tags, SLO classification and the breaking-point matrix.
+# Each request is tagged service=<id> and name=<normalised endpoint>.
+# Numbering is PROPOSED – not approved (no decisions.md existed when this was written).
+services:
+  S1:  { title: "Tender list (dashboard poll, unpaginated)", polled: true,  endpoints: ["GET /api/tenders"] }
+  S2:  { title: "Tender list paginated / search probe",      polled: false, endpoints: ["GET /api/tenders (page/limit|search)"] }
+  S3:  { title: "Login",                                     polled: false, endpoints: ["POST /api/auth/login"] }
+  S4:  { title: "Directory lookups + page script",           polled: false, endpoints: ["GET /api/auth/users", "GET /api/auth/executives", "GET /api/auth/mis-team", "GET /api/compliance-progress-client"] }
+  S5:  { title: "Tender detail (poll)",                      polled: true,  endpoints: ["GET /api/tenders/{id}"] }
+  S6:  { title: "Tender comments (poll)",                    polled: true,  endpoints: ["GET /api/tenders/{id}/comments"] }
+  S7:  { title: "Approvals counts",                          polled: false, endpoints: ["GET /api/approvals/counts"] }
+  S8:  { title: "Approvals pending",                         polled: false, endpoints: ["GET /api/approvals/pending"] }
+  S9:  { title: "Approval review",                           polled: false, endpoints: ["POST /api/approvals/{id}/review", "POST /api/tenders/{id}/approve-clearance"] }
+  S10: { title: "Analytics (poll)",                          polled: true,  endpoints: ["GET /api/analytics"] }
+  S11: { title: "Executive stats (poll Admin/MIS)",          polled: true,  endpoints: ["GET /api/tenders/stats"] }
+  S12: { title: "Activity log (Admin audit)",                polled: false, endpoints: ["GET /api/activity-logs"] }
+  S13: { title: "Workflow actions",                          polled: false, endpoints: ["POST /api/tenders/{id}/clearance-request", "POST /api/v2/workflow/{id}/emd-applicability", "POST /api/v2/workflow/{id}/route-pricing", "POST /api/tenders/{id}/tpc-price", "POST /api/tenders/{id}/mis-price"] }
+  S14: { title: "Tender writes (comments)",                  polled: false, endpoints: ["POST /api/tenders/{id}/comments"] }
+  S15: { title: "Same-tender concurrency probe",             polled: false, endpoints: ["POST /api/approvals/{id}/review (probe)"] }
+  S16: { title: "RBAC expected-deny probes",                 polled: false, endpoints: ["GET /api/approvals/counts (Exec)", "GET /api/activity-logs (non-Admin)"] }
+  S17: { title: "Browser page loads / Web Vitals",           polled: false, endpoints: ["browser"] }
+  S18: { title: "Spec upload (AI extraction, mock)",         polled: false, endpoints: ["POST /api/tenders/{id}/upload-tech-spec", "GET /api/tenders/{id}/tech-spec-progress"] }
+  S19: { title: "Bid pack generation (Next.js)",             polled: false, endpoints: ["POST /api/tenders/{id}/generate-bid-docs"] }
+
+# Services whose median latency is compared with the 1.5 s poll interval (poll-overrun marker).
+poll_overrun_services: [S1, S5, S6, S10, S11]
+poll_interval_ms: 1500

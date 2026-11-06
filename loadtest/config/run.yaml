@@ -1,0 +1,33 @@
+# Run-level settings shared by k6, orchestrator and report.
+
+total_vus: 17                 # G1 — fixed. BENCHMARK aborts if a profile totals anything else.
+request_timeout: "300s"       # G7
+
+durations:
+  warmup_minutes: 3           # excluded from results            # PROPOSED – not approved
+  steady_minutes: 15          #                                   # PROPOSED – not approved
+  graceful_stop_seconds: 30
+
+tiers:
+  # Proportional universe sizes (tenders). A fixed fixture block is added at every tier
+  # (see seed.yaml `fixtures`). Ceiling extends by +25000 to 200000.   # PROPOSED – not approved
+  seeded: [100, 500, 1000, 5000, 10000, 25000, 50000, 75000, 100000]
+  extension_step: 25000
+  ceiling: 200000
+
+# Runs per tier per profile.                                          # PROPOSED – not approved
+runs_per_tier:
+  default: { MIX: 2, READ: 1, APPROVALS: 1, WORKFLOW: 1 }
+  overrides:
+    100:    { READ: 2, APPROVALS: 2 }
+    50000:  { READ: 2, APPROVALS: 2 }
+    100000: { READ: 2, APPROVALS: 2 }
+
+track_b:
+  reference_tier: 10000       #                                   # PROPOSED – not approved
+  ai_profiles: ["AI-1", "AI-3", "AI-6", "AI-10"]
+  docgen_profiles: ["DOCGEN-1", "DOCGEN-3", "DOCGEN-6"]
+
+# Where per-run artefacts are written (relative to loadtest/).
+results_dir: "results"
+debug_results_dir: "results/debug"

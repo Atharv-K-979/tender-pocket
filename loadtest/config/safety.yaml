@@ -1,0 +1,57 @@
+# Safety rules applied by every tool (G2, G3, G6). Committed; contains no secrets.
+
+# G3 — endpoint deny-list. Any attempt to request one of these aborts the run.
+# Patterns are matched against the URL path (query string stripped). "*" = any suffix.
+endpoint_denylist:
+  - "/api/tenders/sync-gem"            # live GeM scrape (01 §a; TenderController.java:226)
+  - "/api/tenders/sync-emails"         # IMAP mutation (01 §c; TenderController.java:250)
+  - "/api/tenders/trigger-due-alerts"  # real SMTP (01 §c; TenderController.java:273)
+  - "/api/update/*"                    # GitHub download / System.exit (01 §f; UpdateController.java:17-28)
+  - "/api/noticedesk/*"                # in-memory mock, non-thread-safe (02 NoticeDeskController)
+  - "/api/products/*"                  # AI inside DB tx; tab removed (13 C17)
+  - "/api/preview-doc"                 # unauthenticated CPU endpoint (13 C24)
+  - "/api/signatures/upload"           # overwrites global signature.png (06 §5)
+  - "/api/process-email"               # no backend mapping (02 Frontend #16)
+  - "/api/tenders/*/generate-templates" # no backend mapping (06 §3.3)
+  - "/api/tenders/*/generate-tech-specs" # backend-only, empty-text AI call (05 §12; 13 C18)
+  - "/api/company-docs*"               # added after the review (main 09129d2a); not reviewed -> excluded
+  - "/api/v2/workflow/*/action"        # no backend mapping (10 §3.4)
+  - "/api/tenders/*/documents/*"       # cache miss fetches GeM/Tender247 (06 §4; 13 C12)
+  - "/documents/*"                     # same route via next.config.ts rewrite (10 §1)
+
+# G3 — all traffic must go to the frontend URL. Requests to any other origin abort the run.
+# This blocks direct backend calls (port 8090), including backend generate-bid-docs (13 C18).
+frontend_only: true
+blocked_ports: [8090]
+
+# G2 — pre-flight resolves the target and refuses EC2-1 (list lives in env.yaml).
+require_ec2_1_denylist_nonempty: true
+
+# Forbidden windows (IST, Asia/Kolkata). 07:45–08:30 covers the 08:00 IST digest + sync
+# (EmailNotificationService.java:55, SyncScheduler.java:29); 01:45–05:30 covers host backup
+# crons in scripts/crontab.sample:38-46 (02:00, 03:00, 05:00 IST).  # PROPOSED – not approved
+forbidden_windows_ist:
+  - ["07:45", "08:30"]
+  - ["01:45", "05:30"]
+
+# SyncScheduler fixedDelay is 6 h measured from the END of the previous run, starting 15 s
+# after boot (SyncScheduler.java:22). The next sync is predicted from the last
+# "[Scheduler]" log line. Runs must end this many minutes before the predicted next sync.
+sync_guard_minutes: 20          # PROPOSED – not approved
+sync_interval_hours: 6
+# Minimum time since the backend container started (startup sync runs 15 s after boot).
+min_backend_uptime_minutes: 20  # PROPOSED – not approved
+
+# Safety env NAMES that must be present (non-empty) / absent (unset or empty) in the backend
+# container before a BENCHMARK run (values are never printed, G4).
+backend_env_required_present:
+  - AZURE_OPENAI_ENDPOINT     # must point at the mock (05 §17)
+  - AZURE_OPENAI_API_KEY      # dummy value (05 §17)
+backend_env_required_absent:
+  - GEMINI_API_KEY            # Gemini URL is hard-coded and cannot be mocked (05 §8)
+  - IMAP_USERNAME             # empty creds skip IMAP sync (EmailSyncService.java:61)
+  - IMAP_PASSWORD
+  - SPRING_MAIL_PASSWORD      # PROPOSED – not approved (alternative: SPRING_MAIL_HOST -> sink)
+# AWS_S3_ENABLED must be absent or "false" unless a dedicated test bucket is approved.
+backend_env_must_not_equal:
+  AWS_S3_ENABLED: "true"      # PROPOSED – not approved
