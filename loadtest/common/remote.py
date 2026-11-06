@@ -62,13 +62,24 @@ def q(*parts: str) -> str:
     return " ".join(shlex.quote(p) for p in parts)
 
 
-def psql_cmd(pg_container: str, user: str, db: str, extra: Sequence[str] = (), tuples: bool = False) -> str:
-    """docker exec psql with ON_ERROR_STOP. `tuples` → unaligned, tab-separated, no header."""
-    args = ["docker", "exec", "-i", pg_container, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", user, "-d", db]
+def psql_cmd(pg_container: str, user: str | None, db: str | None, extra: Sequence[str] = (),
+             tuples: bool = False, read_only: bool = False) -> str:
+    """docker exec psql with ON_ERROR_STOP.
+
+    tuples    → quiet, unaligned, tab-separated, no header.
+    read_only → the whole session runs with default_transaction_read_only=on (G6: monitoring
+                and snapshots are SELECT/SHOW only and cannot write even by mistake).
+    user/db None → use the postgres container's own $POSTGRES_USER/$POSTGRES_DB (never echoed).
+    """
+    flags = ["-X", "-v", "ON_ERROR_STOP=1"]
     if tuples:
-        args += ["-A", "-t", "-F", "\t"]
-    args += list(extra)
-    return q(*args)
+        flags += ["-q", "-A", "-t", "-F", "\t"]
+    flags += list(extra)
+    env = ["-e", "PGOPTIONS=-c default_transaction_read_only=on"] if read_only else []
+    if user and db and user != "PG_USER":
+        return q("docker", "exec", "-i", *env, pg_container, "psql", *flags, "-U", user, "-d", db)
+    inner = "psql " + " ".join(shlex.quote(f) for f in flags) + ' -U "$POSTGRES_USER" -d "${POSTGRES_DB:-$POSTGRES_USER}"'
+    return q("docker", "exec", "-i", *env, pg_container, "sh", "-c", inner)
 
 
 def remote_from_cfg(cfg: dict, local: bool = False, dry_run: bool = False) -> Remote:

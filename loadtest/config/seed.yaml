@@ -1,0 +1,112 @@
+# Seeder configuration (Part 2). Realism rules: review 07 §6.
+seed: 42
+# Fixed anchor so every regeneration is byte-identical. Dates are spread around it.
+# Display-only statuses (Lapsed / Missed Deadline) are computed against the wall clock by
+# TenderStatusResolver.java:72-110, so they drift slowly as days pass (documented).
+anchor_date: "2026-11-01"                 # PROPOSED – not approved
+
+tiers: [100, 500, 1000, 5000, 10000, 25000, 50000, 75000, 100000]   # PROPOSED – not approved
+max_generated_tier: 100000
+id_prefix_universe: "LTU-"
+csv_gzip_level: 3
+
+users:
+  prefix: "lt_"
+  email_domain: "loadtest.invalid"         # RFC 2606 — never deliverable (01 §c)
+  # Stored role strings exactly as AuthController.java:251 allows them (03 §1a).
+  # Counts cover the largest profile allocation + spares.   # PROPOSED – not approved
+  roles:
+    "Tender Executive": { code: "exec",  count: 12 }
+    "MIS Team":         { code: "mis",   count: 8 }
+    "Clearance Team":   { code: "clear", count: 6 }
+    "TPC Team":         { code: "tpc",   count: 6 }
+    "Admin":            { code: "admin", count: 4 }
+  # Executives that own tenders but never log in (ownership realism). 12 + 3 = 15 owners.
+  inactive_executives: 3                   # PROPOSED – not approved
+
+# Category weights for the proportional universe. Identical at every tier (prefix property).
+# Target bands from the brief: 60–70 % new/unactioned, ~10 % not participating,
+# 10–15 % active workflow across all stages, ~10 % submitted/won/lost.   # PROPOSED – not approved
+categories:
+  new_unassigned:          0.330
+  new_assigned:            0.345
+  not_participating:       0.100
+  spec_upload_pending:     0.0115
+  spec_generated:          0.0115
+  spec_clearance_pending:  0.0125
+  bid_docs_preparation:    0.0125
+  payment_approval:        0.0115
+  dual_track:              0.0110
+  tpc_pricing:             0.0110
+  mis_pricing:             0.0110
+  doc_verification:        0.0110
+  submission_ready:        0.0105
+  submission_pending:      0.0105
+  win_loss_pending:        0.030           # status Submitted, awaiting outcome
+  won:                     0.035
+  lost:                    0.035
+
+groups:   # for proportion checks (validate.py) and reporting
+  new_unactioned: [new_unassigned, new_assigned]
+  not_participating: [not_participating]
+  active_workflow: [spec_upload_pending, spec_generated, spec_clearance_pending, bid_docs_preparation,
+                    payment_approval, dual_track, tpc_pricing, mis_pricing, doc_verification,
+                    submission_ready, submission_pending]
+  submitted_won_lost: [win_loss_pending, won, lost]
+proportion_tolerance: 0.01               # absolute, per group, at every tier
+
+variants:                                 # PROPOSED – not approved
+  emd_exempt_share: 0.30                  # EMD not applicable -> no PAYMENT_APPROVAL history
+  pricing_route_mis_share: 0.25           # Track A bypasses TPC
+  team_alias_share: 0.25                  # assignee is the team alias (misteam/clearance/tpc)
+  new_assigned_status_new_share: 0.2      # status "New" instead of "Issued"
+
+payload:                                  # PROPOSED – not approved (production mix UNKNOWN, 07 §6.1)
+  title_chars: [100, 400]
+  ai_summary_share: 0.40
+  ai_summary_bytes: [1000, 5000]
+  downloaded_docs_entries: [2, 8]
+  notes_share: 0.55
+  notes_chars: [40, 600]
+  schedule_share: 0.30
+  corrigendum_share: 0.08
+  product_names_share: 0.5
+
+children:                                 # PROPOSED – not approved (07 §5, §6.2)
+  workflow_comments: [0, 5]               # tender_workflow_comments for tenders past NEW
+  activity_log: [3, 8]                    # active / terminal tenders
+  activity_log_new_share: 0.15            # share of NEW tenders with one "Updated Tender" row
+  manifest_files: [3, 10]                 # tender_document_manifest for tenders past BID_DOCS
+
+# Fixture block — identical at every tier, added on top of the universe (seed-design.md §3).
+fixtures:                                 # PROPOSED – not approved
+  id_prefix: "LTF-"
+  probe_prefix: "LTP-"
+  per_user:
+    "Tender Executive":
+      spec_generated: 10        # J1 clearance-request
+      bid_docs_preparation: 6   # J3 emd-applicability
+      dual_track: 6             # J3 route-pricing
+      upload: 30                # Track B: spec not approved, one per upload
+      bidpack: 15               # Track B: spec Approved, one per bid pack
+    "Clearance Team":
+      spec_clearance_pending: 10
+    "TPC Team":
+      tpc_pricing: 10
+    "MIS Team":
+      payment_approval: 4
+      mis_pricing: 4
+      doc_verification: 4
+      submission_pending: 3
+      win_loss_pending: 3
+  probe:
+    double_approval: 6          # PAYMENT_APPROVAL reviewed by 2–3 MIS VUs at once
+    dual_track_race: 6          # MIS_PRICING + DOC_VERIFICATION approved at once
+
+# Handling of the db_change_log / backup triggers (07 §4) at load and reset time.
+#   auto    — superuser: SET session_replication_role=replica while loading (triggers do not
+#             fire), then TRUNCATE db_change_log; non-superuser: triggers fire, then TRUNCATE
+#             db_change_log in the same transaction.
+#   fire    — leave triggers firing and keep db_change_log rows.
+triggers_mode: auto                        # PROPOSED – not approved
+truncate_changelog_on_reset: true          # PROPOSED – not approved
