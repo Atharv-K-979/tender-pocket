@@ -1,0 +1,16 @@
+# READ — read-heavy: dashboards, detail pages, admin monitoring.          # PROPOSED – not approved
+name: READ
+description: "Read-dominated mix (dashboards/detail/admin); no workflow actions."
+roles:
+  "Tender Executive": { count: 4, browser: 1 }
+  "MIS Team":         { count: 5, browser: 1 }
+  "Clearance Team":   { count: 2 }
+  "TPC Team":         { count: 3 }
+  "Admin":            { count: 3, browser: 1 }
+screen_time_overrides:
+  "Tender Executive": { dashboard: 60, detail: 40 }
+  "MIS Team":         { dashboard: 60, detail: 30, approvals: 10 }
+  "Clearance Team":   { dashboard: 45, detail: 40, approvals: 15 }
+  "TPC Team":         { dashboard: 50, detail: 35, approvals: 15 }
+  "Admin":            { dashboard: 80, detail: 10, history: 10 }
+probe: false

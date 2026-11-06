@@ -1,0 +1,14 @@
+# Screen-time model (Part 4). Each VU repeatedly picks a screen by these weights and stays
+# on it for a uniformly random dwell. Profiles may override per role (k6/profiles/*.yaml).
+dwell_seconds: [60, 180]                     # PROPOSED – not approved
+
+# Weights per role (stored role strings). Screens: dashboard | detail | approvals | actions | history
+roles:                                       # PROPOSED – not approved
+  "Tender Executive": { dashboard: 55, detail: 35, actions: 10 }
+  "MIS Team":         { dashboard: 40, detail: 20, approvals: 30, actions: 10 }
+  "Clearance Team":   { dashboard: 25, detail: 25, approvals: 45, actions: 5 }
+  "TPC Team":         { dashboard: 35, detail: 15, approvals: 45, actions: 5 }
+  "Admin":            { dashboard: 80, detail: 10, history: 10 }
+
+# Think time between UI interactions inside a screen (search typing, filter clicks, reviews).
+think_seconds: [3, 12]                       # PROPOSED – not approved

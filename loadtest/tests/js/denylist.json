@@ -1,0 +1,17 @@
+[
+ "/api/tenders/sync-gem",
+ "/api/tenders/sync-emails",
+ "/api/tenders/trigger-due-alerts",
+ "/api/update/*",
+ "/api/noticedesk/*",
+ "/api/products/*",
+ "/api/preview-doc",
+ "/api/signatures/upload",
+ "/api/process-email",
+ "/api/tenders/*/generate-templates",
+ "/api/tenders/*/generate-tech-specs",
+ "/api/company-docs*",
+ "/api/v2/workflow/*/action",
+ "/api/tenders/*/documents/*",
+ "/documents/*"
+]

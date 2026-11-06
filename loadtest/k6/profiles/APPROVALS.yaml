@@ -1,0 +1,14 @@
+# APPROVALS — Approvals Center pressure (reconcile on every counts/pending, 04 §5a). # PROPOSED – not approved
+name: APPROVALS
+description: "Approvals-heavy: MIS/Clearance/TPC mostly in the Approvals Center reviewing their own items."
+roles:
+  "MIS Team":       { count: 6, browser: 1 }
+  "Clearance Team": { count: 5, browser: 1 }
+  "TPC Team":       { count: 4, browser: 1 }
+  "Admin":          { count: 2 }
+screen_time_overrides:
+  "MIS Team":       { dashboard: 20, detail: 10, approvals: 65, actions: 5 }
+  "Clearance Team": { dashboard: 15, detail: 10, approvals: 70, actions: 5 }
+  "TPC Team":       { dashboard: 15, detail: 10, approvals: 70, actions: 5 }
+  "Admin":          { dashboard: 50, detail: 10, history: 40 }
+probe: true

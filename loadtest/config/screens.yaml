@@ -1,0 +1,71 @@
+# Screen behaviour (Part 4). Intervals and call sequences come from the code (review 10).
+dashboard:
+  poll_interval_ms: 1500        # page.tsx:958-1040 (10 §0)
+  debounce_ms: 300              # page.tsx:942-950
+  # Search/filter interactions per dashboard visit (debounced GET /api/tenders?search=…).
+  interactions_per_visit: [1, 3]                          # PROPOSED – not approved
+  search_terms: ["monitor", "ventilator", "AIIMS", "Railways", "pump", "ultrasound",
+                 "Maharashtra", "GEM/2026", "defibrillator", "X-Ray"]   # PROPOSED – not approved
+  status_filters: ["", "Participating", "New", "Submitted", "Won"]      # PROPOSED – not approved
+  sort: { sortBy: "scraped_at", order: "desc" }           # default dashboard sort (10 §5 $Q)
+
+detail:
+  poll_interval_ms: 1500        # tenders/[id]/page.tsx:384-397
+  # Which tender a read-only detail visit opens: own fixtures/owned tenders for Exec,
+  # otherwise a tender id from the last list response.
+  pick: "own_or_listed"
+
+approvals:
+  second_pending_delay_ms: 400  # debounced second pending call (ApprovalsCenter.tsx:440-445, 10 §3.3)
+  filter_changes_per_visit: [1, 2]                       # PROPOSED – not approved
+  reviews_per_visit: [1, 2]                              # PROPOSED – not approved
+  stage_filters:
+    "MIS Team": ["PAYMENT_APPROVAL", "MIS_PRICING", "DOC_VERIFICATION", "SUBMISSION_PENDING", "WIN_LOSS_PENDING"]
+    "Clearance Team": ["SPEC_CLEARANCE"]
+    "TPC Team": ["TPC_PRICING"]
+    "Admin": ["", "SPEC_CLEARANCE", "PAYMENT_APPROVAL"]
+
+paged_probe:                    # S2 — paginated list + pagination correctness
+  every_n_dashboard_visits: 2                            # PROPOSED – not approved
+  limit: 20
+  pages: 3
+
+rbac_probe:                     # S16 — deliberate 403s, excluded from error rate
+  every_n_visits: 5                                      # PROPOSED – not approved
+
+spec_upload:                    # S18 — Track B AI
+  progress_interval_ms: 1000    # tenders/[id]/page.tsx:1155-1167 (unguarded) + compliance-progress.js (guarded)
+  files: ["k6/data/spec_text_8p.pdf", "k6/data/spec_text_24p.pdf"]   # make_spec_pdfs.py; PROPOSED – not approved
+  think_between_uploads_s: [20, 40]                       # PROPOSED – not approved
+
+bidpack:                        # S19 — Track B doc generation
+  think_between_s: [20, 40]                               # PROPOSED – not approved
+
+probe:                          # S15 — same-tender correctness probe
+  enabled_profiles: ["MIX", "APPROVALS", "WORKFLOW"]
+  participants: 3               # MIS VUs with role_index 0..participants-1 (min 2)
+  double_approval_at_min: [2, 7, 12]    # minutes after steady start  # PROPOSED – not approved
+  dual_track_race_at_min: [4, 9, 14]                                 # PROPOSED – not approved
+
+browser:                        # S17
+  dwell_seconds: [60, 120]                                # PROPOSED – not approved
+
+workflow:
+  # Allowed tenders.current_stage after each step (verified via workflow-details).
+  # Derived from ApprovalController.java:826-1016 + WorkflowSyncService.java (04 §3).
+  expect_after_review:
+    SPEC_CLEARANCE: [BID_DOCS_PREPARATION]                       # T4b
+    PAYMENT_APPROVAL: [DUAL_TRACK, TPC_PRICING, MIS_PRICING]     # T8 + initiateDualTrack routing
+    TPC_PRICING: [MIS_PRICING]                                   # T10a
+    MIS_PRICING: [MIS_PRICING, DUAL_TRACK, SUBMISSION_READY, BID_DOC_PENDING]   # T11a (barrier)
+    DOC_VERIFICATION: [SUBMISSION_READY, DOC_VERIFICATION, DUAL_TRACK, TPC_PRICING, MIS_PRICING]  # T12b
+    SUBMISSION_PENDING: [WIN_LOSS_PENDING]                       # T13c
+    WIN_LOSS_PENDING: [WON]                                      # T14a with outcome=Won
+  expect_after_action:
+    J1_clearance_request: [SPEC_CLEARANCE]                       # T3
+    J2_approve_clearance: [BID_DOCS_PREPARATION]                 # T4a
+    J3_emd_not_applicable: [DUAL_TRACK, TPC_PRICING, MIS_PRICING]  # T6
+    J3_route_pricing_tpc: [TPC_PRICING]                          # T9a
+    J4_tpc_price: [MIS_PRICING]                                  # T10c
+    J5_mis_price: [DUAL_TRACK, SUBMISSION_READY, MIS_PRICING, BID_DOC_PENDING]  # T11b
+    J5_verify_all_documents: [SUBMISSION_READY]                  # T12b (Track A already approved)

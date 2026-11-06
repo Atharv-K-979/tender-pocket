@@ -1,0 +1,9 @@
+# DEBUG — 3 API VUs for smoke runs (RUN_TYPE=DEBUG only; results go to results/debug/).
+name: DEBUG
+description: "Smoke profile: one Executive, one MIS, one Admin; no browsers."
+roles:
+  "Tender Executive": { count: 1 }
+  "MIS Team":         { count: 1 }
+  "Admin":            { count: 1 }
+probe: false
+debug_only: true

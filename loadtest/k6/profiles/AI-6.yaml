@@ -1,0 +1,13 @@
+# AI-6 — Track B: 6 concurrent spec_upload executives + background MIX-like load.  # PROPOSED – not approved
+name: AI-6
+description: "6 Tender Executive VU(s) looping spec_upload on distinct pre-staged tenders; remaining VUs background."
+roles:
+  "Tender Executive": { count: 2, browser: 1 }
+  "MIS Team":         { count: 3, browser: 1 }
+  "Clearance Team":   { count: 2 }
+  "TPC Team":         { count: 3 }
+  "Admin":            { count: 1, browser: 1 }
+extra_groups:
+  - { role: "Tender Executive", count: 6, behaviour: spec_upload }
+probe: false
+requires_mock_ai: true

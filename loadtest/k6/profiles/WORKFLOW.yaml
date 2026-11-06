@@ -1,0 +1,14 @@
+# WORKFLOW — journeys J1–J5 on pre-staged tenders, stage verified after each step. # PROPOSED – not approved
+name: WORKFLOW
+description: "Write-heavy: workflow journeys and reviews on each VU's own pre-staged tenders."
+roles:
+  "Tender Executive": { count: 6, browser: 1 }
+  "MIS Team":         { count: 5, browser: 1 }
+  "Clearance Team":   { count: 3, browser: 1 }
+  "TPC Team":         { count: 3 }
+screen_time_overrides:
+  "Tender Executive": { dashboard: 30, detail: 20, actions: 50 }
+  "MIS Team":         { dashboard: 20, detail: 10, approvals: 45, actions: 25 }
+  "Clearance Team":   { dashboard: 15, detail: 10, approvals: 45, actions: 30 }
+  "TPC Team":         { dashboard: 15, detail: 10, approvals: 45, actions: 30 }
+probe: true

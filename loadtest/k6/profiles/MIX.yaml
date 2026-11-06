@@ -1,0 +1,10 @@
+# MIX — realistic mixed day (default role split from the brief).          # PROPOSED – not approved
+name: MIX
+description: "All roles on their normal screen-time mix; workflow actions + approvals at normal rates."
+roles:
+  "Tender Executive": { count: 6, browser: 1 }
+  "MIS Team":         { count: 4, browser: 1 }
+  "Clearance Team":   { count: 3 }
+  "TPC Team":         { count: 3 }
+  "Admin":            { count: 1, browser: 1 }
+probe: true

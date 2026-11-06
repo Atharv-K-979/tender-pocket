@@ -1,0 +1,6 @@
+{
+  "name": "tender-pocket-loadtest-k6",
+  "private": true,
+  "type": "module",
+  "description": "k6 load suite. package.json exists only so node can unit-test the pure lib modules (node --test ../tests/js). k6 ignores it."
+}
