@@ -1211,87 +1211,336 @@ public class TenderControllerTest {
         assertEquals(1000.0, tender1.getDocumentFee());
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Adding a tender by hand (POST /api/tenders)
+    // ---------------------------------------------------------------------------------------------
+
+    private Map<String, Object> newTenderBody(String id, String title, String originalUrl) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("id", id);
+        body.put("title", title);
+        body.put("original_url", originalUrl);
+        return body;
+    }
+
+    private Tender savedTender() {
+        org.mockito.ArgumentCaptor<Tender> captor = org.mockito.ArgumentCaptor.forClass(Tender.class);
+        verify(tenderRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
     @Test
     void testCreateTenderClassifiesGemFromOfficialBidNo() {
-        authenticate("exec", "Executive");
-        Tender newTender = new Tender();
-        newTender.setId("NEW_T1");
-        newTender.setTitle("Supply of Centrifuges");
-        newTender.setOriginalUrl("https://example.com/details");
-        newTender.setRefNo("GEM/2026/B/7570015");
-        newTender.setTenderType(null); // Missing classification
-        newTender.setStatus("Issued");
-        newTender.setCurrentStage("SPEC_CLEARANCE");
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("NEW_T1", "Supply of Centrifuges", "https://example.com/details");
+        body.put("ref_no", "GEM/2026/B/7570015");
 
-        when(tenderRepository.existsById("NEW_T1")).thenReturn(false);
-
-        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        ResponseEntity<?> response = tenderController.createTender(body);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
-        assertEquals("GeM", newTender.getTenderType(), "Valid GeM bid number must cause classification as GeM");
-        assertNull(newTender.getSource(), "Ingestion source must not default to GeM when not supplied");
-        verify(tenderRepository).save(newTender);
+        Tender saved = savedTender();
+        assertEquals("GeM", saved.getTenderType(), "Valid GeM bid number must cause classification as GeM");
+        assertNull(saved.getSource(), "Ingestion source must not default to GeM when not supplied");
     }
 
     @Test
     void testCreateTenderClassifiesNonGemFromOfficialPortalUrl() {
-        authenticate("exec", "Executive");
-        Tender newTender = new Tender();
-        newTender.setId("NEW_T2");
-        newTender.setTitle("Hospital Furniture Tender");
-        newTender.setOriginalUrl("https://eprocure.gov.in/epublish/app?component=view");
-        newTender.setRefNo("2026_AIIMS_810792_1");
-        newTender.setTenderType(null); // Missing classification
-        newTender.setStatus("Issued");
-        newTender.setCurrentStage("SPEC_CLEARANCE");
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("NEW_T2", "Hospital Furniture Tender", "https://eprocure.gov.in/epublish/app?component=view");
+        body.put("ref_no", "2026_AIIMS_810792_1");
 
-        when(tenderRepository.existsById("NEW_T2")).thenReturn(false);
-
-        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        ResponseEntity<?> response = tenderController.createTender(body);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
-        assertEquals("Non GeM", newTender.getTenderType(), "Verified government portal URL must cause classification as Non GeM");
-        verify(tenderRepository).save(newTender);
+        assertEquals("Non GeM", savedTender().getTenderType(), "Verified government portal URL must cause classification as Non GeM");
     }
 
     @Test
     void testCreateTenderRemainsUnverifiedWhenEvidenceIsInsufficient() {
-        authenticate("exec", "Executive");
-        Tender newTender = new Tender();
-        newTender.setId("NEW_T3");
-        newTender.setTitle("Procurement of General Items");
-        newTender.setOriginalUrl("https://aggregator.example.com/tender/view?id=123");
-        newTender.setRefNo("UNKNOWN_REF_999");
-        newTender.setTenderType(null); // Missing classification
-        newTender.setStatus("Issued");
-        newTender.setCurrentStage("SPEC_CLEARANCE");
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("NEW_T3", "Procurement of General Items", "https://aggregator.example.com/tender/view?id=123");
+        body.put("ref_no", "UNKNOWN_REF_999");
 
-        when(tenderRepository.existsById("NEW_T3")).thenReturn(false);
-
-        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        ResponseEntity<?> response = tenderController.createTender(body);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
-        assertEquals("Unverified", newTender.getTenderType(), "Missing or insufficient evidence must remain Unverified; must NOT default to GeM");
-        verify(tenderRepository).save(newTender);
+        assertEquals("Unverified", savedTender().getTenderType(), "Missing or insufficient evidence must remain Unverified; must NOT default to GeM");
     }
 
     @Test
     void testCreateTenderPreservesExplicitIngestionSourceAndTenderType() {
-        authenticate("exec", "Executive");
-        Tender newTender = new Tender();
-        newTender.setId("NEW_T4");
-        newTender.setTitle("Specific Tender");
-        newTender.setOriginalUrl("https://example.com/view");
-        newTender.setRefNo("REF_123");
-        newTender.setSource("Tender247");
-        newTender.setTenderType("Custom");
-        newTender.setStatus("Issued");
-        newTender.setCurrentStage("SPEC_CLEARANCE");
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("NEW_T4", "Specific Tender", "https://example.com/view");
+        body.put("ref_no", "REF_123");
+        body.put("source", "Tender247");
+        body.put("tender_type", "Custom");
 
-        when(tenderRepository.existsById("NEW_T4")).thenReturn(false);
-
-        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        ResponseEntity<?> response = tenderController.createTender(body);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
-        assertEquals("Custom", newTender.getTenderType(), "Explicit tenderType must be preserved");
-        assertEquals("Tender247", newTender.getSource(), "Explicit source must be preserved");
-        verify(tenderRepository).save(newTender);
+        Tender saved = savedTender();
+        assertEquals("Custom", saved.getTenderType(), "Explicit tenderType must be preserved");
+        assertEquals("Tender247", saved.getSource(), "Explicit source must be preserved");
+    }
+
+    @Test
+    void testCreateTenderWithOnlyRequiredFieldsStartsNewAndUnassigned() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("  MANUAL-001  ", "  Supply of ECG Machines  ", "https://example.com/tender/1");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+
+        Tender saved = savedTender();
+        assertEquals("MANUAL-001", saved.getId(), "Tender ID must be trimmed");
+        assertEquals("Supply of ECG Machines", saved.getTitle(), "Tender name must be trimmed");
+        assertEquals("https://example.com/tender/1", saved.getOriginalUrl());
+        assertEquals("Issued", saved.getStatus(), "A new tender is stored as Issued (shown as New)");
+        assertEquals("NEW", saved.getCurrentStage());
+        assertNull(saved.getMisExecutive(), "A new tender must start unassigned");
+        assertNull(saved.getAssignedBy());
+        assertEquals(java.time.LocalDate.now().toString(), saved.getEntryDate(), "Entry date defaults to today");
+        assertNotNull(saved.getScrapedAt());
+        assertEquals("", saved.getNotes());
+
+        Map<?, ?> resp = (Map<?, ?>) response.getBody();
+        assertEquals(true, resp.get("success"));
+        assertNotNull(resp.get("tender"), "Response must include the created tender");
+        verify(activityLogRepository).save(any());
+    }
+
+    @Test
+    void testCreateTenderStoresOptionalDetails() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("MANUAL-002", "Supply of Ventilators", "https://example.com/tender/2");
+        body.put("authority", "AIIMS Delhi");
+        body.put("estimated_cost_raw", "₹ 5,00,000");
+        body.put("emd_raw", "10000");
+        body.put("document_fee_raw", "");
+        body.put("due_date", "2026-12-15");
+        body.put("time", "15:00");
+        body.put("pre_bid_date", "No");
+        body.put("bid_qty", 5);
+        body.put("quoted_qty", "4");
+        body.put("corrigendum_remark", "No");
+        body.put("location", "New Delhi");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+
+        Tender saved = savedTender();
+        assertEquals("AIIMS Delhi", saved.getAuthority());
+        assertEquals("₹ 5,00,000", saved.getEstimatedCostRaw(), "Raw amount text is kept for display");
+        assertEquals(500000.0, saved.getEstimatedCost(), "Amount is parsed for sorting and analytics");
+        assertEquals(10000.0, saved.getEmd());
+        assertNull(saved.getDocumentFeeRaw(), "Blank optional fields are stored as empty");
+        assertNull(saved.getDocumentFee());
+        assertEquals("2026-12-15", saved.getDueDate());
+        assertEquals("15:00", saved.getTime());
+        assertEquals("No", saved.getPreBidDate());
+        assertEquals(5, saved.getBidQty());
+        assertEquals(4, saved.getQuotedQty());
+        assertEquals("New Delhi", saved.getLocation());
+    }
+
+    @Test
+    void testCreateTenderAllowedForAdmin() {
+        authenticate("admin", "Admin");
+        ResponseEntity<?> response = tenderController.createTender(newTenderBody("MANUAL-ADMIN", "Admin Tender", "https://example.com/tender/a"));
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("MANUAL-ADMIN", savedTender().getId());
+    }
+
+    @Test
+    void testCreateTenderStoresBothTenderNumbers() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("48213377", "Supply of ECG Machines", "https://example.com/t");
+        body.put("ref_no", "  2026_AIIMS_12345_1  ");
+        body.put("source_id", " 48213377 ");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        Tender saved = savedTender();
+        assertEquals("2026_AIIMS_12345_1", saved.getRefNo(), "Organization Tender ID is stored in ref_no");
+        assertEquals("48213377", saved.getSourceId(), "T247 ID is stored in source_id");
+        assertEquals("Tender247", saved.getSource(), "A T247 ID means the tender is on Tender247, so email sync can match it later");
+    }
+
+    @Test
+    void testCreateTenderUsesT247IdAsTenderIdWhenTenderIdIsBlank() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("", "Supply of ECG Machines", "https://example.com/t");
+        body.put("source_id", "48213377");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        Tender saved = savedTender();
+        assertEquals("48213377", saved.getId());
+        assertEquals("48213377", saved.getSourceId());
+    }
+
+    @Test
+    void testCreateTenderKeepsExplicitSourceWithT247Id() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("MANUAL-010", "GeM tender seen on Tender247", "https://example.com/t");
+        body.put("source", "GeM");
+        body.put("source_id", "48213377");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("GeM", savedTender().getSource());
+    }
+
+    @Test
+    void testCreateTenderRejectsNonNumericT247Id() {
+        authenticate("misteam", "MIS Team");
+        for (String bad : List.of("GEM/2026/B/1234567", "T247-123", "12 34")) {
+            Map<String, Object> body = newTenderBody("MANUAL-011", "Tender", "https://example.com/t");
+            body.put("source_id", bad);
+            ResponseEntity<?> response = tenderController.createTender(body);
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode(), "T247 ID '" + bad + "' must be rejected");
+            Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
+            assertTrue(errors.containsKey("source_id"));
+        }
+        verify(tenderRepository, never()).save(any());
+    }
+
+    @Test
+    void testCreateTenderNormalisesGemBidNumberAndDropsPlaceholderRefNo() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("MANUAL-012", "Tender", "https://example.com/t");
+        body.put("ref_no", "gem/2026/b/7570015");
+        assertEquals(HttpStatus.OK, tenderController.createTender(body).getStatusCode());
+        assertEquals("GEM/2026/B/7570015", savedTender().getRefNo(), "GeM bid number stored the way GeM sync stores it");
+
+        reset(tenderRepository);
+        Map<String, Object> body2 = newTenderBody("MANUAL-013", "Tender", "https://example.com/t");
+        body2.put("ref_no", "N/A");
+        assertEquals(HttpStatus.OK, tenderController.createTender(body2).getStatusCode());
+        assertNull(savedTender().getRefNo(), "'N/A' means the Organization Tender ID is not known");
+    }
+
+    @Test
+    void testCreateTenderRejectsDuplicateOrganizationTenderId() {
+        authenticate("misteam", "MIS Team");
+        when(tenderRepository.findFirstByRefNo("GEM/2026/B/7570015")).thenReturn(Optional.of(tender1));
+        Map<String, Object> body = newTenderBody("MANUAL-014", "Tender", "https://example.com/t");
+        body.put("ref_no", "GEM/2026/B/7570015");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
+        assertTrue(errors.containsKey("ref_no"));
+        verify(tenderRepository, never()).save(any());
+    }
+
+    @Test
+    void testCreateTenderRejectsDuplicateT247Id() {
+        authenticate("misteam", "MIS Team");
+        when(tenderRepository.findFirstBySourceId("48213377")).thenReturn(Optional.of(tender1));
+        Map<String, Object> body = newTenderBody("MANUAL-015", "Tender", "https://example.com/t");
+        body.put("source_id", "48213377");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
+        assertTrue(errors.containsKey("source_id"));
+        verify(tenderRepository, never()).save(any());
+    }
+
+    @Test
+    void testCreateTenderRejectsT247IdUsedAsIdOfOlderTender247Tender() {
+        authenticate("misteam", "MIS Team");
+        Tender older = new Tender();
+        older.setId("48213377");
+        older.setSource("Tender247");
+        when(tenderRepository.findById("48213377")).thenReturn(Optional.of(older));
+        Map<String, Object> body = newTenderBody("MANUAL-016", "Tender", "https://example.com/t");
+        body.put("source_id", "48213377");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        verify(tenderRepository, never()).save(any());
+    }
+
+    @Test
+    void testCreateTenderOnlyAllowedForMisTeamAndAdmin() {
+        Map<String, Object> body = newTenderBody("MANUAL-003", "Some Tender", "https://example.com/tender/3");
+        for (String role : List.of("Executive", "Tender Executive", "Clearance Team", "TPC Pricing Team")) {
+            authenticate("user", role);
+            ResponseEntity<?> response = tenderController.createTender(body);
+            assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode(), role + " must not be able to add tenders");
+        }
+        verify(tenderRepository, never()).save(any());
+    }
+
+    @Test
+    void testCreateTenderRequiresIdNameAndLink() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("   ", "", null);
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
+        assertTrue(errors.containsKey("id"));
+        assertTrue(errors.containsKey("title"));
+        assertTrue(errors.containsKey("original_url"));
+        verify(tenderRepository, never()).save(any());
+
+        ResponseEntity<?> emptyBody = tenderController.createTender(null);
+        assertEquals(HttpStatus.BAD_REQUEST, emptyBody.getStatusCode());
+    }
+
+    @Test
+    void testCreateTenderRejectsIdThatWouldBreakPageLinks() {
+        authenticate("misteam", "MIS Team");
+        for (String badId : List.of("GEM/2026/B/123", "has space", "a?b", "a#b", "..", "%2F")) {
+            ResponseEntity<?> response = tenderController.createTender(newTenderBody(badId, "Tender", "https://example.com/t"));
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode(), "ID '" + badId + "' must be rejected");
+        }
+        verify(tenderRepository, never()).save(any());
+    }
+
+    @Test
+    void testCreateTenderRejectsInvalidValues() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Map<String, Object>> cases = new LinkedHashMap<>();
+        cases.put("original_url", Map.of("original_url", "not a link"));
+        cases.put("due_date", Map.of("due_date", "2026-02-31"));
+        cases.put("time", Map.of("time", "25:00"));
+        cases.put("estimated_cost_raw", Map.of("estimated_cost_raw", "-500"));
+        cases.put("bid_qty", Map.of("bid_qty", "2.5"));
+        cases.put("tender_type", Map.of("tender_type", "Something"));
+        cases.put("ref_no", Map.of("ref_no", "x".repeat(256)));
+
+        for (Map.Entry<String, Map<String, Object>> c : cases.entrySet()) {
+            Map<String, Object> body = newTenderBody("MANUAL-004", "Tender", "https://example.com/t");
+            body.putAll(c.getValue());
+            ResponseEntity<?> response = tenderController.createTender(body);
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode(), c.getKey() + " must be validated");
+            Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
+            assertTrue(errors.containsKey(c.getKey()), "Expected an error for " + c.getKey() + " but got " + errors);
+        }
+        verify(tenderRepository, never()).save(any());
+    }
+
+    @Test
+    void testCreateTenderRejectsAssignmentWorkflowAndPricingFields() {
+        authenticate("misteam", "MIS Team");
+        for (String field : List.of("mis_executive", "assigned_by", "status", "current_stage", "tpc_purchase_price",
+                "mis_final_price", "payment_status", "spec_verification_status", "emd_receipt_doc_path", "scraped_at")) {
+            Map<String, Object> body = newTenderBody("MANUAL-005", "Tender", "https://example.com/t");
+            body.put(field, "x");
+            ResponseEntity<?> response = tenderController.createTender(body);
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode(), field + " must not be settable on create");
+        }
+        verify(tenderRepository, never()).save(any());
+    }
+
+    @Test
+    void testCreateTenderRejectsDuplicateId() {
+        authenticate("misteam", "MIS Team");
+        when(tenderRepository.existsById("T1")).thenReturn(true);
+
+        ResponseEntity<?> response = tenderController.createTender(newTenderBody("T1", "Duplicate", "https://example.com/t"));
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        verify(tenderRepository, never()).save(any());
     }
 
     @Test

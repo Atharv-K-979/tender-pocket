@@ -828,32 +828,234 @@ public class TenderController {
         ));
     }
 
+    /**
+     * Tender details that can be supplied when a tender is added by hand. Only id, title and
+     * original_url are required. Assignment, workflow, approval and pricing fields are deliberately
+     * not accepted here: a new tender always starts unassigned, and those are set later through the
+     * Assign & Participate flow and the workflow endpoints.
+     */
+    private static final Set<String> CREATE_TENDER_FIELDS = Set.of(
+            "id", "title", "original_url", "ref_no", "authority",
+            "estimated_cost_raw", "emd_raw", "document_fee_raw",
+            "tender_type", "source", "source_id",
+            "location", "place", "state", "sector", "vertical_name",
+            "publish_date", "start_date", "due_date", "opening_date", "pre_bid_date", "time", "entry_date",
+            "bid_qty", "quoted_qty", "corrigendum_remark",
+            "product_name_as_per_tender", "product_name_as_per_marken",
+            "document_url", "notes");
+
+    /** Fields stored in varchar(255) columns; everything else accepted on create is a TEXT column. */
+    private static final List<String> CREATE_TENDER_SHORT_FIELDS = List.of(
+            "ref_no", "estimated_cost_raw", "emd_raw", "document_fee_raw", "tender_type", "source", "source_id",
+            "place", "state", "sector", "vertical_name",
+            "publish_date", "start_date", "due_date", "opening_date", "pre_bid_date", "time", "entry_date");
+
+    /** Tender IDs go into page links (/tenders/{id}), so they are limited to URL-safe characters. */
+    private static final String TENDER_ID_PATTERN = "^[A-Za-z0-9._-]{1,100}$";
+
+    /** Tender247's own tender number (T247 ID) is always numeric. */
+    private static final String T247_ID_PATTERN = "^\\d{1,50}$";
+
+    /** MIS Team and Admin can add tenders by hand and attach documents to them. */
+    private static boolean canAddTenders() {
+        String role = WorkflowPermissions.role();
+        return "MIS Team".equals(role) || "Admin".equals(role);
+    }
+
+    /** Trimmed text value of a body field, or null when it is absent or blank. */
+    private static String createText(Map<String, Object> body, String key) {
+        Object raw = body.get(key);
+        if (raw == null) return null;
+        String s = raw.toString().trim();
+        return s.isEmpty() ? null : s;
+    }
+
     @PostMapping
-    public ResponseEntity<?> createTender(
-            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
-            @RequestBody Tender tender) {
-        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
-        userRole = resolveUserRole(userRole);
-        if (!WorkflowPermissions.role().equals("Admin") && (tender.getTpcPurchasePrice() != null
-                || tender.getMisFinalPrice() != null
-                || (tender.getCurrentStage() != null && !List.of("SPEC_CLEARANCE", "TECH_SPEC_PENDING").contains(tender.getCurrentStage()))
-                || java.util.stream.Stream.of(tender.getSpecVerificationStatus(), tender.getVerificationStatus(),
-                        tender.getPaymentStatus(), tender.getSubmissionStatus(), tender.getOutcomeStatus())
-                    .anyMatch(value -> value != null && !value.isBlank() && !"None".equals(value)))) {
-            return ResponseEntity.badRequest().body(Map.of("success", false,
-                    "error", "Use the workflow endpoints to set approval state or pricing."));
+    public ResponseEntity<?> createTender(@RequestBody(required = false) Map<String, Object> body) {
+        // Only the MIS Team and Admin add tenders: a new tender starts unassigned, and assigning it is MIS's job.
+        // Other roles could not even see a tender they added (their lists are scoped to their own stage).
+        if (!canAddTenders()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false,
+                    "error", "Only the MIS Team or Admin can add tenders."));
         }
-        if (!WorkflowPermissions.allowedPatch(Map.of("status", String.valueOf(tender.getStatus())), null))
-            return WorkflowPermissions.denied();
+        if (body == null) body = Collections.emptyMap();
 
-        if (tender.getId() == null || tender.getTitle() == null || tender.getOriginalUrl() == null) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "id, title, and originalUrl are required"));
+        Map<String, String> fieldErrors = new LinkedHashMap<>();
+
+        for (String key : body.keySet()) {
+            if (!CREATE_TENDER_FIELDS.contains(key)) {
+                fieldErrors.put(key, "'" + key + "' cannot be set when adding a tender.");
+            }
         }
 
-        if (tenderRepository.existsById(tender.getId())) {
+        // 1. The two tender numbers, stored the same way the Tender247 / GeM syncs store them:
+        //    Organization Tender ID -> ref_no    (the department's own number, e.g. GEM/2026/B/1234567)
+        //    T247 ID                -> source_id (Tender247's numeric ID, e.g. 48213377)
+        String refNo = createText(body, "ref_no");
+        if (refNo != null && TenderClassifier.isPlaceholderRefNo(refNo)) {
+            refNo = null; // "N/A", "-" etc. mean the number is not known
+        }
+        if (refNo != null && TenderClassifier.isValidGemBidNumber(refNo)) {
+            refNo = TenderClassifier.extractGemBidNumber(refNo); // same form GeM sync uses: GEM/2026/B/1234567
+        }
+        String t247Id = createText(body, "source_id");
+        if (t247Id != null && !t247Id.matches(T247_ID_PATTERN)) {
+            fieldErrors.put("source_id", "T247 ID must be the number shown on Tender247 (digits only, e.g. 48213377). "
+                    + "Put GeM or department numbers in Organization Tender ID.");
+        }
+
+        // 2. Required: tender ID, name and link. A Tender247 tender is keyed by its T247 ID (as email sync does),
+        //    so the Tender ID can be left blank when the T247 ID is given.
+        String id = createText(body, "id");
+        if (id == null && t247Id != null && !fieldErrors.containsKey("source_id")) {
+            id = t247Id;
+        }
+        String title = createText(body, "title");
+        String originalUrl = createText(body, "original_url");
+        if (id == null) {
+            fieldErrors.put("id", "Tender ID is required (or fill in the T247 ID to use it as the Tender ID).");
+        } else if (!id.matches(TENDER_ID_PATTERN) || id.matches("^\\.+$")) {
+            fieldErrors.put("id", "Tender ID can only contain letters, numbers, '-', '_' and '.' (no spaces or '/'). "
+                    + "Put a bid number like GEM/2026/B/1234567 in Organization Tender ID instead.");
+        }
+        if (title == null) {
+            fieldErrors.put("title", "Tender name is required.");
+        }
+        if (originalUrl == null) {
+            fieldErrors.put("original_url", "Tender link is required.");
+        } else if (!isValidUrl(originalUrl)) {
+            fieldErrors.put("original_url", "Enter a valid URL (e.g. https://...).");
+        }
+        String documentUrl = createText(body, "document_url");
+        if (documentUrl != null && !isValidUrl(documentUrl)) {
+            fieldErrors.put("document_url", "Enter a valid URL (e.g. https://...).");
+        }
+
+        // 2. Length limits for varchar(255) columns
+        for (String fld : CREATE_TENDER_SHORT_FIELDS) {
+            String val = createText(body, fld);
+            if (val != null && val.length() > 255) {
+                fieldErrors.put(fld, fld + " cannot exceed 255 characters.");
+            }
+        }
+
+        // 3. Amounts (raw text is kept for display, the parsed number is used for sorting and analytics)
+        Double estimatedCost = parseAndValidateNumeric(createText(body, "estimated_cost_raw"), false, fieldErrors, "estimated_cost_raw");
+        Double emd = parseAndValidateNumeric(createText(body, "emd_raw"), false, fieldErrors, "emd_raw");
+        Double documentFee = parseAndValidateNumeric(createText(body, "document_fee_raw"), true, fieldErrors, "document_fee_raw");
+
+        // 4. Quantities
+        Integer bidQty = parseAndValidateInteger(body.get("bid_qty"), fieldErrors, "bid_qty");
+        Integer quotedQty = parseAndValidateInteger(body.get("quoted_qty"), fieldErrors, "quoted_qty");
+
+        // 5. Dates and time (same rules as editing a tender)
+        for (String fld : List.of("opening_date", "publish_date", "start_date", "due_date", "entry_date", "pre_bid_date")) {
+            String val = createText(body, fld);
+            boolean isPreBid = "pre_bid_date".equals(fld);
+            if (val != null && !isValidCalendarDate(val, isPreBid)) {
+                fieldErrors.put(fld, isPreBid ? "Enter a valid date or 'No'." : "Enter a valid date.");
+            }
+        }
+        String time = createText(body, "time");
+        if (time != null && !"N/A".equalsIgnoreCase(time) && !time.matches("^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$")) {
+            fieldErrors.put("time", "Enter a valid time (e.g. 15:00:00).");
+        }
+
+        // 6. Fixed choices
+        String tenderType = createText(body, "tender_type");
+        if (tenderType != null && List.of("GeM", "Non GeM", "Custom", "Unverified").stream().noneMatch(tenderType::equalsIgnoreCase)) {
+            fieldErrors.put("tender_type", "Tender type must be 'GeM', 'Non GeM', 'Custom', or 'Unverified'.");
+        }
+        String source = createText(body, "source");
+        if (source != null && !source.equalsIgnoreCase("GeM") && !source.equalsIgnoreCase("Tender247")) {
+            fieldErrors.put("source", "Source portal must be 'GeM' or 'Tender247'.");
+        }
+        String corrigendumRemark = createText(body, "corrigendum_remark");
+        if (corrigendumRemark != null && !corrigendumRemark.equalsIgnoreCase("Yes") && !corrigendumRemark.equalsIgnoreCase("No")) {
+            fieldErrors.put("corrigendum_remark", "Corrigendum remark must be 'Yes' or 'No'.");
+        }
+
+        if (!fieldErrors.isEmpty()) {
+            Map<String, Object> errResp = new LinkedHashMap<>();
+            errResp.put("success", false);
+            errResp.put("error", fieldErrors.values().iterator().next());
+            errResp.put("errors", fieldErrors);
+            return ResponseEntity.badRequest().body(errResp);
+        }
+
+        if (tenderRepository.existsById(id)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
-                    "error", "Tender already exists. Use its update endpoint."));
+                    "error", "A tender with ID '" + id + "' already exists."));
         }
+
+        // The syncs match tenders by these two numbers, so a second tender with the same number would be a duplicate.
+        Map<String, String> duplicateErrors = new LinkedHashMap<>();
+        if (refNo != null) {
+            tenderRepository.findFirstByRefNo(refNo).ifPresent(existing -> duplicateErrors.put("ref_no",
+                    "Tender " + existing.getId() + " already has Organization Tender ID '" + existing.getRefNo() + "'."));
+        }
+        if (t247Id != null) {
+            Optional<Tender> sameT247 = tenderRepository.findFirstBySourceId(t247Id);
+            if (sameT247.isEmpty()) {
+                // Older Tender247 tenders may only carry the T247 ID as their tender ID
+                sameT247 = tenderRepository.findById(t247Id)
+                        .filter(existing -> "Tender247".equalsIgnoreCase(existing.getSource()));
+            }
+            sameT247.ifPresent(existing -> duplicateErrors.put("source_id",
+                    "Tender " + existing.getId() + " already has T247 ID '" + t247Id + "'."));
+        }
+        if (!duplicateErrors.isEmpty()) {
+            Map<String, Object> errResp = new LinkedHashMap<>();
+            errResp.put("success", false);
+            errResp.put("error", duplicateErrors.values().iterator().next());
+            errResp.put("errors", duplicateErrors);
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(errResp);
+        }
+
+        // A T247 ID means the tender is on Tender247. Email sync only matches on the T247 ID when the
+        // source is Tender247, so default it here or the next sync would add the same tender again.
+        if (source == null && t247Id != null) {
+            source = "Tender247";
+        }
+
+        // Build the tender from the accepted fields only. Entity defaults apply to everything else:
+        // status "Issued" (shown as New), stage "NEW", no executive, approval statuses "None".
+        Tender tender = new Tender();
+        tender.setId(id);
+        tender.setTitle(title);
+        tender.setOriginalUrl(originalUrl);
+        tender.setRefNo(refNo);
+        tender.setAuthority(createText(body, "authority"));
+        tender.setEstimatedCostRaw(createText(body, "estimated_cost_raw"));
+        tender.setEstimatedCost(estimatedCost);
+        tender.setEmdRaw(createText(body, "emd_raw"));
+        tender.setEmd(emd);
+        tender.setDocumentFeeRaw(createText(body, "document_fee_raw"));
+        tender.setDocumentFee(documentFee);
+        tender.setTenderType(tenderType);
+        tender.setSource(source);
+        tender.setSourceId(t247Id);
+        tender.setLocation(createText(body, "location"));
+        tender.setPlace(createText(body, "place"));
+        tender.setState(createText(body, "state"));
+        tender.setSector(createText(body, "sector"));
+        tender.setVerticalName(createText(body, "vertical_name"));
+        tender.setPublishDate(createText(body, "publish_date"));
+        tender.setStartDate(createText(body, "start_date"));
+        tender.setDueDate(createText(body, "due_date"));
+        tender.setOpeningDate(createText(body, "opening_date"));
+        tender.setPreBidDate(createText(body, "pre_bid_date"));
+        tender.setTime(time);
+        String entryDate = createText(body, "entry_date");
+        tender.setEntryDate(entryDate != null ? entryDate : LocalDate.now().toString());
+        tender.setBidQty(bidQty);
+        tender.setQuotedQty(quotedQty);
+        tender.setCorrigendumRemark(corrigendumRemark);
+        tender.setProductNameAsPerTender(createText(body, "product_name_as_per_tender"));
+        tender.setProductNameAsPerMarken(createText(body, "product_name_as_per_marken"));
+        tender.setDocumentUrl(documentUrl);
+        String notes = createText(body, "notes");
+        tender.setNotes(notes != null ? notes : "");
 
         // Evidence-based platform classification:
         // Reuses TenderClassifier to deduce platform from refNo, originalUrl, sector/website, and title.
@@ -871,7 +1073,131 @@ public class TenderController {
         tender.setScrapedAt(new Date().toString());
         tenderRepository.save(tender);
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Tender added successfully"));
+        String username = WorkflowPermissions.username();
+        try {
+            ActivityLog log = new ActivityLog(
+                    username, WorkflowPermissions.role(), "Added Tender", id,
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
+                    "tender added manually: '" + title + "'"
+            );
+            activityLogRepository.save(log);
+        } catch (Exception e) {
+            System.err.println("[TenderController] Warning saving activity log for new tender " + id + ": " + e.getMessage());
+        }
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("message", "Tender added successfully");
+        resp.put("tender", createResponseCopy(tender));
+        return ResponseEntity.ok(resp);
+    }
+
+    /** File types MIS / Admin can attach to a tender from their PC. */
+    private static final Set<String> TENDER_DOCUMENT_EXTENSIONS = Set.of(
+            "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt", "jpg", "jpeg", "png", "zip");
+
+    /**
+     * Attaches a document from the user's PC to a tender (used by the Add Tender form).
+     * The file is stored the same way as other tender documents (S3 when enabled, otherwise
+     * public/documents/{id}/) and listed in downloaded_docs so it shows in the tender's Documents
+     * section with a Download button.
+     */
+    @PostMapping(value = "/{id}/upload-document", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadTenderDocument(
+            @PathVariable("id") String id,
+            @RequestParam(value = "file", required = false) org.springframework.web.multipart.MultipartFile file) {
+
+        if (!canAddTenders()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false,
+                    "error", "Only the MIS Team or Admin can upload tender documents here."));
+        }
+
+        Optional<Tender> opt = tenderRepository.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+        }
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "No file was uploaded."));
+        }
+
+        // Keep only the file's own name (some browsers send a full path such as C:\fakepath\x.pdf)
+        String submittedName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "";
+        String originalName = submittedName.substring(Math.max(submittedName.lastIndexOf('/'), submittedName.lastIndexOf('\\')) + 1).trim();
+        if (originalName.isEmpty()) originalName = "document";
+        int dot = originalName.lastIndexOf('.');
+        String extension = dot >= 0 ? originalName.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
+        if (!TENDER_DOCUMENT_EXTENSIONS.contains(extension)) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "error", "'" + originalName + "' is not an allowed file type. Allowed: PDF, Word, Excel, CSV, TXT, JPG, PNG, ZIP."));
+        }
+
+        Tender tender = opt.get();
+
+        // Existing documents on the tender (kept as-is; the new file is appended)
+        List<Map<String, Object>> docsList = new ArrayList<>();
+        if (tender.getDownloadedDocs() != null && !tender.getDownloadedDocs().isBlank()) {
+            try {
+                docsList = mapper.readValue(tender.getDownloadedDocs(),
+                        new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
+            } catch (Exception e) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                        "error", "This tender's document list could not be read, so the upload was stopped to avoid losing it."));
+            }
+        }
+
+        // Safe stored file name. "emd_receipt" is avoided because downloads of such names are
+        // restricted as confidential EMD proof. Same-name uploads get a numeric suffix instead of
+        // overwriting an earlier file.
+        String baseName = (dot >= 0 ? originalName.substring(0, dot) : originalName)
+                .replaceAll("[^a-zA-Z0-9._-]", "_")
+                .replaceAll("\\.{2,}", ".")   // ".." is refused by the download route
+                .replaceAll("\\.+$", "")      // "a." + ".pdf" would give "a..pdf"
+                .replaceAll("(?i)emd_receipt", "emd-receipt");
+        if (baseName.isBlank() || baseName.matches("^\\.+$")) baseName = "document";
+        if (baseName.length() > 120) baseName = baseName.substring(0, 120);
+        Set<String> usedNames = new HashSet<>();
+        for (Map<String, Object> d : docsList) {
+            if (d.get("filename") != null) usedNames.add(d.get("filename").toString().toLowerCase(Locale.ROOT));
+        }
+        String fileName = baseName + "." + extension;
+        for (int n = 2; usedNames.contains(fileName.toLowerCase(Locale.ROOT)); n++) {
+            fileName = baseName + "_" + n + "." + extension;
+        }
+
+        try {
+            persistDocument(id, fileName, file.getBytes(),
+                    file.getContentType() != null ? file.getContentType() : resolveContentTypeByExtension(fileName));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
+                    "error", "Failed to save '" + originalName + "': " + e.getMessage()));
+        }
+
+        String username = WorkflowPermissions.username();
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("name", originalName);
+        doc.put("filename", fileName);
+        doc.put("local_path", "/documents/" + id + "/" + fileName);
+        doc.put("created_date", LocalDate.now().toString());
+        doc.put("uploaded_by", username);
+        docsList.add(doc);
+        try {
+            tender.setDownloadedDocs(mapper.writeValueAsString(docsList));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
+                    "error", "Saved the file but could not update the tender's document list: " + e.getMessage()));
+        }
+        tenderRepository.save(tender);
+
+        try {
+            activityLogRepository.save(new ActivityLog(
+                    username, WorkflowPermissions.role(), "Uploaded Document", id,
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
+                    "uploaded '" + originalName + "' as " + fileName));
+        } catch (Exception e) {
+            System.err.println("[TenderController] Warning saving activity log for document upload on " + id + ": " + e.getMessage());
+        }
+
+        return ResponseEntity.ok(Map.of("success", true, "message", "Document uploaded", "document", doc));
     }
 
     @PatchMapping("/{id}")
