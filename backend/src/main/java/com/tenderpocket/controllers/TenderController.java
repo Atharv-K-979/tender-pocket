@@ -931,6 +931,18 @@ public class TenderController {
             }
         }
 
+        // T247 ID (source_id) is Tender247's numeric tender number. It is only checked when it is being changed,
+        // so a value already on the tender never blocks saving other fields.
+        if (!fieldErrors.containsKey("source_id") && (body.containsKey("source_id") || body.containsKey("sourceId"))) {
+            Object raw = body.containsKey("source_id") ? body.get("source_id") : body.get("sourceId");
+            String newT247Id = raw == null ? "" : raw.toString().trim();
+            String currentT247Id = tender.getSourceId() == null ? "" : tender.getSourceId().trim();
+            if (!newT247Id.isEmpty() && !newT247Id.equals(currentT247Id) && !newT247Id.matches("^\\d{1,50}$")) {
+                fieldErrors.put("source_id", "T247 ID must be the number shown on Tender247 (digits only, e.g. 48213377). "
+                        + "Put GeM or department numbers in Organization Tender ID.");
+            }
+        }
+
         // 2. Monetary validation
         Double parsedDocFee = null;
         if (body.containsKey("document_fee_raw") || body.containsKey("documentFeeRaw")) {

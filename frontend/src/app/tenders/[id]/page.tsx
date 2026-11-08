@@ -950,8 +950,18 @@ export default function TenderDetailPage() {
       if (String(value).trim().length > 255) return "Official Reference No cannot exceed 255 characters.";
       return null;
     }
-    if (['place', 'state', 'sector', 'vertical_name', 'source_id'].includes(field)) {
+    if (['place', 'state', 'sector', 'vertical_name'].includes(field)) {
       if (value && String(value).trim().length > 255) return `${field} cannot exceed 255 characters.`;
+      return null;
+    }
+    if (field === 'source_id') {
+      // T247 ID is Tender247's numeric tender number. Only checked when changed, so a value
+      // already on the tender never blocks saving other fields (same rule as the backend).
+      const v = value ? String(value).trim() : '';
+      const current = String(selectedTender?.source_id ?? '').trim();
+      if (v && v !== current && !/^\d{1,50}$/.test(v)) {
+        return 'T247 ID must be the number shown on Tender247 (digits only). Put GeM or department numbers in Organization Tender ID.';
+      }
       return null;
     }
     if (field === 'document_fee_raw') {

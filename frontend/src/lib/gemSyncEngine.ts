@@ -142,7 +142,7 @@ export async function syncGeMTenders(): Promise<{ success: boolean; importedCoun
           entry_date: todayDateOnly,
           mis_executive: 'Unassigned',
           source: 'GeM Portal',
-          source_id: id,
+          source_id: null, // GeM has no T247 ID
           vertical_name: 'Medical Equipment',
           place: 'India',
           state: 'Maharashtra',

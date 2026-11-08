@@ -730,7 +730,7 @@ public class TenderControllerTest {
         body.put("document_fee_raw", "₹ 500");
         body.put("tender_type", "GeM");
         body.put("source", "GeM");
-        body.put("source_id", "GEM/2026/B/9999");
+        body.put("source_id", "48213377");
         body.put("location", "Nashik, MH");
         body.put("place", "Satpur");
         body.put("state", "Maharashtra");
@@ -764,7 +764,7 @@ public class TenderControllerTest {
         assertEquals(500.0, tender1.getDocumentFee());
         assertEquals("GeM", tender1.getTenderType());
         assertEquals("GeM", tender1.getSource());
-        assertEquals("GEM/2026/B/9999", tender1.getSourceId());
+        assertEquals("48213377", tender1.getSourceId());
         assertEquals("Nashik, MH", tender1.getLocation());
         assertEquals("Satpur", tender1.getPlace());
         assertEquals("Maharashtra", tender1.getState());
@@ -1340,5 +1340,40 @@ public class TenderControllerTest {
 
         // Delete tender -> 403 FORBIDDEN
         assertEquals(HttpStatus.FORBIDDEN, tenderController.deleteTender("Admin", "admin", "T1").getStatusCode());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // T247 ID on the edit page
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    void testUpdateTenderRejectsNonNumericT247Id() {
+        authenticate("clearance", "Clearance Team");
+        Map<String, Object> body = new HashMap<>();
+        body.put("source_id", "GEM/2026/B/9999");
+
+        ResponseEntity<?> response = tenderController.updateTender("Clearance Team", "clearance", "T1", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
+        assertTrue(errors.containsKey("source_id"));
+        assertNull(tender1.getSourceId());
+    }
+
+    @Test
+    void testUpdateTenderAllowsUnchangedOldSourceIdAndClearing() {
+        authenticate("clearance", "Clearance Team");
+        tender1.setSourceId("GEM/2026/B/1111");
+
+        // The edit form always sends source_id: an unchanged old value must not block other edits
+        Map<String, Object> body = new HashMap<>();
+        body.put("source_id", "GEM/2026/B/1111");
+        body.put("place", "Pune");
+        assertEquals(HttpStatus.OK, tenderController.updateTender("Clearance Team", "clearance", "T1", body).getStatusCode());
+        assertEquals("Pune", tender1.getPlace());
+
+        // Clearing it is allowed
+        Map<String, Object> clear = new HashMap<>();
+        clear.put("source_id", "");
+        assertEquals(HttpStatus.OK, tenderController.updateTender("Clearance Team", "clearance", "T1", clear).getStatusCode());
     }
 }

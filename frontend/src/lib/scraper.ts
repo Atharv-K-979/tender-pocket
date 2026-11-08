@@ -1134,7 +1134,8 @@ export function computeDefaultBusinessMetadata(t: Partial<Tender>): Partial<Tend
     entry_date: formattedCurrentDate,
     mis_executive: '',
     source: source,
-    source_id: t.ref_no || null,
+    // T247 ID only: Tender247's numeric tender ID. GeM and other portals have none.
+    source_id: source === 'Tender247' && t.id && /^\d+$/.test(String(t.id)) ? String(t.id) : null,
     vertical_name: verticalName,
     place: place,
     state: state,
@@ -1236,7 +1237,6 @@ export function extractBusinessMetadataFromHtml(htmlContent: string, tenderId: s
     const mstcMeta: Partial<Tender> = {};
     if (mstcAuctionNumber) {
       mstcMeta.ref_no = mstcAuctionNumber;
-      mstcMeta.source_id = mstcAuctionNumber;
     }
     if (mstcStartDate) {
       const parsedStart = parseMstcDateTime(mstcStartDate);
@@ -1412,7 +1412,6 @@ export function extractBusinessMetadataFromHtml(htmlContent: string, tenderId: s
   const formattedPublishDate = formatDateHuman(dated);
 
   return {
-    source_id: gemBidNumber || null,
     ref_no: gemBidNumber || null,
     publish_date: formattedPublishDate,
     start_date: formattedPublishDate,

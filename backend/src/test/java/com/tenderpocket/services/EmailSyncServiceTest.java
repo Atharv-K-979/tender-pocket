@@ -603,4 +603,94 @@ class EmailSyncServiceTest {
 
         assertEquals("Unverified", existing.getTenderType(), "Direct conflict between verified GeM and verified Non-GeM portals must resolve to Unverified");
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Organization Tender ID (ref_no) and T247 ID (source_id)
+    // ---------------------------------------------------------------------------------------------
+
+    private void enrichFromTender247(Tender existing, String t247Id, String refNo) throws Exception {
+        Map<String, String> tData = new HashMap<>();
+        tData.put("id", t247Id);
+        Method enrichMethod = EmailSyncService.class.getDeclaredMethod("enrichExistingRecordFromTender247",
+                Tender.class, Map.class, String.class, String.class, String.class);
+        enrichMethod.setAccessible(true);
+        enrichMethod.invoke(emailSyncService, existing, tData, refNo, "GeM", "https://www.tender247.com/auth/tender/" + t247Id);
+    }
+
+    @Test
+    @DisplayName("Tender247 email saves its T247 ID on a tender that GeM sync created first")
+    void testEnrichmentSavesT247IdOnGemTender() throws Exception {
+        Tender existing = new Tender();
+        existing.setId("7458129");
+        existing.setSource("GeM");
+        existing.setRefNo("GEM/2026/B/7570015");
+
+        enrichFromTender247(existing, "100575724", "GEM/2026/B/7570015");
+
+        assertEquals("100575724", existing.getSourceId(), "T247 ID must be stored in source_id");
+        assertEquals("GEM/2026/B/7570015", existing.getRefNo(), "Organization Tender ID unchanged");
+        assertEquals("GeM", existing.getSource(), "Source portal unchanged");
+    }
+
+    @Test
+    @DisplayName("Tender247 email replaces an old GeM number in source_id but keeps an existing T247 ID")
+    void testEnrichmentReplacesOnlyNonT247SourceId() throws Exception {
+        Tender oldGemValue = new Tender();
+        oldGemValue.setId("7458129");
+        oldGemValue.setSourceId("GEM/2026/B/7570015");
+        enrichFromTender247(oldGemValue, "100575724", "GEM/2026/B/7570015");
+        assertEquals("100575724", oldGemValue.getSourceId());
+
+        Tender alreadyHasT247 = new Tender();
+        alreadyHasT247.setId("100575724");
+        alreadyHasT247.setSourceId("100575724");
+        enrichFromTender247(alreadyHasT247, "999", "GEM/2026/B/7570015");
+        assertEquals("100575724", alreadyHasT247.getSourceId(), "An existing T247 ID must not be overwritten");
+    }
+
+    @Test
+    @DisplayName("isLegitimateT247Match accepts a tender from any portal that already carries the same T247 ID")
+    void testIsLegitimateT247MatchAcceptsStoredT247Id() throws Exception {
+        Tender gemTender = new Tender();
+        gemTender.setId("7458129");
+        gemTender.setSource("GeM");
+        gemTender.setSourceId("100575724");
+
+        Method matchMethod = EmailSyncService.class.getDeclaredMethod("isLegitimateT247Match", Tender.class, String.class, String.class);
+        matchMethod.setAccessible(true);
+        assertTrue((boolean) matchMethod.invoke(emailSyncService, gemTender, "100575724", ""));
+        assertFalse((boolean) matchMethod.invoke(emailSyncService, gemTender, "100575725", ""));
+    }
+
+    @Test
+    @DisplayName("HTML table parser asks the detail endpoint for a non-GeM Organization Tender ID")
+    void testHtmlTableParserFetchesNonGemOrganizationTenderId() throws Exception {
+        ObjectMapper om = new ObjectMapper();
+        ObjectNode detailRoot = om.createObjectNode();
+        ArrayNode data = detailRoot.putArray("Data");
+        ObjectNode detail = data.addObject();
+        detail.put("tender_number", "2026_AIIMS_12345_1");
+        detail.put("nameof_website", "https://eprocure.gov.in");
+        when(restTemplate.postForEntity(contains("/tender-detail/105136457"), any(), eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                .thenReturn(new ResponseEntity<>(detailRoot, HttpStatus.OK));
+
+        String html = "<html><body><table>" +
+                "<tr><td>TENDER DETAILS</td><td>ORGANIZATION & LOCATION</td><td>VALUE & DEADLINE</td></tr>" +
+                "<tr>" +
+                "<td>T247 ID : 105136457<br><a href='https://r.tenders.bidsnrfp.com/tr/cl/xyz'>Repair of refrigerator</a></td>" +
+                "<td><b>AIIMS</b><br>Delhi</td>" +
+                "<td>47.62 Lacs<br>30-10-2026</td>" +
+                "</tr>" +
+                "</table></body></html>";
+
+        Method parseMethod = EmailSyncService.class.getDeclaredMethod("extractTendersFromEmailHtml", String.class);
+        parseMethod.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> tenders = (List<Map<String, String>>) parseMethod.invoke(emailSyncService, html);
+
+        assertEquals(1, tenders.size());
+        assertEquals("105136457", tenders.get(0).get("id"));
+        assertEquals("2026_AIIMS_12345_1", tenders.get(0).get("ref_no"));
+        assertEquals("https://eprocure.gov.in", tenders.get(0).get("nameof_website"));
+    }
 }

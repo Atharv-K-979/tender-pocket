@@ -371,6 +371,21 @@ public class EmailSyncService {
                     String bidNo = TenderClassifier.extractGemBidNumber(title, cell0Text);
                     if (bidNo != null && !bidNo.isBlank()) {
                         t.put("ref_no", bidNo);
+                    } else {
+                        // The email table only carries the T247 ID. Ask Tender247's detail endpoint for the
+                        // Organization Tender ID (and portal / amounts) so non-GeM numbers are not lost.
+                        Map<String, String> detail = fetchTenderDetailSafe(id, "", null);
+                        String tenderNumber = detail.getOrDefault("tender_number", "").trim();
+                        if (!tenderNumber.isEmpty() && !TenderClassifier.isPlaceholderRefNo(tenderNumber)) {
+                            t.put("ref_no", tenderNumber);
+                        }
+                        String website = detail.getOrDefault("nameof_website", "").trim();
+                        if (!website.isEmpty()) {
+                            t.put("nameof_website", website);
+                        }
+                        for (String key : List.of("emd_raw", "document_fee_raw")) {
+                            if (detail.containsKey(key)) t.put(key, detail.get(key));
+                        }
                     }
 
                     // Extract due date & cost from cell2
@@ -557,7 +572,12 @@ public class EmailSyncService {
                 return true;
             }
         }
-        // 2. Same source namespace ("Tender247")
+        // 2. The tender already carries this T247 ID (source_id only ever holds T247 IDs, whichever
+        //    portal the tender first came from)
+        if (isT247Id(t247Id) && existing.getSourceId() != null && t247Id.equals(existing.getSourceId().trim())) {
+            return true;
+        }
+        // 3. Same source namespace ("Tender247")
         if ("Tender247".equalsIgnoreCase(existing.getSource())) {
             if (t247Id != null && (t247Id.equalsIgnoreCase(existing.getId()) || t247Id.equalsIgnoreCase(existing.getSourceId()))) {
                 return true;
@@ -567,11 +587,23 @@ public class EmailSyncService {
         return false;
     }
 
+    /** Tender247's own tender number (T247 ID) is always numeric. */
+    static boolean isT247Id(String value) {
+        return value != null && value.trim().matches("^\\d{1,50}$");
+    }
+
     void enrichExistingRecordFromTender247(Tender existing, Map<String, String> tData, String refNo, String classifiedType, String link) {
-        // 1. Official reference / bid number
+        // 1. Official reference / bid number (Organization Tender ID)
         if ((existing.getRefNo() == null || existing.getRefNo().isBlank() || TenderClassifier.isPlaceholderRefNo(existing.getRefNo()))
                 && !TenderClassifier.isPlaceholderRefNo(refNo)) {
             existing.setRefNo(refNo);
+        }
+
+        // 1b. T247 ID. A tender that first came from GeM (or was added by hand) has none yet, so save it now.
+        //     A T247 ID already on the tender is kept.
+        String t247Id = tData.get("id");
+        if (isT247Id(t247Id) && !isT247Id(existing.getSourceId())) {
+            existing.setSourceId(t247Id.trim());
         }
 
         // 2. Classification enrichment & precedence:
