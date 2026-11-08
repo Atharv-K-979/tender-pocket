@@ -1782,13 +1782,13 @@ export default function Dashboard() {
     const headers = [
       'Entry date',
       'Source',
-      'Source id',
+      'T247 ID',
       'Vertical Name',
       'Organisation Name',
       'Place',
       'State',
       '"Tender Type\n(GeM  / Non GeM)\n"',
-      'TENDER ID',
+      'Organization Tender ID',
       'LINK',
       'PUBLISH DATE',
       '   Start Date',
@@ -1814,13 +1814,13 @@ export default function Dashboard() {
       const row = [
         t.entry_date || '',
         t.source || 'Tender247',
-        t.id, // Source id is basically the tender id in tender 247
+        t.id, // T247 ID is the tender id on Tender247
         t.vertical_name || 'Others',
         t.authority || 'N/A',
         t.place || 'N/A',
         t.state || 'N/A',
         getClassificationLabel(t.tender_type || t.tenderType),
-        t.ref_no || '', // TENDER ID is the ref_no (procurement reference number)
+        t.ref_no || '', // Organization Tender ID is the ref_no (procurement reference number)
         t.original_url,
         t.publish_date || 'N/A',
         t.start_date || 'N/A',
@@ -3001,7 +3001,7 @@ export default function Dashboard() {
                     <input
                       type="text"
                       className="search-input"
-                      placeholder="Search by Title, ID, Authority, Ref No..."
+                      placeholder="Search by Title, T247 ID, Organization Tender ID, Authority..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
@@ -3243,7 +3243,7 @@ export default function Dashboard() {
                                );
                              })()}
                             {tender.location && <span className="tender-authority">📍 {tender.location}</span>}
-                            {tender.ref_no && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ref: {tender.ref_no}</span>}
+                            {tender.ref_no && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Organization Tender ID: {tender.ref_no}</span>}
                           </div>
                           <h4 className="tender-title" title={tender.title}>{tender.product_name_as_per_tender || tender.title}</h4>
                           <div className="tender-details-row">
@@ -5720,13 +5720,13 @@ export default function Dashboard() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                   {[
                     { label: 'Procuring Authority', value: selectedTender.authority, icon: Building },
-                    { label: 'Official Reference No', value: selectedTender.ref_no, icon: FileText },
+                    { label: 'Organization Tender ID', value: selectedTender.ref_no, icon: FileText },
                     { label: 'Estimated Value', value: selectedTender.estimated_cost_raw || (selectedTender.estimated_cost ? `₹ ${selectedTender.estimated_cost.toLocaleString('en-IN')}` : 'N/A'), icon: DollarSign, highlight: true },
                     { label: 'Earnest Money Deposit (EMD)', value: selectedTender.emd_raw || 'N/A', icon: DollarSign },
                     { label: 'Tender Document Fee', value: selectedTender.document_fee_raw || 'N/A', icon: Tag },
                     { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
                     { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : 'var(--text-muted)') },
-                    { label: 'Source ID', value: selectedTender.source_id || 'N/A', icon: Tag },
+                    { label: 'T247 ID', value: selectedTender.source_id || 'N/A', icon: Tag },
                     { label: 'Location / Region', value: selectedTender.location || 'N/A', icon: MapPin },
                     { label: 'Place', value: selectedTender.place || 'N/A', icon: MapPin },
                     { label: 'State', value: selectedTender.state || 'N/A', icon: MapPin },

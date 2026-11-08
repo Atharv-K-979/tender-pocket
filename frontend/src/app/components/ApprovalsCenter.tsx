@@ -1480,7 +1480,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                       {approval.tenderTitle || approval.tenderId}
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      {approval.tenderRefNo && <span>Ref: {approval.tenderRefNo} · </span>}
+                      {approval.tenderRefNo && <span>Organization Tender ID: {approval.tenderRefNo} · </span>}
                       {approval.tenderAuthority && <span>{approval.tenderAuthority}</span>}
                     </div>
                   </div>

@@ -917,9 +917,9 @@ public class TenderController {
         if (body.containsKey("ref_no") || body.containsKey("refNo")) {
             Object val = body.containsKey("ref_no") ? body.get("ref_no") : body.get("refNo");
             if (val == null || val.toString().trim().isEmpty()) {
-                fieldErrors.put("ref_no", "Official Reference No cannot be empty.");
+                fieldErrors.put("ref_no", "Organization Tender ID cannot be empty.");
             } else if (val.toString().trim().length() > 255) {
-                fieldErrors.put("ref_no", "Official Reference No cannot exceed 255 characters.");
+                fieldErrors.put("ref_no", "Organization Tender ID cannot exceed 255 characters.");
             }
         }
         for (String fld : List.of("place", "state", "sector", "vertical_name", "source_id")) {
@@ -1132,7 +1132,7 @@ public class TenderController {
         if (body.containsKey("ref_no") || body.containsKey("refNo")) {
             String val = (String) (body.containsKey("ref_no") ? body.get("ref_no") : body.get("refNo"));
             tender.setRefNo(val);
-            logDetails.add("official reference number updated to '" + val + "'");
+            logDetails.add("Organization Tender ID updated to '" + val + "'");
         }
 
         if (body.containsKey("estimated_cost_raw") || body.containsKey("estimatedCostRaw")) {
@@ -1180,7 +1180,7 @@ public class TenderController {
         if (body.containsKey("source_id") || body.containsKey("sourceId")) {
             String val = (String) (body.containsKey("source_id") ? body.get("source_id") : body.get("sourceId"));
             tender.setSourceId(val);
-            logDetails.add("source ID updated to '" + val + "'");
+            logDetails.add("T247 ID updated to '" + val + "'");
         }
 
         if (body.containsKey("location")) {
