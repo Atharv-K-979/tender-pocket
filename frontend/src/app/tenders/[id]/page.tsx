@@ -36,7 +36,7 @@ import { Tender } from '@/lib/db';
 import { canPerform, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
-import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
+import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
 
 interface Toast {
   message: string;
@@ -202,7 +202,6 @@ export default function TenderDetailPage() {
     estimated_cost_raw: '',
     emd_raw: '',
     document_fee_raw: '',
-    tender_type: 'Unverified',
     source: '',
     source_id: '',
     location: '',
@@ -1037,7 +1036,6 @@ export default function TenderDetailPage() {
       estimated_cost_raw: selectedTender.estimated_cost_raw || '',
       emd_raw: selectedTender.emd_raw || '',
       document_fee_raw: selectedTender.document_fee_raw || '',
-      tender_type: selectedTender.tender_type || selectedTender.tenderType || 'Unverified',
       source: selectedTender.source || '',
       source_id: selectedTender.source_id || '',
       location: selectedTender.location || '',
@@ -1095,7 +1093,6 @@ export default function TenderDetailPage() {
         estimated_cost_raw: specForm.estimated_cost_raw,
         emd_raw: specForm.emd_raw,
         document_fee_raw: specForm.document_fee_raw,
-        tender_type: specForm.tender_type,
         source: specForm.source,
         source_id: specForm.source_id,
         location: specForm.location,
@@ -1938,17 +1935,15 @@ export default function TenderDetailPage() {
                         <label htmlFor="spec-input-tender-type" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
                           <FileText size={14} style={{ color: 'var(--primary)' }} /> Tender Type (GeM / Non GeM)
                         </label>
-                        <select
+                        <input
                           id="spec-input-tender-type"
-                          value={specForm.tender_type}
-                          onChange={(e) => handleSpecFieldChange('tender_type', e.target.value)}
-                          style={specInputStyle}
-                        >
-                          <option value="GeM">GeM</option>
-                          <option value="Non GeM">Non-GeM</option>
-                          <option value="Custom">Custom</option>
-                          <option value="Unverified">Non-GeM</option>
-                        </select>
+                          type="text"
+                          readOnly
+                          value={getClassificationLabel(classifyByRefNo(specForm.ref_no))}
+                          title="Set automatically: GeM when the Organization Tender ID contains GEM, otherwise Non-GeM"
+                          style={{ ...specInputStyle, opacity: 0.8, cursor: 'not-allowed' }}
+                        />
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Set from Organization Tender ID</span>
                       </div>
 
                       {/* 7. Source Portal */}

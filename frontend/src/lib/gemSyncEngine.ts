@@ -1,5 +1,6 @@
 import axios from 'axios';
 import db from '@/lib/db';
+import { classifyByRefNo } from '@/lib/tenderClassification';
 
 export async function syncGeMTenders(): Promise<{ success: boolean; importedCount: number; message: string }> {
   console.log("=== [GeM Sync Engine] Fetching Live GeM Portal Tenders ===");
@@ -146,7 +147,7 @@ export async function syncGeMTenders(): Promise<{ success: boolean; importedCoun
           vertical_name: 'Medical Equipment',
           place: 'India',
           state: 'Maharashtra',
-          tender_type: 'GeM Bid',
+          tender_type: classifyByRefNo(refNo), // same rule as the backend: ref_no contains GEM -> GeM
           publish_date: publishDate,
           start_date: startDateFormatted,
           time: '18:00:00',

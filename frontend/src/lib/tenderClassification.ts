@@ -1,20 +1,23 @@
 /**
  * Centralized Tender Classification & Ingestion Source Display Mapping
- * 
+ *
  * Rules:
- * 1. User-Facing Classification Badges:
+ * 1. Tender type comes only from the Organization Tender ID (ref_no): if it contains the word GEM
+ *    the tender is 'GeM', otherwise (no ref_no, or a ref_no without GEM) it is 'Non GeM'.
+ *    The backend stores the result in tender_type; classifyByRefNo is the same rule for live previews.
+ * 2. User-Facing Classification Badges:
  *    - 'GeM' -> displays as 'GeM' with green styling (#10b981)
- *    - 'Non-GeM' or 'Non GeM' -> displays as 'Non-GeM' with blue styling (#3b82f6)
- *    - 'Unverified' -> displays as 'Non-GeM' with blue styling (#3b82f6)
- *    - null / undefined / empty -> displays as 'Non-GeM' with blue styling (#3b82f6)
- * 2. Ingestion Source Badges:
+ *    - anything else -> displays as 'Non-GeM' with blue styling (#3b82f6)
+ * 3. Ingestion Source Badges:
  *    - 'Tender247' / 'Tender 247' -> displays as 'Tender247 Portal'
  *    - 'GeM' -> displays as 'GeM Portal'
  *    - Remains separate and unchanged from classification.
- * 3. Stored internal values:
- *    - Backend classification rules, stored tender_type values, database records,
- *      email parsing, scraping, and enrichment logic retain the actual 'Unverified' value internally.
  */
+
+/** Same rule as the backend's TenderClassifier.classify: ref_no contains the word GEM, in any letter case. */
+export function classifyByRefNo(refNo?: string | null): 'GeM' | 'Non GeM' {
+  return refNo && /(^|[^a-z])gem([^a-z]|$)/i.test(refNo) ? 'GeM' : 'Non GeM';
+}
 
 export interface ClassificationDisplayBadge {
   label: 'GeM' | 'Non-GeM';
@@ -25,8 +28,7 @@ export interface ClassificationDisplayBadge {
 
 /**
  * Returns user-facing classification badge styling and label.
- * Maps 'GeM' -> 'GeM' (green).
- * Maps 'Non-GeM', 'Non GeM', and 'Unverified' -> 'Non-GeM' (blue).
+ * Maps 'GeM' -> 'GeM' (green); anything else -> 'Non-GeM' (blue).
  */
 export function getClassificationDisplay(tenderType?: string | null): ClassificationDisplayBadge {
   const normalized = (tenderType || '').trim();
@@ -40,7 +42,7 @@ export function getClassificationDisplay(tenderType?: string | null): Classifica
     };
   }
 
-  // Both 'Non GeM'/'Non-GeM' and 'Unverified' display as 'Non-GeM' with blue styling
+  // Everything that is not GeM displays as 'Non-GeM' with blue styling
   return {
     label: 'Non-GeM',
     color: '#3b82f6',

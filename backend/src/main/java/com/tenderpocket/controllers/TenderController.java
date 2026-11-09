@@ -837,7 +837,7 @@ public class TenderController {
     private static final Set<String> CREATE_TENDER_FIELDS = Set.of(
             "id", "title", "original_url", "ref_no", "authority",
             "estimated_cost_raw", "emd_raw", "document_fee_raw",
-            "tender_type", "source", "source_id",
+            "source", "source_id",
             "location", "place", "state", "sector", "vertical_name",
             "publish_date", "start_date", "due_date", "opening_date", "pre_bid_date", "time", "entry_date",
             "bid_qty", "quoted_qty", "corrigendum_remark",
@@ -846,7 +846,7 @@ public class TenderController {
 
     /** Fields stored in varchar(255) columns; everything else accepted on create is a TEXT column. */
     private static final List<String> CREATE_TENDER_SHORT_FIELDS = List.of(
-            "ref_no", "estimated_cost_raw", "emd_raw", "document_fee_raw", "tender_type", "source", "source_id",
+            "ref_no", "estimated_cost_raw", "emd_raw", "document_fee_raw", "source", "source_id",
             "place", "state", "sector", "vertical_name",
             "publish_date", "start_date", "due_date", "opening_date", "pre_bid_date", "time", "entry_date");
 
@@ -961,11 +961,7 @@ public class TenderController {
             fieldErrors.put("time", "Enter a valid time (e.g. 15:00:00).");
         }
 
-        // 6. Fixed choices
-        String tenderType = createText(body, "tender_type");
-        if (tenderType != null && List.of("GeM", "Non GeM", "Custom", "Unverified").stream().noneMatch(tenderType::equalsIgnoreCase)) {
-            fieldErrors.put("tender_type", "Tender type must be 'GeM', 'Non GeM', 'Custom', or 'Unverified'.");
-        }
+        // 6. Fixed choices (tender type is not one: it always follows the Organization Tender ID)
         String source = createText(body, "source");
         if (source != null && !source.equalsIgnoreCase("GeM") && !source.equalsIgnoreCase("Tender247")) {
             fieldErrors.put("source", "Source portal must be 'GeM' or 'Tender247'.");
@@ -1032,7 +1028,6 @@ public class TenderController {
         tender.setEmd(emd);
         tender.setDocumentFeeRaw(createText(body, "document_fee_raw"));
         tender.setDocumentFee(documentFee);
-        tender.setTenderType(tenderType);
         tender.setSource(source);
         tender.setSourceId(t247Id);
         tender.setLocation(createText(body, "location"));
@@ -1056,19 +1051,6 @@ public class TenderController {
         tender.setDocumentUrl(documentUrl);
         String notes = createText(body, "notes");
         tender.setNotes(notes != null ? notes : "");
-
-        // Evidence-based platform classification:
-        // Reuses TenderClassifier to deduce platform from refNo, originalUrl, sector/website, and title.
-        // Missing or insufficient evidence remains "Unverified"; never defaults to GeM.
-        if (tender.getTenderType() == null || tender.getTenderType().isBlank()) {
-            String classified = TenderClassifier.classify(
-                    tender.getRefNo(),
-                    tender.getOriginalUrl(),
-                    tender.getSector(),
-                    tender.getTitle()
-            );
-            tender.setTenderType(classified);
-        }
 
         tender.setScrapedAt(new Date().toString());
         tenderRepository.save(tender);
@@ -1348,16 +1330,7 @@ public class TenderController {
             }
         }
 
-        // 7. Enum validation
-        if (body.containsKey("tender_type") || body.containsKey("tenderType")) {
-            Object val = body.containsKey("tender_type") ? body.get("tender_type") : body.get("tenderType");
-            if (val != null && !val.toString().trim().isEmpty()) {
-                String s = val.toString().trim();
-                if (!s.equalsIgnoreCase("GeM") && !s.equalsIgnoreCase("Non GeM") && !s.equalsIgnoreCase("Custom") && !s.equalsIgnoreCase("Unverified")) {
-                    fieldErrors.put("tender_type", "Tender type must be 'GeM', 'Non GeM', 'Custom', or 'Unverified'.");
-                }
-            }
-        }
+        // 7. Enum validation (tender_type is not editable: it always follows the Organization Tender ID)
         if (body.containsKey("source")) {
             Object val = body.get("source");
             if (val != null && !val.toString().trim().isEmpty()) {
@@ -1501,12 +1474,6 @@ public class TenderController {
         } else if (body.containsKey("document_fee") || body.containsKey("documentFee")) {
             tender.setDocumentFee(parsedDocFee);
             tender.setDocumentFeeRaw(parsedDocFee != null ? "₹ " + parsedDocFee : null);
-        }
-
-        if (body.containsKey("tender_type") || body.containsKey("tenderType")) {
-            String val = (String) (body.containsKey("tender_type") ? body.get("tender_type") : body.get("tenderType"));
-            tender.setTenderType(val);
-            logDetails.add("tender type updated to '" + val + "'");
         }
 
         if (body.containsKey("source")) {

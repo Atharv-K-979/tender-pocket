@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import db, { Tender } from './db';
+import { classifyByRefNo } from './tenderClassification';
 import JSZip from 'jszip';
 
 // Clean common Quoted-Printable MIME formatting artifacts and repair protocols
@@ -1069,27 +1070,9 @@ export function computeDefaultBusinessMetadata(t: Partial<Tender>): Partial<Tend
   const formattedCurrentDate = `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 
   // 1. Tender Type & Source
-  const gemBidRegex = /\bGEM[/_]\d{4}[/_][A-Z][/_]\d+\b/i;
-  const isPlaceholder = (val?: string | null) => !val || ['N/A', 'NA', 'NULL', '-', '--', 'TBD', 'NONE'].includes(val.trim().toUpperCase());
-
-  const hasGemBid = !!(t.ref_no && !isPlaceholder(t.ref_no) && gemBidRegex.test(t.ref_no));
-  const hasGemUrl = !!(t.original_url && (t.original_url.includes('gem.gov.in') || t.original_url.includes('bidplus.gem.gov.in')));
-  const hasGemTitle = !!(t.title && gemBidRegex.test(t.title));
-
-  const hasNonGemUrl = !!(
-    t.original_url && (t.original_url.includes('eprocure.gov.in') || t.original_url.includes('etenders.gov.in') || (t.original_url.includes('.gov.in') && !t.original_url.includes('gem.gov.in')))
-  );
-
-  let tenderType = 'Unverified';
-  if ((hasGemBid || hasGemUrl) && hasNonGemUrl) {
-    tenderType = 'Unverified';
-  } else if (hasGemBid || hasGemUrl) {
-    tenderType = 'GeM';
-  } else if (hasNonGemUrl) {
-    tenderType = 'Non GeM';
-  } else if (hasGemTitle) {
-    tenderType = 'GeM';
-  }
+  // Tender type comes only from the Organization Tender ID (ref_no): GeM if it contains the word GEM, else Non GeM.
+  const tenderType = classifyByRefNo(t.ref_no);
+  const hasGemUrl = !!(t.original_url && t.original_url.includes('gem.gov.in'));
 
   // Preserve the actual ingestion source rather than overriding it solely based on tenderType
   const source = t.source || (hasGemUrl ? 'GeM' : 'Tender247');
@@ -1785,7 +1768,7 @@ export async function downloadAndSaveTenderDocuments(tenderId: string): Promise<
             vertical_name = COALESCE(NULLIF(NULLIF(vertical_name, 'N/A'), ''), ?),
             place = COALESCE(NULLIF(NULLIF(place, 'N/A'), ''), ?),
             state = COALESCE(NULLIF(NULLIF(state, 'N/A'), ''), ?),
-            tender_type = CASE WHEN ? = 'GeM' THEN 'GeM' ELSE COALESCE(NULLIF(NULLIF(tender_type, 'N/A'), ''), ?) END,
+            tender_type = ?,
             publish_date = COALESCE(NULLIF(NULLIF(publish_date, 'N/A'), ''), ?),
             start_date = COALESCE(NULLIF(NULLIF(start_date, 'N/A'), ''), ?),
             due_date = COALESCE(NULLIF(NULLIF(due_date, 'N/A'), ''), ?),
@@ -1815,7 +1798,7 @@ export async function downloadAndSaveTenderDocuments(tenderId: string): Promise<
           finalMetadata.vertical_name,
           finalMetadata.place,
           finalMetadata.state,
-          finalMetadata.tender_type,
+          classifyByRefNo(finalMetadata.ref_no), // tender type follows the final Organization Tender ID
           finalMetadata.publish_date,
           finalMetadata.start_date,
           finalMetadata.due_date || (tRecord ? tRecord.due_date : null),

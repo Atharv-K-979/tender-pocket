@@ -37,7 +37,7 @@ class GeMScraperDeduplicationEnrichmentTest {
     }
 
     @Test
-    @DisplayName("Existing tender from Tender247 with provisional Non GeM is enriched with authoritative GeM classification by GeM scraper")
+    @DisplayName("Existing Tender247 tender with a GEM Organization Tender ID is enriched by GeM scraper and saved as GeM")
     void testExistingTenderEnrichedByGeMScraper() throws Exception {
         // Pre-existing tender created by Tender247 email
         Tender existing = new Tender();
@@ -66,13 +66,14 @@ class GeMScraperDeduplicationEnrichmentTest {
 
         enrichMethod.invoke(geMScraperService, existing, "GEM/2026/B/7570015", "GEM/2026/B/7570015",
                 "https://bidplus.gem.gov.in/showbidDocument/7458129", docNode);
+        existing.applyTenderType(); // runs when the tender is saved
 
         // Assert tender identity and stage preserved
         assertEquals("100575724", existing.getId());
         assertEquals("NEW", existing.getCurrentStage());
         assertEquals("Issued", existing.getStatus());
 
-        // Assert authoritative GeM classification and official GeM URL updated
+        // Tender type follows the GEM ref_no; official GeM URL updated
         assertEquals("GeM", existing.getTenderType());
         assertEquals("GEM/2026/B/7570015", existing.getRefNo());
         assertEquals("https://bidplus.gem.gov.in/showbidDocument/7458129", existing.getOriginalUrl());

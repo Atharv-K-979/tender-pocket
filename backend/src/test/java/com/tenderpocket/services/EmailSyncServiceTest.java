@@ -144,7 +144,7 @@ class EmailSyncServiceTest {
     }
 
     @Test
-    @DisplayName("Cross-source enrichment: existing record with provisional Non GeM is upgraded to GeM")
+    @DisplayName("Cross-source enrichment: existing record with a GEM Organization Tender ID is saved as GeM")
     void testExistingRecordEnrichmentUpgradesToGem() throws Exception {
         Tender existing = new Tender();
         existing.setId("7458129");
@@ -162,21 +162,22 @@ class EmailSyncServiceTest {
         tData.put("nameof_website", "https://bidplus.gem.gov.in");
 
         Method enrichMethod = EmailSyncService.class.getDeclaredMethod("enrichExistingRecordFromTender247",
-                Tender.class, Map.class, String.class, String.class, String.class);
+                Tender.class, Map.class, String.class, String.class);
         enrichMethod.setAccessible(true);
-        enrichMethod.invoke(emailSyncService, existing, tData, "GEM/2026/B/7570015", "GeM", "https://bidplus.gem.gov.in/showbidDocument/7458129");
+        enrichMethod.invoke(emailSyncService, existing, tData, "GEM/2026/B/7570015", "https://bidplus.gem.gov.in/showbidDocument/7458129");
+        existing.applyTenderType(); // runs when the tender is saved
 
         // Identity and workflow state preserved
         assertEquals("7458129", existing.getId());
         assertEquals("NEW", existing.getCurrentStage());
         assertEquals("Issued", existing.getStatus());
 
-        // Corrected to authoritative GeM
+        // Tender type follows ref_no
         assertEquals("GeM", existing.getTenderType());
         assertEquals("GEM/2026/B/7570015", existing.getRefNo());
         assertEquals("AIIMS Raipur", existing.getAuthority());
         assertEquals("1.44 Cr", existing.getEstimatedCostRaw());
-        assertEquals("https://bidplus.gem.gov.in/showbidDocument/7458129", existing.getOriginalUrl());
+        assertEquals("https://r.tenders.bidsnrfp.com/tracking", existing.getOriginalUrl(), "An existing link is kept");
     }
 
     @Test
@@ -192,9 +193,10 @@ class EmailSyncServiceTest {
         tData.put("id", "100575724");
 
         Method enrichMethod = EmailSyncService.class.getDeclaredMethod("enrichExistingRecordFromTender247",
-                Tender.class, Map.class, String.class, String.class, String.class);
+                Tender.class, Map.class, String.class, String.class);
         enrichMethod.setAccessible(true);
-        enrichMethod.invoke(emailSyncService, existing, tData, "", "Unverified", "https://r.tenders.bidsnrfp.com/xyz");
+        enrichMethod.invoke(emailSyncService, existing, tData, "", "https://r.tenders.bidsnrfp.com/xyz");
+        existing.applyTenderType(); // runs when the tender is saved
 
         // Preserves GeM
         assertEquals("GeM", existing.getTenderType());
@@ -202,8 +204,8 @@ class EmailSyncServiceTest {
     }
 
     @Test
-    @DisplayName("Tender with insufficient evidence is classified as Unverified")
-    void testInsufficientEvidenceClassifiedAsUnverified() throws Exception {
+    @DisplayName("Tender247 tender with no Organization Tender ID is Non GeM")
+    void testNoOrganizationTenderIdIsNonGem() throws Exception {
         Tender existing = new Tender();
         existing.setId("100111");
         existing.setTenderType(null);
@@ -212,11 +214,13 @@ class EmailSyncServiceTest {
         tData.put("id", "100111");
 
         Method enrichMethod = EmailSyncService.class.getDeclaredMethod("enrichExistingRecordFromTender247",
-                Tender.class, Map.class, String.class, String.class, String.class);
+                Tender.class, Map.class, String.class, String.class);
         enrichMethod.setAccessible(true);
-        enrichMethod.invoke(emailSyncService, existing, tData, "", "Unverified", "https://r.tenders.bidsnrfp.com/xyz");
+        enrichMethod.invoke(emailSyncService, existing, tData, "", "https://r.tenders.bidsnrfp.com/xyz");
+        existing.applyTenderType(); // runs when the tender is saved
 
-        assertEquals("Unverified", existing.getTenderType());
+        assertEquals("Non GeM", existing.getTenderType());
+        assertEquals("100111", existing.getSourceId());
     }
 
     @Test
@@ -272,9 +276,9 @@ class EmailSyncServiceTest {
         Map<String, String> tData = new HashMap<>();
 
         Method enrichMethod = EmailSyncService.class.getDeclaredMethod("enrichExistingRecordFromTender247",
-                Tender.class, Map.class, String.class, String.class, String.class);
+                Tender.class, Map.class, String.class, String.class);
         enrichMethod.setAccessible(true);
-        enrichMethod.invoke(emailSyncService, existing, tData, "N/A", "Unverified", "https://tender247.com/xyz");
+        enrichMethod.invoke(emailSyncService, existing, tData, "N/A", "https://tender247.com/xyz");
 
         assertEquals("GEM/2026/B/7570015", existing.getRefNo(), "Placeholder N/A must not overwrite existing official refNo");
     }
@@ -383,10 +387,9 @@ class EmailSyncServiceTest {
         assertEquals("Indian Institute Of Technology", t4.get("authority"));
         assertEquals("Indore, Madhya Pradesh, India", t4.get("location"));
 
-        // Verify aggregator tracking link without official GeM bid number remains Unverified
+        // No Organization Tender ID with GEM in it -> Non GeM
         for (Map<String, String> item : tenders) {
-            String classified = TenderClassifier.classify(item.get("ref_no"), item.get("url"), "", item.get("title"));
-            assertEquals("Unverified", classified, "Aggregator-only tracking URL without official bid number must stay Unverified");
+            assertEquals("Non GeM", TenderClassifier.classify(item.get("ref_no")));
         }
     }
 
@@ -525,9 +528,8 @@ class EmailSyncServiceTest {
                     // None of the preview emails contain official GeM bid numbers
                     assertNull(t.get("ref_no"), "Preview tender in " + fixtureName + " must not invent ref_no");
 
-                    // Aggregator-only preview records must classify as Unverified
-                    String classified = TenderClassifier.classify(t.get("ref_no"), t.get("url"), "", t.get("title"));
-                    assertEquals("Unverified", classified, "Aggregator preview without official bid number must stay Unverified");
+                    // No Organization Tender ID -> Non GeM
+                    assertEquals("Non GeM", TenderClassifier.classify(t.get("ref_no")));
                 }
                 verifiedFileCount++;
             }
@@ -536,8 +538,8 @@ class EmailSyncServiceTest {
     }
 
     @Test
-    @DisplayName("Enrichment corrects unverified or erroneously defaulted GeM record when incoming has strong Non-GeM portal evidence")
-    void testEnrichmentCorrectsErroneousGemWithAuthoritativeNonGem() {
+    @DisplayName("Enrichment fills a placeholder Organization Tender ID and the tender becomes Non GeM")
+    void testEnrichmentFillsNonGemOrganizationTenderId() {
         Tender existing = new Tender();
         existing.setId("T100");
         existing.setRefNo("N/A"); // placeholder ref
@@ -554,11 +556,11 @@ class EmailSyncServiceTest {
         String incomingLink = "https://eprocure.gov.in/epublish/app?component=view&page=TenderDetails";
         String incomingRef = "2026_AIIMS_12345_1";
 
-        emailSyncService.enrichExistingRecordFromTender247(existing, incomingData, incomingRef, "Non GeM", incomingLink);
+        emailSyncService.enrichExistingRecordFromTender247(existing, incomingData, incomingRef, incomingLink);
 
-        assertEquals("Non GeM", existing.getTenderType(), "Strong verified Non-GeM portal evidence must correct ungrounded GeM label");
+        assertEquals("Non GeM", existing.getTenderType(), "ref_no without GEM must make the tender Non GeM");
         assertEquals("2026_AIIMS_12345_1", existing.getRefNo(), "Placeholder refNo must be updated with incoming official ref");
-        assertEquals(incomingLink, existing.getOriginalUrl(), "Aggregator link must be upgraded to verified portal URL");
+        assertEquals("https://www.tender247.com/keyword/details?id=100", existing.getOriginalUrl(), "An existing link is kept");
         assertEquals("Issued", existing.getStatus(), "Workflow status must be preserved");
         assertEquals("SPEC_CLEARANCE", existing.getCurrentStage(), "Workflow stage must be preserved");
     }
@@ -578,16 +580,17 @@ class EmailSyncServiceTest {
         );
         String incomingLink = "https://www.tender247.com/keyword/details?id=101";
 
-        emailSyncService.enrichExistingRecordFromTender247(existing, incomingData, "", "Unverified", incomingLink);
+        emailSyncService.enrichExistingRecordFromTender247(existing, incomingData, "", incomingLink);
+        existing.applyTenderType(); // runs when the tender is saved
 
-        assertEquals("GeM", existing.getTenderType(), "Verified GeM record must never be downgraded by unverified evidence");
+        assertEquals("GeM", existing.getTenderType(), "GEM ref_no must keep the tender GeM");
         assertEquals("GEM/2026/B/7570015", existing.getRefNo());
         assertEquals("https://bidplus.gem.gov.in/showbidDocument/7570015", existing.getOriginalUrl(), "Verified GeM URL must not be replaced by aggregator link");
     }
 
     @Test
-    @DisplayName("Enrichment marks conflicting verified portal sources as Unverified")
-    void testEnrichmentMarksConflictingVerifiedPortalsAsUnverified() {
+    @DisplayName("Tender with a GEM Organization Tender ID stays GeM even when Tender247 reports a non-GeM portal")
+    void testGemRefNoWinsOverNonGemPortal() {
         Tender existing = new Tender();
         existing.setId("T102");
         existing.setRefNo("GEM/2026/B/9999999");
@@ -599,9 +602,11 @@ class EmailSyncServiceTest {
         );
         String incomingLink = "https://eprocure.gov.in/epublish/app";
 
-        emailSyncService.enrichExistingRecordFromTender247(existing, incomingData, "2026_CPPP_1111_1", "Non GeM", incomingLink);
+        emailSyncService.enrichExistingRecordFromTender247(existing, incomingData, "2026_CPPP_1111_1", incomingLink);
+        existing.applyTenderType(); // runs when the tender is saved
 
-        assertEquals("Unverified", existing.getTenderType(), "Direct conflict between verified GeM and verified Non-GeM portals must resolve to Unverified");
+        assertEquals("GeM", existing.getTenderType(), "ref_no with GEM must make the tender GeM");
+        assertEquals("GEM/2026/B/9999999", existing.getRefNo(), "Existing Organization Tender ID is kept");
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -612,9 +617,9 @@ class EmailSyncServiceTest {
         Map<String, String> tData = new HashMap<>();
         tData.put("id", t247Id);
         Method enrichMethod = EmailSyncService.class.getDeclaredMethod("enrichExistingRecordFromTender247",
-                Tender.class, Map.class, String.class, String.class, String.class);
+                Tender.class, Map.class, String.class, String.class);
         enrichMethod.setAccessible(true);
-        enrichMethod.invoke(emailSyncService, existing, tData, refNo, "GeM", "https://www.tender247.com/auth/tender/" + t247Id);
+        enrichMethod.invoke(emailSyncService, existing, tData, refNo, "https://www.tender247.com/auth/tender/" + t247Id);
     }
 
     @Test

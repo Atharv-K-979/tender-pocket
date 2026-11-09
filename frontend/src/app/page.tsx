@@ -75,7 +75,7 @@ import { FolderOpen } from 'lucide-react';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
-import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
+import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
 
 
 type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs';
@@ -84,7 +84,7 @@ type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | '
 // Keys match the backend's POST /api/tenders fields. Only id, title and original_url are required.
 const EMPTY_ADD_TENDER_FORM: Record<string, string> = {
   id: '', title: '', original_url: '',
-  ref_no: '', authority: '', tender_type: '', source: '', source_id: '',
+  ref_no: '', authority: '', source: '', source_id: '',
   estimated_cost_raw: '', emd_raw: '', document_fee_raw: '',
   location: '', place: '', state: '', sector: '', vertical_name: '',
   publish_date: '', start_date: '', due_date: '', time: '', opening_date: '', pre_bid_date: '', entry_date: '',
@@ -104,12 +104,6 @@ type AddTenderField = {
 
 const ADD_TENDER_OPTIONAL_FIELDS: AddTenderField[] = [
   { key: 'authority', label: 'Authority / Department', placeholder: 'e.g. AIIMS New Delhi' },
-  { key: 'tender_type', label: 'Tender Type', type: 'select', options: [
-    { value: '', label: 'Detect from link' },
-    { value: 'GeM', label: 'GeM' },
-    { value: 'Non GeM', label: 'Non-GeM' },
-    { value: 'Custom', label: 'Custom' },
-  ] },
   { key: 'source', label: 'Source Portal', type: 'select', options: [
     { value: '', label: 'Not specified' },
     { value: 'GeM', label: 'GeM Portal' },
@@ -8128,6 +8122,9 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
+                <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Tender Type: <strong>{getClassificationLabel(classifyByRefNo(addTenderForm.ref_no))}</strong> (GeM when the Organization Tender ID contains GEM, otherwise Non-GeM)
+                </p>
 
                 <h4 style={{ margin: '20px 0 12px 0', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
                   Other details (optional)

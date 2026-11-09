@@ -1,5 +1,6 @@
 import assert from 'node:assert';
 import {
+  classifyByRefNo,
   getClassificationDisplay,
   getClassificationLabel,
   getSourceBadgeLabel,
@@ -150,6 +151,18 @@ it("12. CSV Export formats Unverified tenders as Non-GeM while preserving raw te
   assert.strictEqual(tenders[0].tender_type, 'GeM');
   assert.strictEqual(tenders[1].tender_type, 'Non GeM');
   assert.strictEqual(tenders[2].tender_type, 'Unverified');
+});
+
+it("13. classifyByRefNo: Organization Tender ID containing the word GEM is GeM", () => {
+  for (const refNo of ['GEM/2026/B/8260101', 'gem/2026/b/1', 'GEM_2026_B_12345', 'GeM Bid 123']) {
+    assert.strictEqual(classifyByRefNo(refNo), 'GeM', refNo);
+  }
+});
+
+it("14. classifyByRefNo: missing ref_no or ref_no without GEM is Non GeM", () => {
+  for (const refNo of [null, undefined, '', '2026_AIIMS_812345_1', 'KMSCL/2026/EQP/0193', 'MANAGEMENT/2026/01']) {
+    assert.strictEqual(classifyByRefNo(refNo), 'Non GeM', String(refNo));
+  }
 });
 
 console.log('\n-----------------------------------------------------------------');

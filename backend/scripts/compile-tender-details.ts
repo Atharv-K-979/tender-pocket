@@ -103,7 +103,8 @@ async function compile() {
     }
 
     // Fallbacks
-    const tenderType = (gemBidNumber || t.title.toLowerCase().includes('gem') || t.original_url.toLowerCase().includes('gem')) ? 'GeM' : 'Non GeM';
+    // Tender type comes only from the Organization Tender ID (ref_no): GeM if it contains the word GEM, else Non GeM
+    const tenderType = t.ref_no && /(^|[^a-z])gem([^a-z]|$)/i.test(t.ref_no) ? 'GeM' : 'Non GeM';
     const sourceId = gemBidNumber || t.ref_no || t.id;
     
     // Vertical Name mapping

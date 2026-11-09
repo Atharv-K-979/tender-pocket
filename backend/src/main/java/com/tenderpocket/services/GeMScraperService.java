@@ -203,7 +203,7 @@ public class GeMScraperService {
 
                         enrichExistingRecordFromGeM(existing, officialRefNo, bidNo, officialUrl, doc);
                         tenderRepository.save(existing);
-                        System.out.println(String.format("  - Enriched existing tender id=%s refNo=%s with authoritative GeM classification",
+                        System.out.println(String.format("  - Enriched existing tender id=%s refNo=%s from GeM",
                                 existing.getId(), existing.getRefNo()));
 
                         if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
@@ -322,7 +322,6 @@ public class GeMScraperService {
                     tender.setVerticalName(defaults.get("vertical_name"));
                     tender.setPlace(loc.get("place"));
                     tender.setState(loc.get("state"));
-                    tender.setTenderType("GeM");
                     tender.setPublishDate(formattedStartDate);
                     tender.setStartDate(startDateTimeStr);
                     tender.setTime("N/A");
@@ -397,9 +396,6 @@ public class GeMScraperService {
     }
 
     private void enrichExistingRecordFromGeM(Tender existing, String officialRefNo, String bidNo, String officialUrl, JsonNode doc) {
-        // Authoritative platform classification
-        existing.setTenderType("GeM");
-
         if ((existing.getRefNo() == null || existing.getRefNo().isBlank() || TenderClassifier.isPlaceholderRefNo(existing.getRefNo()))
                 && !TenderClassifier.isPlaceholderRefNo(officialRefNo)) {
             existing.setRefNo(officialRefNo);

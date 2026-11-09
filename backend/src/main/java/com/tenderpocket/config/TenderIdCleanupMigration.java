@@ -18,6 +18,8 @@ import java.util.Map;
  * GeM sync used to write GeM bid / RA numbers into source_id. Those values are moved to ref_no when it is
  * empty, otherwise kept in the notes, and then source_id is cleared so it only holds T247 IDs. Tender247
  * tenders that are missing their T247 ID get it back from their tender ID, which email sync sets to the T247 ID.
+ * Last, every tender's type is set from its Organization Tender ID: "GeM" when ref_no contains the word GEM,
+ * otherwise "Non GeM" (same rule as TenderClassifier.classify).
  * <p>
  * Every statement only touches rows that still need fixing, so later startups change nothing.
  * All statements run in one transaction: if any fails, nothing is changed.
@@ -29,6 +31,9 @@ public class TenderIdCleanupMigration implements CommandLineRunner {
     private static final String NOT_T247 = "source_id IS NOT NULL AND TRIM(source_id) !~ '^[0-9]+$'";
     private static final String REAL_VALUE = "TRIM(source_id) <> '' AND UPPER(TRIM(source_id)) NOT IN " + PLACEHOLDERS;
     private static final String GEM_NUMBER = "TRIM(source_id) ~* '^GEM[/_][0-9]{4}[/_][A-Z][/_][0-9]+$'";
+    /** Same rule as TenderClassifier.classify: ref_no contains the word GEM, in any letter case. */
+    private static final String TENDER_TYPE_FROM_REF_NO =
+            "CASE WHEN ref_no ~* '(^|[^a-z])gem([^a-z]|$)' THEN 'GeM' ELSE 'Non GeM' END";
     private static final String REF_BLANK = "(ref_no IS NULL OR TRIM(ref_no) = '' OR UPPER(TRIM(ref_no)) IN " + PLACEHOLDERS + ")";
 
     /** Statements in the order they must run, with a short description for the log. */
@@ -57,6 +62,9 @@ public class TenderIdCleanupMigration implements CommandLineRunner {
                         + " AND REPLACE(LOWER(COALESCE(source, '')), ' ', '') = 'tender247' AND id ~ '^[0-9]+$'");
         STATEMENTS.put("T247 ID filled from t247-<number> tender IDs",
                 "UPDATE tenders SET source_id = SUBSTRING(id FROM 6) WHERE source_id IS NULL AND id ~ '^t247-[0-9]+$'");
+        STATEMENTS.put("Tender type set from Organization Tender ID",
+                "UPDATE tenders SET tender_type = " + TENDER_TYPE_FROM_REF_NO
+                        + " WHERE tender_type IS DISTINCT FROM " + TENDER_TYPE_FROM_REF_NO);
     }
 
     private final DataSource dataSource;

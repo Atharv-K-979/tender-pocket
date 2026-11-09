@@ -6,7 +6,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import jakarta.persistence.Index;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tenderpocket.utils.TenderClassifier;
 
 @Entity
 @Table(name = "tenders", indexes = {
@@ -320,7 +323,10 @@ public class Tender {
     public void setId(String id) { this.id = id; }
 
     public String getRefNo() { return refNo; }
-    public void setRefNo(String refNo) { this.refNo = refNo; }
+    public void setRefNo(String refNo) {
+        this.refNo = refNo;
+        this.tenderType = TenderClassifier.classify(refNo);
+    }
 
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
@@ -420,6 +426,17 @@ public class Tender {
     public void setTenderType(String tenderType) { this.tenderType = tenderType; }
     @JsonProperty("tender_type")
     public void setTenderTypeSnakeCase(String tenderType) { this.tenderType = tenderType; }
+
+    /**
+     * Tender type always follows the Organization Tender ID (ref_no), whatever code saves the tender:
+     * "GeM" when ref_no contains the word GEM, otherwise "Non GeM". A tender type set any other way is
+     * replaced here before the row is written.
+     */
+    @PrePersist
+    @PreUpdate
+    public void applyTenderType() {
+        this.tenderType = TenderClassifier.classify(refNo);
+    }
 
     public String getPublishDate() { return publishDate; }
     public void setPublishDate(String publishDate) { this.publishDate = publishDate; }

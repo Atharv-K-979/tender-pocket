@@ -462,8 +462,8 @@ public class TenderControllerTest {
         assertEquals("Non GeM", deserializedCamel.getTenderType());
 
         // Deserialization with snake_case
-        Tender deserializedSnake = mapper.readValue("{\"tender_type\":\"Unverified\"}", Tender.class);
-        assertEquals("Unverified", deserializedSnake.getTenderType());
+        Tender deserializedSnake = mapper.readValue("{\"tender_type\":\"Non GeM\"}", Tender.class);
+        assertEquals("Non GeM", deserializedSnake.getTenderType());
 
         // Deserialization with both keys present
         Tender deserializedBoth = mapper.readValue("{\"tenderType\":\"GeM\",\"tender_type\":\"GeM\"}", Tender.class);
@@ -471,31 +471,26 @@ public class TenderControllerTest {
     }
 
     @Test
-    void testPatchTenderTypeAcceptsUnverifiedAndValidEnums() {
+    void testPatchTenderTypeFollowsRefNoAndIgnoresTenderType() {
         authenticate("exec", "Executive");
 
-        // Test Unverified is accepted
-        ResponseEntity<?> resUnverified = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "Unverified"));
-        assertEquals(HttpStatus.OK, resUnverified.getStatusCode());
-        assertEquals("Unverified", tender1.getTenderType());
-
-        // Test Non GeM is accepted
-        ResponseEntity<?> resNonGem = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "Non GeM"));
-        assertEquals(HttpStatus.OK, resNonGem.getStatusCode());
-        assertEquals("Non GeM", tender1.getTenderType());
-
-        // Test GeM is accepted
-        ResponseEntity<?> resGem = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "GeM"));
+        // Organization Tender ID with GEM -> GeM
+        ResponseEntity<?> resGem = tenderController.updateTender("Executive", "exec", "T1", Map.of("ref_no", "GEM/2026/B/1234567"));
         assertEquals(HttpStatus.OK, resGem.getStatusCode());
         assertEquals("GeM", tender1.getTenderType());
 
-        // Test invalid value is rejected with 400 Bad Request
-        ResponseEntity<?> resInvalid = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "InvalidType"));
-        assertEquals(HttpStatus.BAD_REQUEST, resInvalid.getStatusCode());
-        Map<?, ?> body = (Map<?, ?>) resInvalid.getBody();
-        Map<?, ?> errors = (Map<?, ?>) body.get("errors");
-        assertNotNull(errors);
-        assertTrue(errors.containsKey("tender_type"));
+        // tender_type sent by hand is ignored: the type still follows ref_no
+        ResponseEntity<?> resManual = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "Non GeM"));
+        assertEquals(HttpStatus.OK, resManual.getStatusCode());
+        tender1.applyTenderType(); // runs when the tender is saved
+        assertEquals("GeM", tender1.getTenderType());
+
+        // Organization Tender ID without GEM -> Non GeM
+        ResponseEntity<?> resNonGem = tenderController.updateTender("Executive", "exec", "T1",
+                Map.of("ref_no", "2026_AIIMS_812345_1", "tender_type", "GeM"));
+        assertEquals(HttpStatus.OK, resNonGem.getStatusCode());
+        tender1.applyTenderType();
+        assertEquals("Non GeM", tender1.getTenderType());
     }
 
     @Test
@@ -762,7 +757,7 @@ public class TenderControllerTest {
         assertEquals(15000.0, tender1.getEmd());
         assertEquals("₹ 500", tender1.getDocumentFeeRaw());
         assertEquals(500.0, tender1.getDocumentFee());
-        assertEquals("GeM", tender1.getTenderType());
+        assertEquals("Non GeM", tender1.getTenderType(), "Tender type follows ref_no REF-SPEC-999, not the tender_type sent");
         assertEquals("GeM", tender1.getSource());
         assertEquals("48213377", tender1.getSourceId());
         assertEquals("Nashik, MH", tender1.getLocation());
@@ -1238,45 +1233,68 @@ public class TenderControllerTest {
         ResponseEntity<?> response = tenderController.createTender(body);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
         Tender saved = savedTender();
-        assertEquals("GeM", saved.getTenderType(), "Valid GeM bid number must cause classification as GeM");
+        assertEquals("GeM", saved.getTenderType(), "ref_no containing GEM must make the tender GeM");
         assertNull(saved.getSource(), "Ingestion source must not default to GeM when not supplied");
     }
 
     @Test
-    void testCreateTenderClassifiesNonGemFromOfficialPortalUrl() {
+    void testCreateTenderClassifiesNonGemFromRefNoWithoutGem() {
         authenticate("misteam", "MIS Team");
         Map<String, Object> body = newTenderBody("NEW_T2", "Hospital Furniture Tender", "https://eprocure.gov.in/epublish/app?component=view");
         body.put("ref_no", "2026_AIIMS_810792_1");
 
         ResponseEntity<?> response = tenderController.createTender(body);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
-        assertEquals("Non GeM", savedTender().getTenderType(), "Verified government portal URL must cause classification as Non GeM");
+        assertEquals("Non GeM", savedTender().getTenderType(), "ref_no without GEM must make the tender Non GeM");
     }
 
     @Test
-    void testCreateTenderRemainsUnverifiedWhenEvidenceIsInsufficient() {
+    void testCreateTenderWithoutGemInRefNoIsNonGem() {
         authenticate("misteam", "MIS Team");
         Map<String, Object> body = newTenderBody("NEW_T3", "Procurement of General Items", "https://aggregator.example.com/tender/view?id=123");
         body.put("ref_no", "UNKNOWN_REF_999");
 
         ResponseEntity<?> response = tenderController.createTender(body);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
-        assertEquals("Unverified", savedTender().getTenderType(), "Missing or insufficient evidence must remain Unverified; must NOT default to GeM");
+        assertEquals("Non GeM", savedTender().getTenderType(), "ref_no without GEM must make the tender Non GeM");
     }
 
     @Test
-    void testCreateTenderPreservesExplicitIngestionSourceAndTenderType() {
+    void testCreateTenderPreservesExplicitIngestionSource() {
         authenticate("misteam", "MIS Team");
         Map<String, Object> body = newTenderBody("NEW_T4", "Specific Tender", "https://example.com/view");
         body.put("ref_no", "REF_123");
         body.put("source", "Tender247");
-        body.put("tender_type", "Custom");
+        body.put("source_id", "48213377");
 
         ResponseEntity<?> response = tenderController.createTender(body);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
         Tender saved = savedTender();
-        assertEquals("Custom", saved.getTenderType(), "Explicit tenderType must be preserved");
+        assertEquals("Non GeM", saved.getTenderType(), "ref_no without GEM must make the tender Non GeM");
         assertEquals("Tender247", saved.getSource(), "Explicit source must be preserved");
+    }
+
+    @Test
+    void testCreateTenderWithOnlyT247IdIsNonGem() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("48213301", "Supply of Hospital Beds", "https://www.tender247.com/tender/48213301");
+        body.put("source_id", "48213301");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("Non GeM", savedTender().getTenderType(), "No ref_no and a T247 ID must make the tender Non GeM");
+    }
+
+    @Test
+    void testCreateTenderRejectsTenderType() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("NEW_T5", "Specific Tender", "https://example.com/view");
+        body.put("tender_type", "GeM");
+
+        ResponseEntity<?> response = tenderController.createTender(body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
+        assertTrue(errors.containsKey("tender_type"), "Tender type is set from ref_no and cannot be sent");
     }
 
     @Test
