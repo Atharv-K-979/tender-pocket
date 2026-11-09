@@ -44,6 +44,16 @@ interface Toast {
   show: boolean;
 }
 
+// Values that mean "nobody assigned" even though the column is non-empty. The retired
+// gemSyncEngine importer stored mis_executive as 'Unassigned', and those rows are still in the DB.
+const UNASSIGNED_EXECUTIVE_PLACEHOLDERS = ['unassigned', 'not assigned', 'n/a', 'none', 'null', '-'];
+
+/** The executive actually assigned to a tender, or '' when none is (blank or a placeholder value). */
+function assignedExecutiveOf(misExecutive: string | null | undefined): string {
+  const value = (misExecutive || '').trim();
+  return UNASSIGNED_EXECUTIVE_PLACEHOLDERS.includes(value.toLowerCase()) ? '' : value;
+}
+
 export default function TenderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -488,9 +498,9 @@ export default function TenderDetailPage() {
         }
 
         // 7. MIS Executive
-        const hasLocalMisExecutiveChanges = prevTender && latestMisExecutive !== (prevTender.mis_executive || '');
+        const hasLocalMisExecutiveChanges = prevTender && latestMisExecutive !== assignedExecutiveOf(prevTender.mis_executive);
         if (isFirstLoad || !hasLocalMisExecutiveChanges) {
-          setMisExecutive(tender.mis_executive || '');
+          setMisExecutive(assignedExecutiveOf(tender.mis_executive));
         }
 
         // 8. Assigned MIS Representatives
@@ -2548,8 +2558,13 @@ export default function TenderDetailPage() {
             {/* ==================== SECTION 2: WORKFLOW PIPELINE ==================== */}
             <div style={{ borderTop: '2px dashed var(--border-color)', paddingTop: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
-              {/* Participation Decision Section - Exclusive to MIS Team */}
-              {isMisRole && (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
+              {/* Participation Decision Section - Exclusive to MIS Team.
+                  Shown for every tender until MIS has assigned it to an executive. Gated on the
+                  assignment rather than on status, because the status served here is derived by
+                  TenderStatusResolver (e.g. an unassigned past-due tender arrives as "Missed Deadline")
+                  and a status whitelist hid the panel for those tenders. A tender marked
+                  Not Participating keeps the panel so the decision can be reversed. */}
+              {isMisRole && (!assignedExecutiveOf(selectedTender.mis_executive) || selectedTender.status === 'Not Participating') && (
                 <div 
                   id="participation-decision-section"
                   style={{ 
