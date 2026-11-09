@@ -961,10 +961,10 @@ export default function StatusDashboard({
                           {stage.stageName}
                         </span>
 
-                        {/* Official Reference Number */}
+                        {/* Organization Tender ID */}
                         {tender.ref_no && (
                           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            Ref: <strong>{tender.ref_no}</strong>
+                            Organization Tender ID: <strong>{tender.ref_no}</strong>
                           </span>
                         )}
 

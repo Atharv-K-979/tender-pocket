@@ -956,8 +956,8 @@ export default function TenderDetailPage() {
       return null;
     }
     if (field === 'ref_no') {
-      if (!value || !String(value).trim()) return "Official Reference No cannot be empty.";
-      if (String(value).trim().length > 255) return "Official Reference No cannot exceed 255 characters.";
+      if (!value || !String(value).trim()) return "Organization Tender ID cannot be empty.";
+      if (String(value).trim().length > 255) return "Organization Tender ID cannot exceed 255 characters.";
       return null;
     }
     if (['place', 'state', 'sector', 'vertical_name', 'source_id'].includes(field)) {
@@ -1851,10 +1851,10 @@ export default function TenderDetailPage() {
                         )}
                       </div>
 
-                      {/* 2. Official Reference No */}
+                      {/* 2. Organization Tender ID */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
                         <label htmlFor="spec-input-ref-no" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
-                          <FileText size={14} style={{ color: 'var(--primary)' }} /> Official Reference No <span style={{ color: '#ef4444' }}>*</span>
+                          <FileText size={14} style={{ color: 'var(--primary)' }} /> Organization Tender ID <span style={{ color: '#ef4444' }}>*</span>
                         </label>
                         <input
                           id="spec-input-ref-no"
@@ -1958,10 +1958,10 @@ export default function TenderDetailPage() {
                         </select>
                       </div>
 
-                      {/* 8. Source ID */}
+                      {/* 8. T247 ID */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
                         <label htmlFor="spec-input-source-id" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
-                          <Tag size={14} style={{ color: 'var(--primary)' }} /> Source ID
+                          <Tag size={14} style={{ color: 'var(--primary)' }} /> T247 ID
                         </label>
                         <input
                           id="spec-input-source-id"
@@ -2386,13 +2386,13 @@ export default function TenderDetailPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                       {[
                         { label: 'Procuring Authority', value: selectedTender.authority, icon: Building },
-                        { label: 'Official Reference No', value: selectedTender.ref_no, icon: FileText },
+                        { label: 'Organization Tender ID', value: selectedTender.ref_no, icon: FileText },
                         { label: 'Estimated Cost', value: selectedTender.estimated_cost_raw, icon: DollarSign, highlight: true },
                         { label: 'EMD Amount Requirement', value: selectedTender.emd_raw, icon: DollarSign },
                         { label: 'Tender Document Fee', value: selectedTender.document_fee_raw, icon: Tag },
                         { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
                         { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : 'var(--text-muted)') },
-                        { label: 'Source ID', value: selectedTender.source_id, icon: Tag },
+                        { label: 'T247 ID', value: selectedTender.source_id, icon: Tag },
                         { label: 'Location / Region', value: selectedTender.location, icon: MapPin },
                         { label: 'Place', value: selectedTender.place, icon: MapPin },
                         { label: 'State', value: selectedTender.state, icon: MapPin },
