@@ -29,6 +29,7 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Download,
+  Plus,
   ChevronRight,
   Loader2,
   Info,
@@ -79,6 +80,132 @@ import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, 
 
 type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs';
 
+// ---- Add Tender form (MIS Team and Admin) ----
+// Keys match the backend's POST /api/tenders fields. Only id, title and original_url are required.
+const EMPTY_ADD_TENDER_FORM: Record<string, string> = {
+  id: '', title: '', original_url: '',
+  ref_no: '', authority: '', tender_type: '', source: '', source_id: '',
+  estimated_cost_raw: '', emd_raw: '', document_fee_raw: '',
+  location: '', place: '', state: '', sector: '', vertical_name: '',
+  publish_date: '', start_date: '', due_date: '', time: '', opening_date: '', pre_bid_date: '', entry_date: '',
+  bid_qty: '', quoted_qty: '', corrigendum_remark: '',
+  product_name_as_per_tender: '', product_name_as_per_marken: '',
+  document_url: '', notes: '',
+};
+
+type AddTenderField = {
+  key: string;
+  label: string;
+  type?: 'text' | 'date' | 'time' | 'number' | 'url' | 'textarea' | 'select' | 'file';
+  placeholder?: string;
+  options?: { value: string; label: string }[];
+  wide?: boolean;
+};
+
+const ADD_TENDER_OPTIONAL_FIELDS: AddTenderField[] = [
+  { key: 'authority', label: 'Authority / Department', placeholder: 'e.g. AIIMS New Delhi' },
+  { key: 'tender_type', label: 'Tender Type', type: 'select', options: [
+    { value: '', label: 'Detect from link' },
+    { value: 'GeM', label: 'GeM' },
+    { value: 'Non GeM', label: 'Non-GeM' },
+    { value: 'Custom', label: 'Custom' },
+  ] },
+  { key: 'source', label: 'Source Portal', type: 'select', options: [
+    { value: '', label: 'Not specified' },
+    { value: 'GeM', label: 'GeM Portal' },
+    { value: 'Tender247', label: 'Tender247 Portal' },
+  ] },
+  { key: 'estimated_cost_raw', label: 'Estimated Value', placeholder: 'e.g. ₹ 5,00,000' },
+  { key: 'emd_raw', label: 'EMD Amount', placeholder: 'e.g. 10000' },
+  { key: 'document_fee_raw', label: 'Document Fee', placeholder: 'e.g. 500' },
+  { key: 'location', label: 'Location' },
+  { key: 'place', label: 'Place / City' },
+  { key: 'state', label: 'State' },
+  { key: 'sector', label: 'Sector' },
+  { key: 'vertical_name', label: 'Vertical' },
+  { key: 'publish_date', label: 'Publish Date', type: 'date' },
+  { key: 'start_date', label: 'Bid Start Date', type: 'date' },
+  { key: 'due_date', label: 'Due Date', type: 'date' },
+  { key: 'time', label: 'Due Time', type: 'time' },
+  { key: 'opening_date', label: 'Opening Date', type: 'date' },
+  { key: 'pre_bid_date', label: 'Pre-Bid Date', type: 'date' },
+  { key: 'entry_date', label: 'Entry Date (defaults to today)', type: 'date' },
+  { key: 'bid_qty', label: 'Bid Quantity', type: 'number' },
+  { key: 'quoted_qty', label: 'Quoted Quantity', type: 'number' },
+  { key: 'corrigendum_remark', label: 'Corrigendum', type: 'select', options: [
+    { value: '', label: 'Not specified' },
+    { value: 'No', label: 'No' },
+    { value: 'Yes', label: 'Yes (Alert)' },
+  ] },
+  { key: 'product_name_as_per_tender', label: 'Product Name (as per Tender)', wide: true },
+  { key: 'product_name_as_per_marken', label: 'Product Name (as per Marken)', wide: true },
+  { key: 'document_url', label: 'Document Link', type: 'url', placeholder: 'https://...', wide: true },
+  { key: 'upload_files', label: 'Upload Documents from PC', type: 'file', wide: true },
+  { key: 'notes', label: 'Notes', type: 'textarea', wide: true },
+];
+
+// Same allow-list and size limit as the backend's /upload-document endpoint.
+const ADD_TENDER_FILE_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'jpg', 'jpeg', 'png', 'zip'];
+const ADD_TENDER_MAX_FILE_BYTES = 50 * 1024 * 1024;
+
+function validateAddTenderFiles(files: File[]): string | null {
+  for (const f of files) {
+    const ext = f.name.includes('.') ? f.name.split('.').pop()!.toLowerCase() : '';
+    if (!ADD_TENDER_FILE_EXTENSIONS.includes(ext)) {
+      return `'${f.name}' is not an allowed file type. Allowed: PDF, Word, Excel, CSV, TXT, JPG, PNG, ZIP.`;
+    }
+    if (f.size === 0) return `'${f.name}' is empty.`;
+    if (f.size > ADD_TENDER_MAX_FILE_BYTES) return `'${f.name}' is larger than 50 MB.`;
+  }
+  return null;
+}
+
+// Tender IDs are used in page links (/tenders/<id>), so they must be URL-safe. Same rule as the backend.
+const ADD_TENDER_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+// Tender247's own tender number (T247 ID) is always numeric. Same rule as the backend.
+const ADD_TENDER_T247_ID_PATTERN = /^\d{1,50}$/;
+
+// The top of the form: the tender's numbers, name and link.
+// Organization Tender ID is stored in ref_no and T247 ID in source_id, the same columns the syncs use.
+const ADD_TENDER_MAIN_FIELDS: { key: string; label: string; placeholder: string; required: boolean; wide: boolean }[] = [
+  { key: 'source_id', label: 'T247 ID', placeholder: 'e.g. 48213377 (numbers only)', required: false, wide: false },
+  { key: 'id', label: 'Tender ID', placeholder: 'Leave blank to use the T247 ID', required: true, wide: false },
+  { key: 'ref_no', label: 'Organization Tender ID', placeholder: 'e.g. GEM/2026/B/1234567 or 2026_AIIMS_12345_1', required: false, wide: true },
+  { key: 'title', label: 'Tender Name', placeholder: 'e.g. Supply of ECG Machines', required: true, wide: true },
+  { key: 'original_url', label: 'Tender Link', placeholder: 'https://...', required: true, wide: true },
+];
+
+function validateAddTenderForm(form: Record<string, string>): Record<string, string> {
+  const errors: Record<string, string> = {};
+  const t247Id = form.source_id.trim();
+  if (t247Id && !ADD_TENDER_T247_ID_PATTERN.test(t247Id)) {
+    errors.source_id = 'T247 ID is the number shown on Tender247 (digits only). Put GeM or department numbers in Organization Tender ID.';
+  }
+  // Tender ID can be left blank when a T247 ID is given: the backend then uses the T247 ID as the Tender ID.
+  const id = form.id.trim();
+  if (!id) {
+    if (!t247Id) errors.id = 'Tender ID is required (or fill in the T247 ID to use it as the Tender ID).';
+  } else if (!ADD_TENDER_ID_PATTERN.test(id) || /^\.+$/.test(id)) {
+    errors.id = "Use only letters, numbers, '-', '_' and '.' (no spaces or '/'). Put a bid number like GEM/2026/B/1234567 in Organization Tender ID.";
+  }
+  if (!form.title.trim()) errors.title = 'Tender name is required.';
+  const url = form.original_url.trim();
+  if (!url) {
+    errors.original_url = 'Tender link is required.';
+  } else if (!/^https?:\/\/[^\s/]+/i.test(url)) {
+    errors.original_url = 'Enter a valid link starting with http:// or https://';
+  }
+  const docUrl = form.document_url.trim();
+  if (docUrl && !/^https?:\/\/[^\s/]+/i.test(docUrl)) {
+    errors.document_url = 'Enter a valid link starting with http:// or https://';
+  }
+  for (const qtyKey of ['bid_qty', 'quoted_qty']) {
+    const v = form[qtyKey].trim();
+    if (v && !/^\d+$/.test(v)) errors[qtyKey] = 'Enter a whole number (0 or more).';
+  }
+  return errors;
+}
+
 interface Toast {
   message: string;
   type: 'success' | 'error';
@@ -94,6 +221,8 @@ export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
   const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
   const isMisRole = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS';
+  // MIS Team and Admin can add tenders by hand
+  const canAddTender = isMisRole || currentUser?.role === 'Admin';
   const isExecutive = currentUser && (currentUser.role === 'Tender Executive' || currentUser.role === 'Executive' || currentUser.role === 'MIS Executive' || canonicalRole(currentUser.role) === 'Tender Executive');
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
@@ -407,6 +536,14 @@ export default function Dashboard() {
   };
 
   const [isBidDocFormOpen, setIsBidDocFormOpen] = useState(false);
+
+  // Add Tender (MIS Team and Admin): only Tender ID (or T247 ID), name and link are required
+  const [isAddTenderOpen, setIsAddTenderOpen] = useState(false);
+  const [addTenderForm, setAddTenderForm] = useState<Record<string, string>>({ ...EMPTY_ADD_TENDER_FORM });
+  const [addTenderErrors, setAddTenderErrors] = useState<Record<string, string>>({});
+  const [addingTender, setAddingTender] = useState(false);
+  const [addTenderFiles, setAddTenderFiles] = useState<File[]>([]);
+  const [addTenderProgress, setAddTenderProgress] = useState('');
   const [formActiveTab, setFormActiveTab] = useState<'tender' | 'company' | 'signatory' | 'clauses'>('tender');
   const [generatingBidDocs, setGeneratingBidDocs] = useState(false);
   const [bidFormFields, setBidFormFields] = useState({
@@ -1128,6 +1265,149 @@ export default function Dashboard() {
   };
 
   // Submit parsed email
+  const openAddTender = () => {
+    setAddTenderForm({ ...EMPTY_ADD_TENDER_FORM });
+    setAddTenderErrors({});
+    setAddTenderFiles([]);
+    setAddTenderProgress('');
+    setIsAddTenderOpen(true);
+  };
+
+  const addSelectedTenderFiles = (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    const picked = Array.from(list);
+    setAddTenderFiles(prev => {
+      // Skip a file that is already in the list (same name and size)
+      const seen = new Set(prev.map(f => `${f.name}|${f.size}`));
+      return [...prev, ...picked.filter(f => !seen.has(`${f.name}|${f.size}`))];
+    });
+    if (addTenderErrors.upload_files) {
+      setAddTenderErrors(prev => {
+        const copy = { ...prev };
+        delete copy.upload_files;
+        return copy;
+      });
+    }
+  };
+
+  const removeSelectedTenderFile = (index: number) => {
+    setAddTenderFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const closeAddTender = () => {
+    if (addingTender) return;
+    setIsAddTenderOpen(false);
+  };
+
+  const updateAddTenderField = (key: string, value: string) => {
+    setAddTenderForm(prev => ({ ...prev, [key]: value }));
+    if (addTenderErrors[key]) {
+      setAddTenderErrors(prev => {
+        const copy = { ...prev };
+        delete copy[key];
+        return copy;
+      });
+    }
+  };
+
+  const handleAddTenderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (addingTender) return;
+
+    const errors = validateAddTenderForm(addTenderForm);
+    // Check files before creating the tender, so a bad file doesn't leave a tender without its document
+    const fileError = validateAddTenderFiles(addTenderFiles);
+    if (fileError) errors.upload_files = fileError;
+    if (Object.keys(errors).length > 0) {
+      setAddTenderErrors(errors);
+      showToast(Object.values(errors)[0], 'error');
+      return;
+    }
+
+    // Send only the fields that were filled in; quantities go as numbers.
+    const payload: Record<string, string | number> = {};
+    for (const [key, raw] of Object.entries(addTenderForm)) {
+      const value = raw.trim();
+      if (!value) continue;
+      payload[key] = key === 'bid_qty' || key === 'quoted_qty' ? Number(value) : value;
+    }
+
+    setAddingTender(true);
+    try {
+      const response = await fetchWithAuth('/api/tenders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (response.ok && data?.success) {
+        // The backend may have used the T247 ID as the Tender ID, so take the ID it saved
+        const newId = String(data.tender?.id ?? payload.id ?? payload.source_id);
+
+        // Upload the chosen documents one by one. The tender already exists at this point,
+        // so a failed upload is reported but does not undo the tender.
+        const failedUploads: string[] = [];
+        for (let i = 0; i < addTenderFiles.length; i++) {
+          const file = addTenderFiles[i];
+          setAddTenderProgress(`Uploading document ${i + 1} of ${addTenderFiles.length}...`);
+          try {
+            const formData = new FormData();
+            formData.append('file', file, file.name);
+            const upRes = await fetchWithAuth(`/api/tenders/${encodeURIComponent(newId)}/upload-document`, {
+              method: 'POST',
+              body: formData
+            });
+            let upData: any = null;
+            try {
+              upData = await upRes.json();
+            } catch {
+              upData = null;
+            }
+            if (!upRes.ok || !upData?.success) {
+              failedUploads.push(`${file.name} (${upData?.error || `error ${upRes.status}`})`);
+            }
+          } catch {
+            failedUploads.push(`${file.name} (could not reach the server)`);
+          }
+        }
+        setAddTenderProgress('');
+
+        setIsAddTenderOpen(false);
+        if (failedUploads.length > 0) {
+          showToast(`Tender ${newId} added, but these documents failed to upload: ${failedUploads.join('; ')}`, 'error');
+        } else if (addTenderFiles.length > 0) {
+          showToast(`Tender ${newId} added with ${addTenderFiles.length} document${addTenderFiles.length > 1 ? 's' : ''}.`, 'success');
+        } else {
+          showToast(`Tender ${newId} added successfully.`, 'success');
+        }
+        // Show the new tender in the list: clear filters and search for its ID.
+        setStatusFilter('');
+        setLocationFilter('');
+        setSectorFilter('');
+        setMisExecutiveFilter('');
+        setCorrigendumFilter(false);
+        setSearchQuery(newId);
+        await Promise.all([fetchTenders({ search: newId, status: '', location: '', sector: '', mis_executive: '' }), fetchAnalytics()]);
+      } else {
+        if (data?.errors && typeof data.errors === 'object') {
+          setAddTenderErrors(data.errors);
+        }
+        showToast(data?.error || `Could not add tender (error ${response.status}).`, 'error');
+      }
+    } catch (err) {
+      showToast('Could not reach the server. The tender was not added.', 'error');
+    } finally {
+      setAddingTender(false);
+      setAddTenderProgress('');
+    }
+  };
+
   const handleImportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailText && !uploadedEmlString) {
@@ -3099,7 +3379,19 @@ export default function Dashboard() {
                     <span>Corrigendum Alerts Only</span>
                   </button>
 
-                  <button 
+                  {canAddTender && (
+                    <button
+                      id="btn-add-tender"
+                      className="btn btn-primary"
+                      style={{ padding: '10px 14px' }}
+                      onClick={openAddTender}
+                    >
+                      <Plus size={16} />
+                      <span>Add Tender</span>
+                    </button>
+                  )}
+
+                  <button
                     className="btn btn-primary"
                     style={{ padding: '10px 14px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none', color: '#fff' }}
                     onClick={exportToCSV}
@@ -7796,6 +8088,169 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Add Tender Modal (MIS Team and Admin) */}
+      {isAddTenderOpen && canAddTender && (
+        <div className="modal-backdrop" onClick={closeAddTender}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} id="add-tender-modal">
+            <header className="modal-header">
+              <h3 className="modal-title">Add New Tender</h3>
+              <button type="button" className="modal-close" onClick={closeAddTender} disabled={addingTender}>
+                <X size={18} />
+              </button>
+            </header>
+
+            <form onSubmit={handleAddTenderSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              <div className="modal-body">
+                <p style={{ margin: '0 0 16px 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                  Fields marked <span style={{ color: 'var(--accent-red)' }}>*</span> are required. Everything else is optional and can be filled in later from the tender page.
+                </p>
+
+                <div className="form-grid">
+                  {ADD_TENDER_MAIN_FIELDS.map(f => (
+                    <div className={`form-group${f.wide ? ' span-2' : ''}`} key={f.key}>
+                      <label className="form-label" htmlFor={`add-tender-${f.key}`}>
+                        {f.label} {f.required && <span style={{ color: 'var(--accent-red)' }}>*</span>}
+                      </label>
+                      <input
+                        id={`add-tender-${f.key}`}
+                        className="form-input"
+                        type={f.key === 'original_url' ? 'url' : 'text'}
+                        placeholder={f.placeholder}
+                        value={addTenderForm[f.key]}
+                        disabled={addingTender}
+                        onChange={(e) => updateAddTenderField(f.key, e.target.value)}
+                        style={addTenderErrors[f.key] ? { borderColor: 'var(--accent-red)' } : undefined}
+                      />
+                      {addTenderErrors[f.key] && (
+                        <span style={{ fontSize: '11px', color: 'var(--accent-red)' }}>{addTenderErrors[f.key]}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <h4 style={{ margin: '20px 0 12px 0', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Other details (optional)
+                </h4>
+                <div className="form-grid">
+                  {ADD_TENDER_OPTIONAL_FIELDS.map(f => (
+                    <div className={`form-group${f.wide ? ' span-2' : ''}`} key={f.key}>
+                      <label className="form-label" htmlFor={`add-tender-${f.key}`}>{f.label}</label>
+                      {f.type === 'select' ? (
+                        <select
+                          id={`add-tender-${f.key}`}
+                          className="form-input"
+                          value={addTenderForm[f.key]}
+                          disabled={addingTender}
+                          onChange={(e) => updateAddTenderField(f.key, e.target.value)}
+                        >
+                          {f.options?.map(o => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      ) : f.type === 'file' ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <input
+                            id={`add-tender-${f.key}`}
+                            className="form-input"
+                            type="file"
+                            multiple
+                            accept={ADD_TENDER_FILE_EXTENSIONS.map(ext => `.${ext}`).join(',')}
+                            disabled={addingTender}
+                            onChange={(e) => {
+                              addSelectedTenderFiles(e.target.files);
+                              e.target.value = ''; // allow picking the same file again after removing it
+                            }}
+                            style={addTenderErrors[f.key] ? { borderColor: 'var(--accent-red)' } : undefined}
+                          />
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            PDF, Word, Excel, CSV, TXT, JPG, PNG or ZIP, up to 50 MB each. You can pick more than one.
+                          </span>
+                          {addTenderFiles.length > 0 && (
+                            <div id="add-tender-file-list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {addTenderFiles.map((file, i) => (
+                                <div
+                                  key={`${file.name}-${file.size}-${i}`}
+                                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '12px' }}
+                                >
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                    <FileText size={14} />
+                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={file.name}>{file.name}</span>
+                                    <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                      ({file.size >= 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`})
+                                    </span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    style={{ padding: '2px 8px', fontSize: '11px' }}
+                                    disabled={addingTender}
+                                    onClick={() => removeSelectedTenderFile(i)}
+                                    aria-label={`Remove ${file.name}`}
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : f.type === 'textarea' ? (
+                        <textarea
+                          id={`add-tender-${f.key}`}
+                          className="form-input"
+                          rows={3}
+                          value={addTenderForm[f.key]}
+                          disabled={addingTender}
+                          onChange={(e) => updateAddTenderField(f.key, e.target.value)}
+                        />
+                      ) : (
+                        <input
+                          id={`add-tender-${f.key}`}
+                          className="form-input"
+                          type={f.type || 'text'}
+                          min={f.type === 'number' ? 0 : undefined}
+                          step={f.type === 'number' ? 1 : undefined}
+                          placeholder={f.placeholder}
+                          value={addTenderForm[f.key]}
+                          disabled={addingTender}
+                          onChange={(e) => updateAddTenderField(f.key, e.target.value)}
+                          style={addTenderErrors[f.key] ? { borderColor: 'var(--accent-red)' } : undefined}
+                        />
+                      )}
+                      {addTenderErrors[f.key] && (
+                        <span style={{ fontSize: '11px', color: 'var(--accent-red)' }}>{addTenderErrors[f.key]}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <footer className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={closeAddTender} disabled={addingTender}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="btn-save-new-tender"
+                  className="btn btn-primary"
+                  disabled={addingTender}
+                  style={{ minWidth: '150px', justifyContent: 'center' }}
+                >
+                  {addingTender ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      <span>{addTenderProgress || 'Adding...'}</span>
+                    </>
+                  ) : (
+                    <span>Add Tender</span>
+                  )}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Generate Bid Documents Input Form Modal */}
       {isBidDocFormOpen && (
