@@ -837,7 +837,7 @@ public class TenderController {
     private static final Set<String> CREATE_TENDER_FIELDS = Set.of(
             "id", "title", "original_url", "ref_no", "authority",
             "estimated_cost_raw", "emd_raw", "document_fee_raw",
-            "source", "source_id",
+            "tender_type", "source", "source_id",
             "location", "place", "state", "sector", "vertical_name",
             "publish_date", "start_date", "due_date", "opening_date", "pre_bid_date", "time", "entry_date",
             "bid_qty", "quoted_qty", "corrigendum_remark",
@@ -961,7 +961,8 @@ public class TenderController {
             fieldErrors.put("time", "Enter a valid time (e.g. 15:00:00).");
         }
 
-        // 6. Fixed choices (tender type is not one: it always follows the Organization Tender ID)
+        // 6. Fixed choices. tender_type is still accepted so older clients do not get an error, but it is
+        //    ignored: the Tender entity always sets it from the Organization Tender ID.
         String source = createText(body, "source");
         if (source != null && !source.equalsIgnoreCase("GeM") && !source.equalsIgnoreCase("Tender247")) {
             fieldErrors.put("source", "Source portal must be 'GeM' or 'Tender247'.");

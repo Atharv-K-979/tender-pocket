@@ -1286,15 +1286,17 @@ public class TenderControllerTest {
     }
 
     @Test
-    void testCreateTenderRejectsTenderType() {
+    void testCreateTenderIgnoresTenderTypeSentByOlderClients() {
         authenticate("misteam", "MIS Team");
         Map<String, Object> body = newTenderBody("NEW_T5", "Specific Tender", "https://example.com/view");
+        body.put("ref_no", "2026_AIIMS_812345_1");
         body.put("tender_type", "GeM");
 
         ResponseEntity<?> response = tenderController.createTender(body);
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
-        assertTrue(errors.containsKey("tender_type"), "Tender type is set from ref_no and cannot be sent");
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Sending tender_type must not cause an error");
+        Tender saved = savedTender();
+        saved.applyTenderType(); // runs when the tender is saved
+        assertEquals("Non GeM", saved.getTenderType(), "tender_type sent by the client is ignored; ref_no decides");
     }
 
     @Test
@@ -1524,7 +1526,6 @@ public class TenderControllerTest {
         cases.put("time", Map.of("time", "25:00"));
         cases.put("estimated_cost_raw", Map.of("estimated_cost_raw", "-500"));
         cases.put("bid_qty", Map.of("bid_qty", "2.5"));
-        cases.put("tender_type", Map.of("tender_type", "Something"));
         cases.put("ref_no", Map.of("ref_no", "x".repeat(256)));
 
         for (Map.Entry<String, Map<String, Object>> c : cases.entrySet()) {
