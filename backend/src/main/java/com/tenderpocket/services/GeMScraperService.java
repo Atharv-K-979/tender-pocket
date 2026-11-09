@@ -173,15 +173,12 @@ public class GeMScraperService {
 
                     // Cross-source deduplication and existing record lookup:
                     // 1) Match by official bid number (refNo) if not placeholder
-                    // 2) Match by sourceId (bidNo) if not placeholder
-                    // 3) Match by parent bid number if not placeholder
-                    // 4) Match by GeM bId ONLY if existing record belongs to GeM namespace or bid numbers match
+                    // 2) Match by parent bid number if not placeholder (an RA is stored under its parent bid)
+                    // 3) Match by GeM bId ONLY if existing record belongs to GeM namespace or bid numbers match
+                    // source_id is not used here: it holds the T247 ID, which GeM does not have.
                     Optional<Tender> existingOpt = Optional.empty();
                     if (!TenderClassifier.isPlaceholderRefNo(bidNo)) {
                         existingOpt = tenderRepository.findFirstByRefNo(bidNo);
-                    }
-                    if (existingOpt.isEmpty() && !TenderClassifier.isPlaceholderRefNo(bidNo)) {
-                        existingOpt = tenderRepository.findFirstBySourceId(bidNo);
                     }
                     if (existingOpt.isEmpty()) {
                         String bnp = getJsonString(doc, "b_bid_number_parent");
@@ -315,11 +312,13 @@ public class GeMScraperService {
                     tender.setOriginalUrl(url);
                     tender.setStatus("Issued");
                     tender.setScrapedAt(new Date().toString());
-                    tender.setNotes(String.format("Imported automatically by daily GeM Sync job matching keyword \"%s\".", keyword));
+                    tender.setNotes(withGemRaNumberNote(
+                            String.format("Imported automatically by daily GeM Sync job matching keyword \"%s\".", keyword),
+                            officialRefNo, bidNo));
                     tender.setEntryDate(defaults.get("entry_date"));
                     tender.setMisExecutive("");
                     tender.setSource("GeM");
-                    tender.setSourceId(bidNo);
+                    // GeM has no T247 ID, so source_id stays empty until the Tender247 email for this bid arrives
                     tender.setVerticalName(defaults.get("vertical_name"));
                     tender.setPlace(loc.get("place"));
                     tender.setState(loc.get("state"));
@@ -365,11 +364,25 @@ public class GeMScraperService {
         return importCount;
     }
 
+    /**
+     * When GeM returns a Reverse Auction (RA), the tender is stored under its parent bid number and the RA
+     * number is added to the notes so it stays visible. Nothing is added when the RA number equals the stored
+     * bid number or is already in the notes.
+     */
+    static String withGemRaNumberNote(String notes, String storedRefNo, String bidNo) {
+        String current = notes == null ? "" : notes;
+        if (bidNo == null || TenderClassifier.isPlaceholderRefNo(bidNo)) return current;
+        String ra = bidNo.trim();
+        if (storedRefNo != null && ra.equalsIgnoreCase(storedRefNo.trim())) return current;
+        if (current.toUpperCase(Locale.ROOT).contains(ra.toUpperCase(Locale.ROOT))) return current;
+        return (current.isBlank() ? "" : current + "\n") + "GeM RA number: " + ra;
+    }
+
     private boolean isLegitimateGeMMatch(Tender existing, String bId, String bidNo) {
         if (existing == null) return false;
         // 1. Authoritative official bid number matches
         if (!TenderClassifier.isPlaceholderRefNo(bidNo) && !TenderClassifier.isPlaceholderRefNo(existing.getRefNo())) {
-            if (bidNo.equalsIgnoreCase(existing.getRefNo()) || bidNo.equalsIgnoreCase(existing.getSourceId())) {
+            if (bidNo.equalsIgnoreCase(existing.getRefNo())) {
                 return true;
             }
         }
@@ -391,9 +404,8 @@ public class GeMScraperService {
                 && !TenderClassifier.isPlaceholderRefNo(officialRefNo)) {
             existing.setRefNo(officialRefNo);
         }
-        if (existing.getSourceId() == null || existing.getSourceId().isBlank()) {
-            existing.setSourceId(bidNo);
-        }
+        // The RA number is kept in the notes; source_id is only for the T247 ID
+        existing.setNotes(withGemRaNumberNote(existing.getNotes(), existing.getRefNo(), bidNo));
         if (existing.getOriginalUrl() == null || !existing.getOriginalUrl().contains("gem.gov.in")) {
             existing.setOriginalUrl(officialUrl);
         }
