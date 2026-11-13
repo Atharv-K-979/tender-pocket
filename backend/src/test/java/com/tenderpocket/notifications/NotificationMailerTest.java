@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class NotificationMailerTest {
 
     private NotificationSettings settings(String host, String user, String password, String from) {
-        NotificationSettings s = new NotificationSettings(null);
+        NotificationSettings s = new NotificationSettings();
         ReflectionTestUtils.setField(s, "smtpHost", host);
         ReflectionTestUtils.setField(s, "smtpUsername", user);
         ReflectionTestUtils.setField(s, "smtpPassword", password);

@@ -3,21 +3,20 @@ package com.tenderpocket.notifications;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Component;
 
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * Settings for the daily Due / Pending mails.
+ * Settings for the daily Due / Pending mails, read from the NOTIFY_* environment variables
+ * (see the "Daily tender mails" section of .env.example; docker-compose.yml passes them to
+ * the backend).
  *
- * Every value can be set from the environment or from the optional {@code .env.notification}
- * file that application.properties imports. See {@code .env.notification.example} at the
- * repository root for the full list with explanations.
- *
- * Values are read as text and parsed here, so an empty or mistyped line falls back to the
+ * Values are read as text and parsed here, so an empty or mistyped value falls back to the
  * default (with a warning) instead of stopping the application from starting.
  */
 @Component
@@ -28,8 +27,6 @@ public class NotificationSettings {
     public static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     public static final String DEFAULT_CRON = "0 0 9 * * *";
     public static final String DEFAULT_CLOCK_CRON = "0 30 * * * *";
-
-    private final Environment environment;
 
     @Value("${notify.enabled:false}")
     private String enabled;
@@ -46,13 +43,13 @@ public class NotificationSettings {
     @Value("${notify.app-url:}")
     private String appUrl;
 
-    @Value("${notify.redirect-all-to:}")
-    private String redirectAllTo;
+    @Value("${notify.recipients:}")
+    private String recipients;
 
-    @Value("${notify.smtp.host:smtp.gmail.com}")
+    @Value("${notify.smtp.host:}")
     private String smtpHost;
 
-    @Value("${notify.smtp.port:465}")
+    @Value("${notify.smtp.port:}")
     private String smtpPort;
 
     @Value("${notify.smtp.username:}")
@@ -63,6 +60,18 @@ public class NotificationSettings {
 
     @Value("${notify.smtp.security:auto}")
     private String smtpSecurity;
+
+    @Value("${spring.mail.host:smtp.gmail.com}")
+    private String springMailHost;
+
+    @Value("${spring.mail.port:465}")
+    private String springMailPort;
+
+    @Value("${spring.mail.username:}")
+    private String springMailUsername;
+
+    @Value("${spring.mail.password:}")
+    private String springMailPassword;
 
     @Value("${notify.mail.from:}")
     private String fromAddress;
@@ -76,9 +85,8 @@ public class NotificationSettings {
     @Value("${notify.clock-cron:" + DEFAULT_CLOCK_CRON + "}")
     private String clockCron;
 
-    public NotificationSettings(Environment environment) {
-        this.environment = environment;
-    }
+    private String parsedRecipientsSource;
+    private Map<String, String> parsedRecipients = Map.of();
 
     public boolean isEnabled() {
         String v = trim(enabled).toLowerCase(Locale.ROOT);
@@ -114,20 +122,33 @@ public class NotificationSettings {
         return url;
     }
 
-    /** When set, every mail goes to this one address instead of the real recipient (test mode). */
-    public String getRedirectAllTo() { return trim(redirectAllTo); }
-
+    /** NOTIFY_SMTP_HOST, or SPRING_MAIL_HOST when that is empty. */
     public String getSmtpHost() {
         String host = trim(smtpHost);
+        if (host.isEmpty()) host = trim(springMailHost);
         return host.isEmpty() ? "smtp.gmail.com" : host;
     }
 
-    public int getSmtpPort() { return number("NOTIFY_SMTP_PORT", smtpPort, 465, 1, 65535); }
+    /** NOTIFY_SMTP_PORT, or SPRING_MAIL_PORT when that is empty. */
+    public int getSmtpPort() {
+        String port = trim(smtpPort).isEmpty() ? trim(springMailPort) : trim(smtpPort);
+        return number("NOTIFY_SMTP_PORT", port, 465, 1, 65535);
+    }
 
-    public String getSmtpUsername() { return trim(smtpUsername); }
+    /** NOTIFY_SMTP_USERNAME, or SPRING_MAIL_USERNAME when that is empty. */
+    public String getSmtpUsername() {
+        String user = trim(smtpUsername);
+        return user.isEmpty() ? trim(springMailUsername) : user;
+    }
 
-    /** Gmail shows app passwords in groups of four ("abcd efgh ijkl mnop"); the spaces are not part of it. */
-    public String getSmtpPassword() { return smtpPassword == null ? "" : smtpPassword.replaceAll("\\s+", ""); }
+    /**
+     * NOTIFY_SMTP_PASSWORD, or SPRING_MAIL_PASSWORD when that is empty. Gmail shows app
+     * passwords in groups of four ("abcd efgh ijkl mnop"); the spaces are not part of it.
+     */
+    public String getSmtpPassword() {
+        String pass = smtpPassword == null || smtpPassword.isBlank() ? springMailPassword : smtpPassword;
+        return pass == null ? "" : pass.replaceAll("\\s+", "");
+    }
 
     /** ssl, starttls or none. "auto" picks ssl for port 465, starttls for 587 and none otherwise. */
     public String getSmtpSecurity() {
@@ -169,13 +190,6 @@ public class NotificationSettings {
         return name.isEmpty() ? "TenderPocket Alerts" : name;
     }
 
-    /** "Name &lt;a@b.c&gt;" to {name, address}; null when the value is not in that form. */
-    private static String[] splitNameAndAddress(String value) {
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^\\s*\"?([^\"<]*?)\"?\\s*<\\s*([^<>\\s]+)\\s*>\\s*$").matcher(value);
-        if (!m.matches()) return null;
-        return new String[]{m.group(1).trim(), m.group(2).trim()};
-    }
-
     /** The daily send schedule, or null when switched off with "-" or "off". */
     public String getCron() { return cronOrDefault("NOTIFY_CRON", cron, DEFAULT_CRON); }
 
@@ -183,14 +197,46 @@ public class NotificationSettings {
     public String getClockCron() { return cronOrDefault("NOTIFY_CLOCK_CRON", clockCron, DEFAULT_CLOCK_CRON); }
 
     /**
-     * Optional per-login address that replaces users.email, read from
-     * NOTIFY_RECIPIENT_&lt;USERNAME&gt; (username upper-cased, anything other than A-Z and 0-9
-     * turned into "_"), for example NOTIFY_RECIPIENT_MISTEAM.
+     * The address given for a login in NOTIFY_RECIPIENTS, or "" when it has none (users.email
+     * is used then). NOTIFY_RECIPIENTS lists "login=email" pairs separated by commas, for
+     * example {@code admin=admin@company.com,MIS1=mis1@company.com}. Login names are matched
+     * ignoring case.
      */
     public String recipientOverride(String username) {
-        if (username == null || username.isBlank() || environment == null) return "";
-        String key = "NOTIFY_RECIPIENT_" + username.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "_");
-        return trim(environment.getProperty(key, ""));
+        if (username == null || username.isBlank()) return "";
+        return recipientMap().getOrDefault(username.trim().toLowerCase(Locale.ROOT), "");
+    }
+
+    /** Number of logins with an address in NOTIFY_RECIPIENTS. */
+    public int recipientCount() { return recipientMap().size(); }
+
+    private synchronized Map<String, String> recipientMap() {
+        String source = trim(recipients);
+        if (source.equals(parsedRecipientsSource)) return parsedRecipients;
+        Map<String, String> map = new HashMap<>();
+        for (String entry : source.split("[,;\\n]")) {
+            String e = entry.trim();
+            if (e.isEmpty()) continue;
+            int sep = e.indexOf('=');
+            if (sep < 0) sep = e.indexOf(':');
+            String login = sep < 0 ? "" : e.substring(0, sep).trim();
+            String email = sep < 0 ? "" : e.substring(sep + 1).trim();
+            if (login.isEmpty() || !RecipientDirectory.isEmail(email)) {
+                log.warn("[Notifications] Ignoring NOTIFY_RECIPIENTS entry '{}': expected login=email", e);
+                continue;
+            }
+            map.put(login.toLowerCase(Locale.ROOT), email);
+        }
+        parsedRecipientsSource = source;
+        parsedRecipients = Map.copyOf(map);
+        return parsedRecipients;
+    }
+
+    /** "Name &lt;a@b.c&gt;" to {name, address}; null when the value is not in that form. */
+    private static String[] splitNameAndAddress(String value) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^\\s*\"?([^\"<]*?)\"?\\s*<\\s*([^<>\\s]+)\\s*>\\s*$").matcher(value);
+        if (!m.matches()) return null;
+        return new String[]{m.group(1).trim(), m.group(2).trim()};
     }
 
     private static String cronOrDefault(String name, String raw, String fallback) {

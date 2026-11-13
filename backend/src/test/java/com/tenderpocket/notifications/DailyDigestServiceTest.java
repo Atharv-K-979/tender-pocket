@@ -35,7 +35,7 @@ class DailyDigestServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        settings = new NotificationSettings(null);
+        settings = new NotificationSettings();
         ReflectionTestUtils.setField(settings, "enabled", "true");
         clock = mock(PendingClockService.class);
         mailer = mock(NotificationMailer.class);
@@ -158,17 +158,6 @@ class DailyDigestServiceTest {
         assertEquals("DISABLED", report.status());
         verifyNoInteractions(clock);
         verify(mailer, never()).send(anyString(), anyString(), anyString(), anyString(), any());
-    }
-
-    @Test
-    void testModeRedirectsEveryMailAndSaysWhoItWasFor() throws Exception {
-        ReflectionTestUtils.setField(settings, "redirectAllTo", "me@example.com");
-        when(clock.refresh(any())).thenReturn(snapshot(users()));
-        service.run("test");
-        ArgumentCaptor<String> subjects = ArgumentCaptor.forClass(String.class);
-        verify(mailer, times(6)).send(eq("me@example.com"), subjects.capture(), anyString(), anyString(), any());
-        assertTrue(subjects.getAllValues().get(0).startsWith("[for misteam] "));
-        assertTrue(subjects.getAllValues().get(5).startsWith("[for admin] "));
     }
 
     @Test

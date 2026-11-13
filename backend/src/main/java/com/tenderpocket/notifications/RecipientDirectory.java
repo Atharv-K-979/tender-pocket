@@ -60,7 +60,7 @@ public class RecipientDirectory {
             String source;
             if (isEmail(override)) {
                 email = override;
-                source = "NOTIFY_RECIPIENT override";
+                source = "NOTIFY_RECIPIENTS";
             } else if (isEmail(stored)) {
                 email = stored;
                 source = "users.email";

@@ -93,19 +93,15 @@ public final class DigestTemplates {
 
     // ── HTML ────────────────────────────────────────────────────────────────
 
-    public static String html(MailView v, String appUrl, String intendedFor, boolean testSend) {
-        return v.digest().type() == Digest.DigestType.DUE
-                ? dueHtml(v, appUrl, intendedFor, testSend)
-                : pendingHtml(v, appUrl, intendedFor, testSend);
+    public static String html(MailView v, String appUrl) {
+        return v.digest().type() == Digest.DigestType.DUE ? dueHtml(v, appUrl) : pendingHtml(v, appUrl);
     }
 
-    public static String text(MailView v, String appUrl, String intendedFor, boolean testSend) {
-        return v.digest().type() == Digest.DigestType.DUE
-                ? dueText(v, appUrl, intendedFor, testSend)
-                : pendingText(v, appUrl, intendedFor, testSend);
+    public static String text(MailView v, String appUrl) {
+        return v.digest().type() == Digest.DigestType.DUE ? dueText(v, appUrl) : pendingText(v, appUrl);
     }
 
-    private static String dueHtml(MailView v, String appUrl, String intendedFor, boolean testSend) {
+    private static String dueHtml(MailView v, String appUrl) {
         Digest d = v.digest();
         StringBuilder b = new StringBuilder(16384);
         long today = d.dueTodayCount();
@@ -113,7 +109,7 @@ public final class DigestTemplates {
                 ? "No tenders are due in the next " + d.dueWindowDays() + " days."
                 : plural(d.dueRows().size(), "tender") + " due by " + d.date().plusDays(d.dueWindowDays()).format(SHORT)
                 + (today > 0 ? ", " + today + " of them today" : "") + ". Each row shows who has to act now.";
-        open(b, d, "Due in the next " + d.dueWindowDays() + " days", lead, intendedFor, testSend);
+        open(b, d, "Due in the next " + d.dueWindowDays() + " days", lead);
         attachmentNotice(b, v);
         if (v.hasAttachment()) dueSummary(b, d);
 
@@ -188,10 +184,10 @@ public final class DigestTemplates {
                 .append(td(String.valueOf(a + c), "")).append("</tr>");
     }
 
-    private static String dueText(MailView v, String appUrl, String intendedFor, boolean testSend) {
+    private static String dueText(MailView v, String appUrl) {
         Digest d = v.digest();
         StringBuilder t = new StringBuilder();
-        textHeader(t, d, "Due in the next " + d.dueWindowDays() + " days", intendedFor, testSend);
+        textHeader(t, d, "Due in the next " + d.dueWindowDays() + " days");
         textAttachmentNotice(t, v);
         Map<Integer, List<DueRow>> groups = DigestBuilder.groupInOrder(v.dueRows(), DueRow::daysLeft);
         for (Map.Entry<Integer, List<DueRow>> g : groups.entrySet()) {
@@ -221,7 +217,7 @@ public final class DigestTemplates {
 
     // ── Pending mail ────────────────────────────────────────────────────────
 
-    private static String pendingHtml(MailView v, String appUrl, String intendedFor, boolean testSend) {
+    private static String pendingHtml(MailView v, String appUrl) {
         Digest d = v.digest();
         StringBuilder b = new StringBuilder(16384);
         String title = d.isAdmin() ? "Waiting over " + d.pendingDays() + " days" : "Waiting on you over " + d.pendingDays() + " days";
@@ -232,7 +228,7 @@ public final class DigestTemplates {
                   + " have sat with the same owner for more than " + d.pendingDays() + " days."
                 : "These steps are yours and have waited more than " + d.pendingDays()
                   + " days. Tenders due within " + d.dueWindowDays() + " days are in your Due mail instead.";
-        open(b, d, title, lead, intendedFor, testSend);
+        open(b, d, title, lead);
         attachmentNotice(b, v);
 
         if (d.isAdmin() && !d.ownerSummary().isEmpty()) {
@@ -332,10 +328,10 @@ public final class DigestTemplates {
         b.append(td("<strong>" + (total[0] + total[1] + total[2]) + "</strong>", "")).append("</tr></table>");
     }
 
-    private static String pendingText(MailView v, String appUrl, String intendedFor, boolean testSend) {
+    private static String pendingText(MailView v, String appUrl) {
         Digest d = v.digest();
         StringBuilder t = new StringBuilder();
-        textHeader(t, d, d.isAdmin() ? "Waiting over " + d.pendingDays() + " days" : "Waiting on you over " + d.pendingDays() + " days", intendedFor, testSend);
+        textHeader(t, d, d.isAdmin() ? "Waiting over " + d.pendingDays() + " days" : "Waiting on you over " + d.pendingDays() + " days");
         textAttachmentNotice(t, v);
         if (d.isAdmin()) {
             for (OwnerSummary s : d.ownerSummary()) {
@@ -427,7 +423,7 @@ public final class DigestTemplates {
 
     // ── Shared pieces ───────────────────────────────────────────────────────
 
-    private static void open(StringBuilder b, Digest d, String title, String lead, String intendedFor, boolean testSend) {
+    private static void open(StringBuilder b, Digest d, String title, String lead) {
         b.append("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
                 .append("<title>").append(esc(title)).append("</title>").append(STYLE).append("</head>")
                 .append("<body style=\"margin:0;padding:0;background:#f3f5f7;\">")
@@ -435,16 +431,6 @@ public final class DigestTemplates {
                 .append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:760px;background:#ffffff;border:1px solid ")
                 .append(LINE).append(";border-radius:8px;font-family:").append(FONT).append(";color:").append(INK).append(";\">")
                 .append("<tr><td style=\"padding:20px 24px 4px;\">");
-        if (testSend) {
-            b.append("<div style=\"background:").append(AMBER_BG).append(";color:").append(AMBER)
-                    .append(";font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:12px;\"><strong>Test mail.</strong> ")
-                    .append("Sent on request from the TenderPocket admin tools to check the layout. It is not one of the daily mails.</div>");
-        }
-        if (intendedFor != null) {
-            b.append("<div style=\"background:").append(AMBER_BG).append(";color:").append(AMBER)
-                    .append(";font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:12px;\">Test mode: this mail was meant for <strong>")
-                    .append(esc(intendedFor)).append("</strong>.</div>");
-        }
         b.append("<div style=\"font-size:12px;color:").append(MUTED).append(";letter-spacing:.04em;text-transform:uppercase;\">TenderPocket · ")
                 .append(esc(who(d.recipient()))).append(" · ")
                 .append(esc(d.date().format(LONG))).append("</div>")
@@ -520,9 +506,7 @@ public final class DigestTemplates {
         return "<p style=\"margin:6px 0 4px;font-size:" + size + "px;color:" + color + ";line-height:1.5;\">" + html + "</p>";
     }
 
-    private static void textHeader(StringBuilder t, Digest d, String title, String intendedFor, boolean testSend) {
-        if (testSend) t.append("TEST MAIL: sent on request from the TenderPocket admin tools. It is not one of the daily mails.\n\n");
-        if (intendedFor != null) t.append("TEST MODE: this mail was meant for ").append(intendedFor).append("\n\n");
+    private static void textHeader(StringBuilder t, Digest d, String title) {
         t.append(title.toUpperCase(Locale.ROOT)).append('\n')
                 .append("TenderPocket · ").append(who(d.recipient())).append(" · ").append(d.date().format(LONG)).append('\n');
     }

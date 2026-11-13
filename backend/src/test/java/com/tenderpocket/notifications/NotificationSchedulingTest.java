@@ -14,7 +14,7 @@ class NotificationSchedulingTest {
 
     @Test
     void scheduledMailWorkRunsOnItsOwnThreadNotTheSharedOne() throws Exception {
-        NotificationSettings settings = new NotificationSettings(null);
+        NotificationSettings settings = new NotificationSettings();
         ReflectionTestUtils.setField(settings, "cron", "-");
         ReflectionTestUtils.setField(settings, "clockCron", "* * * * * *");
         PendingClockService clock = mock(PendingClockService.class);

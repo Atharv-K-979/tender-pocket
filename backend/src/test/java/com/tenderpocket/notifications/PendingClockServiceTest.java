@@ -48,7 +48,7 @@ class PendingClockServiceTest {
         when(approvals.findByStatusOrderByCreatedAtDesc("PENDING")).thenReturn(List.of());
         when(approvals.findByTenderIdOrderByCreatedAtDesc(anyString())).thenReturn(List.of());
         service = new PendingClockService(tenders, approvals, states, users, clockRows,
-                new NotificationSettings(null), TransactionOperations.withoutTransaction());
+                new NotificationSettings(), TransactionOperations.withoutTransaction());
     }
 
     @SuppressWarnings("unchecked")

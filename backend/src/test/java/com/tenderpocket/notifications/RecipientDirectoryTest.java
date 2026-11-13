@@ -74,7 +74,7 @@ class RecipientDirectoryTest {
                 new User("tpc", "x", "TPC Team", "not-an-email")),
                 u -> u.equals("misteam") ? "new@example.com" : "");
         assertEquals("new@example.com", d.find("MISTEAM").email());
-        assertEquals("NOTIFY_RECIPIENT override", d.find("misteam").emailSource());
+        assertEquals("NOTIFY_RECIPIENTS", d.find("misteam").emailSource());
         assertFalse(d.find("tpc").hasEmail());
     }
 

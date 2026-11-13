@@ -28,8 +28,8 @@ class DigestTemplatesTest {
         return t;
     }
 
-    private MailComposer.ComposedMail compose(Digest d, String appUrl, String intendedFor) {
-        return MailComposer.compose(d, appUrl, intendedFor, false, 200, now);
+    private MailComposer.ComposedMail compose(Digest d, String appUrl) {
+        return MailComposer.compose(d, appUrl, 200, now);
     }
 
     @Test
@@ -40,7 +40,7 @@ class DigestTemplatesTest {
                 entry(risky, DECIDE, List.of(), 6),
                 entry(due(assigned("T2", "executive"), 2), SPEC_PREP, List.of("executive"), 1)), dir), today);
         Digest d = builder.buildDue(dir.find("misteam"), v, today);
-        MailComposer.ComposedMail mail = compose(d, "http://localhost:8085", null);
+        MailComposer.ComposedMail mail = compose(d, "http://localhost:8085");
 
         assertEquals("Due soon: 1 today, 1 in next 3 days · TenderPocket · 12 Nov", mail.subject());
         assertNull(mail.attachment(), "two rows fit, so no Excel");
@@ -63,25 +63,18 @@ class DigestTemplatesTest {
         t.setTitle(title);
         t.setAuthority(authority);
         Digest d = builder.buildDue(dir.find("misteam"), builder.prepare(new ClockSnapshot(now, List.of(entry(t, DECIDE, List.of(), 1)), dir), today), today);
-        MailComposer.ComposedMail mail = compose(d, "", null);
+        MailComposer.ComposedMail mail = compose(d, "");
         assertTrue(mail.html().contains("END-OF-TITLE") && mail.html().contains("END-OF-AUTHORITY"));
         assertTrue(mail.text().contains(title) && mail.text().contains(authority));
     }
 
     @Test
-    void testModeAndTestSendAreMarked() {
+    void noLinksWithoutAnAppAddress() {
         List<DigestBuilder.TenderView> v = builder.prepare(new ClockSnapshot(now,
                 List.of(entry(due(undecided("T1"), 1), DECIDE, List.of(), 0)), dir), today);
-        Digest d = builder.buildDue(dir.find("misteam"), v, today);
-        MailComposer.ComposedMail redirected = compose(d, "", "misteam (mis@example.com)");
-        assertTrue(redirected.subject().startsWith("[for misteam] Due soon"));
-        assertTrue(redirected.html().contains("Test mode: this mail was meant for <strong>misteam (mis@example.com)</strong>"));
-        assertFalse(redirected.html().contains("/tenders/"), "no links without NOTIFY_APP_URL");
-
-        MailComposer.ComposedMail test = MailComposer.compose(d, "", null, true, 200, now);
-        assertTrue(test.subject().startsWith("[TEST] Due soon"));
-        assertTrue(test.html().contains("Test mail."));
-        assertTrue(test.text().startsWith("TEST MAIL:"));
+        MailComposer.ComposedMail mail = compose(builder.buildDue(dir.find("misteam"), v, today), "");
+        assertTrue(mail.subject().startsWith("Due soon"));
+        assertFalse(mail.html().contains("/tenders/"));
     }
 
     @Test
@@ -90,9 +83,9 @@ class DigestTemplatesTest {
                 entry(due(undecided("T1"), 10), DECIDE, List.of(), 5),
                 entry(due(assigned("T2", "executive"), 9), BID_DOCS, List.of("executive"), 4)), dir), today);
         Digest exec = builder.buildPending(dir.find("executive"), v, today, List.of());
-        assertEquals("Waiting on you: 1 tender over 3 days · TenderPocket · 12 Nov", compose(exec, "", null).subject());
+        assertEquals("Waiting on you: 1 tender over 3 days · TenderPocket · 12 Nov", compose(exec, "").subject());
         Digest admin = builder.buildPending(dir.find("admin"), v, today, List.of());
-        MailComposer.ComposedMail mail = compose(admin, "", null);
+        MailComposer.ComposedMail mail = compose(admin, "");
         assertEquals("Waiting over 3 days: 2 tenders across 2 owners · TenderPocket · 12 Nov", mail.subject());
         assertTrue(mail.html().contains("By owner"));
         assertTrue(mail.html().contains("Generate bid package"));

@@ -87,7 +87,7 @@ class MailComposerTest {
 
     @Test
     void upTo200RowsGoInTheBodyWithoutAnAttachment() {
-        MailComposer.ComposedMail mail = MailComposer.compose(misPending(150), APP, null, false, 200, now);
+        MailComposer.ComposedMail mail = MailComposer.compose(misPending(150), APP, 200, now);
         assertEquals(150, mail.totalRows());
         assertEquals(150, mail.bodyRows());
         assertNull(mail.attachment());
@@ -111,11 +111,11 @@ class MailComposerTest {
 
     @Test
     void exactly200ShortRowsFitAnd201NeedTheExcel() throws Exception {
-        MailComposer.ComposedMail at200 = MailComposer.compose(misPendingShort(200), APP, null, false, 200, now);
+        MailComposer.ComposedMail at200 = MailComposer.compose(misPendingShort(200), APP, 200, now);
         assertEquals(200, at200.bodyRows());
         assertNull(at200.attachment());
 
-        MailComposer.ComposedMail at201 = MailComposer.compose(misPendingShort(201), APP, null, false, 200, now);
+        MailComposer.ComposedMail at201 = MailComposer.compose(misPendingShort(201), APP, 200, now);
         assertEquals(200, at201.bodyRows());
         assertNotNull(at201.attachment(), "one row more than 200 must produce the Excel file");
         assertEquals(201, at201.attachment().rows());
@@ -125,7 +125,7 @@ class MailComposerTest {
 
     @Test
     void twoHundredTypicalRowsTooBigForFullDetailsAreAllListedWithTheExcelAttached() throws Exception {
-        MailComposer.ComposedMail mail = MailComposer.compose(misPending(200), APP, null, false, 200, now);
+        MailComposer.ComposedMail mail = MailComposer.compose(misPending(200), APP, 200, now);
         assertEquals(200, mail.totalRows());
         assertEquals(200, mail.bodyRows(), "every row is still listed, in short form");
         assertNotNull(mail.attachment(), "full details (authority) did not fit, so they go in the Excel file");
@@ -137,7 +137,7 @@ class MailComposerTest {
 
     @Test
     void misWith480TendersGets200InTheBodyAndAll480InTheExcel() throws Exception {
-        MailComposer.ComposedMail mail = MailComposer.compose(misPending(480), APP, null, false, 200, now);
+        MailComposer.ComposedMail mail = MailComposer.compose(misPending(480), APP, 200, now);
         assertEquals(480, mail.totalRows());
         assertEquals(200, mail.bodyRows());
         assertTrue(mail.htmlBytes() < MailComposer.BODY_BUDGET_BYTES, "body is " + mail.htmlBytes() + " bytes");
@@ -172,7 +172,7 @@ class MailComposerTest {
     @Test
     void theBodyKeepsTheNearestDeadlinesWhenRowsAreCut() {
         Digest d = misPending(480);
-        MailComposer.ComposedMail mail = MailComposer.compose(d, APP, null, false, 200, now);
+        MailComposer.ComposedMail mail = MailComposer.compose(d, APP, 200, now);
         Set<String> inBody = new HashSet<>(bodyIds(mail.html()));
         int maxShown = d.pendingRows().stream().filter(r -> inBody.contains(r.tender().getId())).mapToInt(r -> r.daysLeft()).max().orElseThrow();
         int minCut = d.pendingRows().stream().filter(r -> !inBody.contains(r.tender().getId())).mapToInt(r -> r.daysLeft()).min().orElseThrow();
@@ -189,7 +189,7 @@ class MailComposerTest {
             entries.add(entry(t, SPEC_PREP, List.of("executive"), 2));
         }
         Digest d = builder.buildDue(dir.find("executive"), builder.prepare(new ClockSnapshot(now, entries, dir), today), today);
-        MailComposer.ComposedMail mail = MailComposer.compose(d, APP, null, false, 200, now);
+        MailComposer.ComposedMail mail = MailComposer.compose(d, APP, 200, now);
 
         assertEquals(150, mail.totalRows());
         assertTrue(mail.bodyRows() < 150, "only " + mail.bodyRows() + " long rows fit");
@@ -212,7 +212,7 @@ class MailComposerTest {
             entries.add(entry(t, i % 3 == 0 ? SPEC_PREP : DECIDE, i % 3 == 0 ? List.of("executive") : List.of(), 1));
         }
         Digest d = builder.buildDue(dir.find("misteam"), builder.prepare(new ClockSnapshot(now, entries, dir), today), today);
-        MailComposer.ComposedMail mail = MailComposer.compose(d, APP, null, false, 200, now);
+        MailComposer.ComposedMail mail = MailComposer.compose(d, APP, 200, now);
         assertEquals(300, mail.totalRows());
         assertNotNull(mail.attachment());
 
@@ -232,7 +232,7 @@ class MailComposerTest {
         for (int i = 1; i <= 220; i++) entries.add(entry(due(titled(undecided("A" + i), i), i % 4), DECIDE, List.of(), 1));
         for (int i = 1; i <= 5; i++) entries.add(entry(due(titled(assigned("M" + i, "executive"), i), -1), SPEC_PREP, List.of("executive"), 6));
         Digest d = builder.buildDue(dir.find("admin"), builder.prepare(new ClockSnapshot(now, entries, dir), today), today);
-        MailComposer.ComposedMail mail = MailComposer.compose(d, APP, null, false, 200, now);
+        MailComposer.ComposedMail mail = MailComposer.compose(d, APP, 200, now);
         assertEquals(225, mail.totalRows());
         List<String[]> rows = excelRows(mail.attachment().bytes());
         assertEquals(225, rows.size());
@@ -242,7 +242,7 @@ class MailComposerTest {
     @Test
     void largeListsStayFast() {
         long start = System.nanoTime();
-        MailComposer.ComposedMail mail = MailComposer.compose(misPending(10_000), APP, null, false, 200, now);
+        MailComposer.ComposedMail mail = MailComposer.compose(misPending(10_000), APP, 200, now);
         long ms = (System.nanoTime() - start) / 1_000_000;
         assertEquals(10_000, mail.attachment().rows());
         assertEquals(200, mail.bodyRows());

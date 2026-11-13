@@ -46,12 +46,7 @@ public final class MailComposer {
         public int bodyRows() { return dueRows.size() + missedRows.size() + pendingRows.size(); }
     }
 
-    /**
-     * @param intendedFor set in test mode (NOTIFY_REDIRECT_ALL_TO): who the mail was meant for
-     * @param testSend    true for a test mail sent on request from the admin tools
-     */
-    public static ComposedMail compose(Digest d, String appUrl, String intendedFor, boolean testSend,
-                                       int maxRows, LocalDateTime now) {
+    public static ComposedMail compose(Digest d, String appUrl, int maxRows, LocalDateTime now) {
         int total = d.rowCount();
         String fileName = DigestExcel.fileName(d);
         int limit = Math.max(0, Math.min(maxRows, total));
@@ -59,10 +54,10 @@ public final class MailComposer {
         // 1. Does everything fit, with full details?
         boolean attach = true;
         int shown = 0;
-        if (limit == total && fits(view(d, total, null, false), appUrl, intendedFor, testSend)) {
+        if (limit == total && fits(view(d, total, null, false), appUrl)) {
             attach = false;
             shown = total;
-        } else if (fits(view(d, limit, fileName, true), appUrl, intendedFor, testSend)) {
+        } else if (fits(view(d, limit, fileName, true), appUrl)) {
             // 2. Excel attached; the compact body holds the full limit.
             shown = limit;
         } else {
@@ -72,7 +67,7 @@ public final class MailComposer {
             int hi = limit - 1;
             while (lo <= hi) {
                 int mid = (lo + hi) >>> 1;
-                if (fits(view(d, mid, fileName, true), appUrl, intendedFor, testSend)) {
+                if (fits(view(d, mid, fileName, true), appUrl)) {
                     shown = mid;
                     lo = mid + 1;
                 } else {
@@ -82,8 +77,8 @@ public final class MailComposer {
         }
 
         MailView view = view(d, shown, attach ? fileName : null, attach);
-        String html = DigestTemplates.html(view, appUrl, intendedFor, testSend);
-        String text = DigestTemplates.text(view, appUrl, intendedFor, testSend);
+        String html = DigestTemplates.html(view, appUrl);
+        String text = DigestTemplates.text(view, appUrl);
 
         Attachment attachment = null;
         if (attach) {
@@ -92,13 +87,11 @@ public final class MailComposer {
         }
 
         String subject = DigestTemplates.subject(d) + (attach ? " (full list attached)" : "");
-        if (intendedFor != null) subject = "[for " + d.recipient().username() + "] " + subject;
-        if (testSend) subject = "[TEST] " + subject;
         return new ComposedMail(subject, html, text, attachment, total, shown);
     }
 
-    private static boolean fits(MailView v, String appUrl, String intendedFor, boolean testSend) {
-        return bytes(DigestTemplates.html(v, appUrl, intendedFor, testSend)) <= BODY_BUDGET_BYTES;
+    private static boolean fits(MailView v, String appUrl) {
+        return bytes(DigestTemplates.html(v, appUrl)) <= BODY_BUDGET_BYTES;
     }
 
     /** The first {@code n} rows by importance, arranged for display. */

@@ -85,35 +85,6 @@ public class DailyDigestService {
         }
     }
 
-    /** A rendered mail for one login, without sending it. */
-    public record Preview(String username, DigestType type, boolean empty, MailComposer.ComposedMail mail, String alreadyToday) {}
-
-    /** Result of a test mail sent on request. */
-    public record TestSend(String username, DigestType type, String to, String status, String error, MailComposer.ComposedMail mail) {
-        public Map<String, Object> toMap() {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("success", "SENT".equals(status));
-            m.put("result", status);
-            m.put("login", username);
-            m.put("mail", type.name());
-            m.put("to", to);
-            if (error != null) m.put("error", error);
-            if (mail != null) {
-                m.put("subject", mail.subject());
-                m.put("rows_total", mail.totalRows());
-                m.put("rows_in_mail_body", mail.bodyRows());
-                m.put("mail_body_kb", Math.round(mail.htmlBytes() / 102.4) / 10.0);
-                m.put("excel_attached", mail.attachment() != null);
-                if (mail.attachment() != null) {
-                    m.put("excel_file", mail.attachment().fileName());
-                    m.put("excel_rows", mail.attachment().rows());
-                    m.put("excel_kb", Math.round(mail.attachment().bytes().length / 102.4) / 10.0);
-                }
-            }
-            return m;
-        }
-    }
-
     public void scheduledRun() {
         if (!settings.isEnabled()) {
             log.info("[Notifications] Daily mails are switched off (NOTIFY_ENABLED=false); skipping the scheduled run.");
@@ -174,89 +145,6 @@ public class DailyDigestService {
         }
     }
 
-    /**
-     * Renders what a login would receive right now, including the Excel file when one is needed.
-     * Sends nothing and writes no send log.
-     *
-     * @param idPrefix when set, only tenders whose ID starts with it are included (for test data)
-     */
-    public Preview preview(String username, DigestType type, String idPrefix) {
-        LocalDateTime now = LocalDateTime.now(NotificationSettings.IST);
-        Digest digest = digestFor(username, type, idPrefix, now);
-        if (digest == null) return null;
-        RecipientDirectory.Recipient recipient = digest.recipient();
-        MailComposer.ComposedMail mail = MailComposer.compose(digest, settings.getAppUrl(), intendedFor(recipient), false,
-                settings.getMaxRows(), now);
-        String already = digestLogRepository.findByRecipientUsernameAndDigestTypeAndSentDate(recipient.username(), type.name(), now.toLocalDate())
-                .map(EmailDigestLog::getStatus).orElse("NOT_SENT");
-        return new Preview(recipient.username(), type, digest.isEmpty(), mail, already);
-    }
-
-    /**
-     * Sends one mail for one login right now, marked as a test. It does not use or change the
-     * daily send log, so it never blocks or replaces the real daily mails.
-     *
-     * @param to       address to send to; empty means the login's own address (or NOTIFY_REDIRECT_ALL_TO)
-     * @param idPrefix when set, only tenders whose ID starts with it are included (for test data)
-     */
-    public TestSend sendTest(String username, DigestType type, String idPrefix, String to) {
-        LocalDateTime now = LocalDateTime.now(NotificationSettings.IST);
-        Digest digest = digestFor(username, type, idPrefix, now);
-        if (digest == null) {
-            return new TestSend(username, type, to, "FAILED", "No login '" + username + "' with a known role", null);
-        }
-        RecipientDirectory.Recipient r = digest.recipient();
-        if (to != null && !to.isBlank() && !RecipientDirectory.isEmail(to)) {
-            return new TestSend(r.username(), type, to.trim(), "FAILED",
-                    "'" + to.trim() + "' is not a valid email address. Leave 'to' out to use the login's own address.", null);
-        }
-        String target = to != null && !to.isBlank() ? to.trim()
-                : !settings.getRedirectAllTo().isEmpty() ? settings.getRedirectAllTo() : r.email();
-        if (target == null || target.isBlank() || !RecipientDirectory.isEmail(target)) {
-            return new TestSend(r.username(), type, target, "FAILED", "No valid email address for login '" + r.username()
-                    + "'. Set NOTIFY_RECIPIENT_" + r.username().toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9]", "_")
-                    + " in .env.notification", null);
-        }
-        if (digest.isEmpty()) {
-            return new TestSend(r.username(), type, target, "NOTHING_TO_REPORT",
-                    "This login has nothing to report in this mail, so no mail was sent", null);
-        }
-        String intendedFor = target.equalsIgnoreCase(r.email()) ? null : r.username() + " (" + (r.hasEmail() ? r.email() : "no email set") + ")";
-        MailComposer.ComposedMail mail = MailComposer.compose(digest, settings.getAppUrl(), intendedFor, true, settings.getMaxRows(), now);
-        try {
-            mailer.send(target, mail.subject(), mail.html(), mail.text(), mail.attachment());
-            log.info("[Notifications] TEST {} {} -> {}: SENT ({} rows, {} in body{})", type, r.username(), target, mail.totalRows(),
-                    mail.bodyRows(), mail.attachment() == null ? "" : ", Excel attached");
-            return new TestSend(r.username(), type, target, "SENT", null, mail);
-        } catch (NotificationMailer.SendFailure e) {
-            log.warn("[Notifications] TEST {} {} -> {}: FAILED {}", type, r.username(), target, e.getMessage());
-            return new TestSend(r.username(), type, target, "FAILED", e.getMessage(), mail);
-        }
-    }
-
-    /** The digest a login would get now, optionally limited to tenders whose ID starts with idPrefix. */
-    private Digest digestFor(String username, DigestType type, String idPrefix, LocalDateTime now) {
-        LocalDate today = now.toLocalDate();
-        ClockSnapshot snapshot = onlyPrefix(clockService.refresh(now), idPrefix);
-        RecipientDirectory.Recipient recipient = snapshot.directory().find(username);
-        if (recipient == null) return null;
-        DigestBuilder builder = builder();
-        List<DigestBuilder.TenderView> views = builder.prepare(snapshot, today);
-        return type == DigestType.DUE
-                ? builder.buildDue(recipient, views, today)
-                : builder.buildPending(recipient, views, today,
-                recipient.team() == Team.ADMIN && (idPrefix == null || idPrefix.isBlank()) ? deliveryReport(today, snapshot.directory()) : List.of());
-    }
-
-    private static ClockSnapshot onlyPrefix(ClockSnapshot snapshot, String idPrefix) {
-        if (idPrefix == null || idPrefix.isBlank()) return snapshot;
-        String prefix = idPrefix.trim().toLowerCase(java.util.Locale.ROOT);
-        List<ClockSnapshot.TenderEntry> kept = snapshot.tenders().stream()
-                .filter(e -> e.tender().getId() != null && e.tender().getId().toLowerCase(java.util.Locale.ROOT).startsWith(prefix))
-                .toList();
-        return new ClockSnapshot(snapshot.now(), kept, snapshot.directory());
-    }
-
     /** What every login would get right now, plus the settings in use. Sends nothing. */
     public Map<String, Object> summary() {
         LocalDateTime now = LocalDateTime.now(NotificationSettings.IST);
@@ -272,7 +160,7 @@ public class DailyDigestService {
         config.put("smtp", mailer.describe());
         String problem = mailer.configurationProblem();
         config.put("smtp_problem", problem == null ? "none" : problem);
-        config.put("redirect_all_to", settings.getRedirectAllTo().isEmpty() ? "off" : settings.getRedirectAllTo());
+        config.put("logins_in_notify_recipients", settings.recipientCount());
         config.put("pending_days", settings.getPendingDays());
         config.put("due_window_days", settings.getDueWindowDays());
         config.put("max_rows", settings.getMaxRows());
@@ -324,18 +212,15 @@ public class DailyDigestService {
                     "This mail was already sent (or is being sent) today");
         }
 
-        String intendedFor = intendedFor(r);
-        String to = intendedFor != null ? settings.getRedirectAllTo() : r.email();
+        String to = r.email();
         claim.setRecipientEmail(to);
         claim.setItemCount(digest.itemCount());
         try {
             if (to == null || to.isBlank()) {
                 throw new NotificationMailer.SendFailure("No email address for login '" + r.username()
-                        + "'. Set users.email or NOTIFY_RECIPIENT_"
-                        + r.username().toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9]", "_"), 0);
+                        + "'. Set it in users.email or add " + r.username() + "=<email> to NOTIFY_RECIPIENTS", 0);
             }
-            MailComposer.ComposedMail composed = MailComposer.compose(digest, settings.getAppUrl(), intendedFor, false,
-                    settings.getMaxRows(), now);
+            MailComposer.ComposedMail composed = MailComposer.compose(digest, settings.getAppUrl(), settings.getMaxRows(), now);
             claim.setSubject(truncate(composed.subject(), 500));
             int attempts = mailer.send(to, composed.subject(), composed.html(), composed.text(), composed.attachment());
             finish(claim, EmailDigestLog.SENT, attempts, null);
@@ -404,11 +289,6 @@ public class DailyDigestService {
             lines.add(new DeliveryLine(row.getRecipientUsername(), mail, row.getStatus(), detail));
         }
         return lines;
-    }
-
-    private String intendedFor(RecipientDirectory.Recipient r) {
-        if (settings.getRedirectAllTo().isEmpty()) return null;
-        return r.username() + " (" + (r.hasEmail() ? r.email() : "no email set") + ")";
     }
 
     private DigestBuilder builder() {

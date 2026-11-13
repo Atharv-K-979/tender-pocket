@@ -2,7 +2,6 @@ package com.tenderpocket.notifications;
 
 import com.tenderpocket.models.Tender;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
@@ -50,7 +49,7 @@ class NotifyDatesAndSettingsTest {
 
     @Test
     void blankOrBadSettingsFallBackToDefaultsInsteadOfFailing() {
-        NotificationSettings s = new NotificationSettings(null);
+        NotificationSettings s = new NotificationSettings();
         ReflectionTestUtils.setField(s, "enabled", "");
         ReflectionTestUtils.setField(s, "pendingDays", "");
         ReflectionTestUtils.setField(s, "dueWindowDays", "abc");
@@ -78,7 +77,7 @@ class NotifyDatesAndSettingsTest {
 
     @Test
     void appUrlKeepsOnlyTheBaseSoTenderLinksWork() {
-        NotificationSettings s = new NotificationSettings(null);
+        NotificationSettings s = new NotificationSettings();
         for (String pasted : new String[]{"http://13.232.232.54:8085/#/dashboard", "http://13.232.232.54:8085/",
                 "http://13.232.232.54:8085", " http://13.232.232.54:8085/?tab=1 "}) {
             ReflectionTestUtils.setField(s, "appUrl", pasted);
@@ -90,19 +89,45 @@ class NotifyDatesAndSettingsTest {
     }
 
     @Test
-    void recipientOverrideKeyIsUpperCasedUsername() {
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("NOTIFY_RECIPIENT_MISTEAM", " me@example.com ")
-                .withProperty("NOTIFY_RECIPIENT_RAHUL_K", "rahul@example.com");
-        NotificationSettings s = new NotificationSettings(env);
-        assertEquals("me@example.com", s.recipientOverride("misteam"));
-        assertEquals("rahul@example.com", s.recipientOverride("rahul.k"));
-        assertEquals("", s.recipientOverride("tpc"));
+    void recipientsComeFromOneListOfLoginEmailPairs() {
+        NotificationSettings s = new NotificationSettings();
+        ReflectionTestUtils.setField(s, "recipients",
+                "admin=admin@company.com, MIS1=mis1@company.com,MIS_COMMON = common@company.com,"
+                        + "EXECUTIVE_10=e10@company.com,broken-entry,TPC=not-an-email,,CLEARANCE_1:c1@company.com");
+        assertEquals("admin@company.com", s.recipientOverride("admin"));
+        assertEquals("mis1@company.com", s.recipientOverride("mis1"), "login names match ignoring case");
+        assertEquals("common@company.com", s.recipientOverride("MIS_COMMON"));
+        assertEquals("e10@company.com", s.recipientOverride("EXECUTIVE_10"));
+        assertEquals("c1@company.com", s.recipientOverride("CLEARANCE_1"));
+        assertEquals("", s.recipientOverride("TPC"), "an invalid address is ignored, so users.email is used");
+        assertEquals("", s.recipientOverride("EXECUTIVE_1"), "EXECUTIVE_1 is not EXECUTIVE_10");
+        assertEquals(5, s.recipientCount());
+
+        ReflectionTestUtils.setField(s, "recipients", "");
+        assertEquals("", s.recipientOverride("admin"));
+        assertEquals(0, s.recipientCount());
+    }
+
+    @Test
+    void emptySenderSettingsFallBackToSpringMail() {
+        NotificationSettings s = new NotificationSettings();
+        ReflectionTestUtils.setField(s, "smtpUsername", "");
+        ReflectionTestUtils.setField(s, "smtpPassword", "");
+        ReflectionTestUtils.setField(s, "springMailUsername", "company@gmail.com");
+        ReflectionTestUtils.setField(s, "springMailPassword", "abcd efgh");
+        assertEquals("company@gmail.com", s.getSmtpUsername());
+        assertEquals("abcdefgh", s.getSmtpPassword());
+        assertEquals("company@gmail.com", s.getFromAddress());
+
+        ReflectionTestUtils.setField(s, "smtpUsername", "alerts@gmail.com");
+        ReflectionTestUtils.setField(s, "smtpPassword", "wxyz");
+        assertEquals("alerts@gmail.com", s.getSmtpUsername());
+        assertEquals("wxyz", s.getSmtpPassword());
     }
 
     @Test
     void fromAddressDefaultsToTheSmtpLogin() {
-        NotificationSettings s = new NotificationSettings(null);
+        NotificationSettings s = new NotificationSettings();
         ReflectionTestUtils.setField(s, "smtpUsername", "sender@gmail.com");
         assertEquals("sender@gmail.com", s.getFromAddress());
         ReflectionTestUtils.setField(s, "fromAddress", "alerts@company.in");
@@ -111,7 +136,7 @@ class NotifyDatesAndSettingsTest {
 
     @Test
     void aNameInMailFromBecomesTheSenderName() {
-        NotificationSettings s = new NotificationSettings(null);
+        NotificationSettings s = new NotificationSettings();
         ReflectionTestUtils.setField(s, "smtpUsername", "sender@gmail.com");
         ReflectionTestUtils.setField(s, "fromName", "TenderPocket Alerts");
 

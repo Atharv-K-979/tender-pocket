@@ -18,10 +18,8 @@ tenders.db
 # Environment and secret files
 .env*
 !.env.example
-!.env.notification.example
 
 # Generated documents, scratch & temporary files
-**/notification-previews/
 frontend/public/documents/
 public/documents/
 public/
