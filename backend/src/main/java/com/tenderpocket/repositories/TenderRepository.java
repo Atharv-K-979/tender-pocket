@@ -92,9 +92,17 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
     @Query(value = "SELECT t.mis_executive, sh.to_status, sh.changed_at FROM status_history sh JOIN tenders t ON sh.tender_id = t.id", nativeQuery = true)
     List<Object[]> findStatusHistoryStats();
 
-    @Query("SELECT t FROM Tender t WHERE t.status IN :statuses AND t.dueDate LIKE CONCAT(:datePrefix, '%') AND t.misExecutive IS NOT NULL AND TRIM(t.misExecutive) != ''")
-    List<Tender> findActiveTendersByDueDatePrefixAndExecutiveAssigned(@Param("statuses") List<String> statuses, @Param("datePrefix") String datePrefix);
-
-    @Query("SELECT t FROM Tender t WHERE (t.status = 'Issued' OR t.status = 'New') AND (t.misExecutive IS NULL OR TRIM(t.misExecutive) = '')")
-    List<Tender> findUnreviewedCandidates();
+    /**
+     * Tenders the daily mails may need to mention: not closed, not filed, and not past due
+     * before {@code fromDate} (an ISO date). Due dates in any other format are kept so the
+     * Java side can parse them. Filed tenders whose submission still awaits MIS confirmation
+     * are included too. The final decision is made by PendingWorkResolver.
+     */
+    @Query("SELECT t FROM Tender t WHERE t.submissionStatus = 'Pending' OR ("
+            + " (t.status IS NULL OR LOWER(t.status) NOT IN :closedStatuses)"
+            + " AND (t.currentStage IS NULL OR UPPER(t.currentStage) NOT IN :closedStages)"
+            + " AND (t.dueDate IS NULL OR TRIM(t.dueDate) = '' OR t.dueDate >= :fromDate OR t.dueDate NOT LIKE '2___-__-__%'))")
+    List<Tender> findNotificationCandidates(@Param("closedStatuses") List<String> closedStatuses,
+                                            @Param("closedStages") List<String> closedStages,
+                                            @Param("fromDate") String fromDate);
 }

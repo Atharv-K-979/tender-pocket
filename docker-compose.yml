@@ -23,6 +23,11 @@ services:
       dockerfile: Dockerfile
     container_name: tender-pocket-backend
     mem_limit: 5g
+    # Daily mail settings (sender, app password, recipients). Optional: copy
+    # .env.notification.example to .env.notification and fill it in.
+    env_file:
+      - path: .env.notification
+        required: false
     restart: always
     depends_on:
       postgres:

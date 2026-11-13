@@ -1,6 +1,5 @@
 package com.tenderpocket.scheduler;
 
-import com.tenderpocket.services.AlertEngineService;
 import com.tenderpocket.services.EmailSyncService;
 import com.tenderpocket.services.GeMScraperService;
 import org.springframework.beans.factory.annotation.Autowired;
