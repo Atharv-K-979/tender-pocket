@@ -18,17 +18,20 @@ public class SyncScheduler {
     @Autowired
     private GeMScraperService geMScraperService;
 
-    // Run synchronization tasks on startup (15s after boot) and every 6 hours
-    @Scheduled(initialDelay = 15000, fixedDelay = 21600000)
+    // Run once, 15s after the backend starts. The server is stopped every night (22:00-07:00 IST),
+    // so this morning run imports the GeM bids and Tender247 mails that arrived overnight.
+    @Scheduled(initialDelay = 15000)
     public void runStartupSync() {
-        System.out.println("[Scheduler] Running automated startup/periodic Tender sync...");
+        System.out.println("[Scheduler] Running startup catch-up Tender sync...");
         performSync();
     }
 
-    // Run synchronization tasks daily at 8:00 AM IST
-    @Scheduled(cron = "0 0 8 * * *", zone = "Asia/Kolkata")
+    // Run at fixed times: 8:00 AM, 1:00 PM and 7:00 PM IST. Fixed times replace the old "6 hours after
+    // the previous run" chain, whose start time drifted and could fall just before the 22:00 stop.
+    // The 7:00 PM run has three hours to finish before the server stops.
+    @Scheduled(cron = "0 0 8,13,19 * * *", zone = "Asia/Kolkata")
     public void runDailySync() {
-        System.out.println("[Scheduler] Starting daily automated Tender synchronizations at 8:00 AM IST...");
+        System.out.println("[Scheduler] Starting scheduled Tender sync (8:00 AM, 1:00 PM, 7:00 PM IST)...");
         performSync();
     }
 

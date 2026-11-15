@@ -3,6 +3,10 @@ services:
     image: postgres:16-alpine
     container_name: tender-pocket-postgres
     restart: always
+    # On shutdown (the server is stopped every night at 22:00 IST) PostgreSQL gets SIGINT, finishes
+    # a clean "fast shutdown" and writes a checkpoint. Docker's default 10s can kill it part-way;
+    # 60s lets it finish, so the next start needs no crash recovery.
+    stop_grace_period: 60s
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-tender_pocket}
       POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
@@ -24,6 +28,8 @@ services:
     container_name: tender-pocket-backend
     mem_limit: 5g
     restart: always
+    # Time for Spring's graceful shutdown (20s, see application.properties) before Docker kills it.
+    stop_grace_period: 30s
     depends_on:
       postgres:
         condition: service_healthy

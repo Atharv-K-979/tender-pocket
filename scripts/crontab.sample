@@ -2,7 +2,7 @@
 # Tender Pocket — PostgreSQL Backup & Automated Restore Verification Crontab
 # ==============================================================================
 # Target Environment: AWS EC2 Ubuntu Host (/home/ubuntu/tender-pocket)
-# Timezone: Asia/Kolkata (IST)
+# Times: written in UTC (the EC2 clock), shown in IST in the comments. See "SCHEDULE" below.
 # Dedicated S3 Bucket: POSTGRES_BACKUP_S3_BUCKET (e.g. tender-pocket-postgres-backups)
 #
 # Pre-requisites on EC2 host before installation:
@@ -21,6 +21,17 @@
 #      (Paste the block below, verifying PROJECT_DIR matches deployment path)
 #   6. Verify installation:
 #      crontab -l
+#   7. Check the server clock is UTC (the times below assume it):
+#      timedatectl | grep "Time zone"        -> Etc/UTC (UTC, +0000)
+#   8. Set PROJECT_DIR below to the folder that holds docker-compose.yml. To find it:
+#      docker inspect tender-pocket-backend --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'
+#
+# SCHEDULE:
+#   The EC2 server is stopped every night from 22:00 to 07:00 IST by EventBridge Scheduler
+#   (DEPLOYMENT.md section 46). A job set inside that window never runs, so all three jobs run
+#   between 21:00 and 21:30 IST, while PostgreSQL is still up.
+#   Ubuntu's cron ignores CRON_TZ and uses the server clock, which is UTC on EC2. So the times
+#   are written in UTC: IST = UTC + 5:30, and 21:00 IST is 15:30 UTC on the same date.
 #
 # IMPORTANT OPERATIONAL NOTE:
 #   This file is a reference sample only. Having this sample file present in the
@@ -30,17 +41,18 @@
 
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin
-CRON_TZ=Asia/Kolkata
 PROJECT_DIR=/home/ubuntu/tender-pocket
 
 # 1. Daily Full PostgreSQL Backup (Includes weekly recovery point archiving on Sundays)
-# Executes every night at 02:00 AM IST (02:00 Asia/Kolkata)
-0 2 * * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-backup-daily.py >> $PROJECT_DIR/logs/backup-daily.log 2>&1
+# Executes every day at 21:00 IST (15:30 UTC), before the 22:00 IST server stop
+30 15 * * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-backup-daily.py >> $PROJECT_DIR/logs/backup-daily.log 2>&1
 
 # 2. Monthly Full PostgreSQL Backup
-# Executes on the 1st of every month at 03:00 AM IST (03:00 Asia/Kolkata)
-0 3 1 * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-backup-monthly.py >> $PROJECT_DIR/logs/backup-monthly.log 2>&1
+# Executes on the 1st of every month at 21:20 IST (15:50 UTC)
+50 15 1 * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-backup-monthly.py >> $PROJECT_DIR/logs/backup-monthly.log 2>&1
 
 # 3. Monthly Isolated Restore Verification Test
-# Executes on the 1st of every month at 05:00 AM IST (05:00 Asia/Kolkata)
-0 5 1 * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-restore-test.py >> $PROJECT_DIR/logs/restore-test.log 2>&1
+# Executes on the 2nd of every month at 21:30 IST (16:00 UTC). It restores the newest local
+# backup into a scratch database (never the live one), so on the 2nd it tests that day's
+# 21:00 backup. It runs on the 2nd so it does not overlap the 1st's monthly backup.
+0 16 2 * * cd $PROJECT_DIR && /usr/bin/env python3 $PROJECT_DIR/scripts/postgres-restore-test.py >> $PROJECT_DIR/logs/restore-test.log 2>&1

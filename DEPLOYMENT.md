@@ -31,6 +31,7 @@ It covers:
 - smoke testing
 - rollback and recovery
 - final production sign-off
+- office-hours EC2 schedule (stopped 22:00–07:00 IST by EventBridge Scheduler, section 46)
 
 This is a **production** guide. Do not reuse UAT credentials, UAT IP addresses, temporary API keys, or development secrets.
 
@@ -107,7 +108,7 @@ The initial hosting plan uses:
 
 - 2 vCPU
 - 8 GiB RAM
-- always-on EC2
+- EC2 running in office hours only: started at 07:00 IST and stopped at 22:00 IST every day by EventBridge Scheduler (section 46)
 - AWS Mumbai (`ap-south-1`)
 - encrypted gp3 EBS
 - approximately 50–100 GiB initial disk, adjusted for actual PostgreSQL, Docker, temporary-file, and application requirements
@@ -1001,7 +1002,7 @@ The script must not contain hardcoded production passwords or AWS keys.
 
 Use the EC2 IAM role for S3 access.
 
-Schedule it once per night using the approved scheduler.
+Schedule it once per day at 21:00 IST, before the server is stopped at 22:00 IST (section 46). A job set between 22:00 and 07:00 IST never runs. `scripts/crontab.sample` has the daily, monthly and restore-test jobs at 21:00–21:30 IST, written in UTC because Ubuntu's cron uses the server clock (UTC) and ignores `CRON_TZ`.
 
 After enabling it, perform one manual run and verify the object exists in the backup bucket.
 
@@ -1594,6 +1595,326 @@ docker exec tender-pocket-postgres \
 ```
 
 ---
+
+# 46. Office-Hours Schedule (EventBridge Scheduler)
+
+The EC2 server runs from **07:00 to 22:00 IST** every day. Amazon EventBridge Scheduler stops it at 22:00 IST and starts it at 07:00 IST. Stopping is a normal shutdown, like pressing the power button: all data stays on the EBS disk, and the next morning the app comes back in the same state.
+
+Set it up on the **testing EC2 first**. Keep it there for 2–3 nights, run the morning checks in 46.8 every day, and only then repeat it for the client UAT / production EC2.
+
+## 46.1 What happens each day
+
+| Time (IST) | What happens |
+|---|---|
+| 08:00, 13:00, 19:00 | Tender sync (Tender247 mails, then GeM). At 08:00 the due-date and approval alert mails are also sent. |
+| 21:00–21:30 | Host backup jobs, if installed from `scripts/crontab.sample` (section 29). |
+| 22:00 | Scheduler calls `StopInstances`. Ubuntu shuts down normally and Docker stops the three containers at the same time: PostgreSQL does a clean shutdown with a checkpoint (allowed up to 60 s, usually 1–2 s), the backend gives running work up to 20 s and exits (allowed up to 30 s). A save that is in progress at that moment is rolled back as a whole, never half-written. The instance becomes `stopped`. |
+| 22:00–07:00 | Instance stopped. No EC2 compute charge. The EBS disk and the Elastic IP are still billed. The app cannot be opened. |
+| 07:00 | Scheduler calls `StartInstances`. Ubuntu boots in about 30–60 s. Docker starts all three containers (`restart: always`). The backend waits for PostgreSQL (up to 2 minutes) and never uses SQLite. |
+| about 07:01 | Catch-up sync, 15 s after the backend starts. It imports unread Tender247 mails and GeM bids from today and yesterday, so nothing published overnight is missed. |
+
+The hourly update check (`AutoUpdateService`) only downloads and never applies an update, so it simply runs from 07:00 to 22:00.
+
+Not merged yet: the `email-daily-digest` branch adds the 09:00 Due/Pending mails and the hourly "waiting since" refresh at :30 past each hour. Both also fit inside 07:00–22:00. When that branch is deployed, set `NOTIFY_APP_URL` in `.env` to the Elastic IP or domain.
+
+## 46.2 What is kept when the server is stopped
+
+| Data | Where it lives | Kept after stop/start |
+|---|---|---|
+| All tenders, users, approvals, comments, logs | PostgreSQL, Docker volume `postgres_data` on the EBS disk | Yes |
+| Tender documents | Docker volume `backend_documents` (and S3 when enabled) | Yes |
+| Company documents (frontend) | Inside the `tender-pocket-frontend` container | Yes. Stop/start keeps containers. They are lost only if the container is removed (`docker compose down`, or recreating the frontend). |
+| `.env`, code, crontab | Deployment folder and host, on the EBS disk | Yes |
+| Public IP | Elastic IP | Yes. Without an Elastic IP the IP would change every morning. |
+| Memory: open requests, a running sync | RAM | No. Open requests finish during shutdown; a sync that is cut off is safely redone by the morning catch-up (see 46.3). |
+
+## 46.3 Code in this release that makes the schedule safe
+
+| Change | File | Why |
+|---|---|---|
+| The backend waits up to 2 minutes for PostgreSQL and never falls back to SQLite. If PostgreSQL is still down, it exits and Docker starts it again. | `backend/src/main/java/com/tenderpocket/config/DatabaseConfig.java` | At boot Docker starts all containers at once and ignores `depends_on`. Before this change, if PostgreSQL was a few seconds late, the backend silently switched to an empty SQLite file inside the container: users would see no tenders and new work would be lost. |
+| The backend refuses to start if `SPRING_JPA_HIBERNATE_DDL_AUTO` is `create`, `create-drop` or `drop`. | same file | Those settings delete every table at each start, and the backend now starts every morning. Keep it `update`. |
+| `stop_grace_period`: 60 s for `postgres`, 30 s for `tender-pocket-backend` | `docker-compose.yml` | Docker's default 10 s can kill PostgreSQL in the middle of its shutdown. |
+| Graceful shutdown with a 20 s limit | `backend/src/main/resources/application.properties` | At 22:00 the backend stops taking new requests, gives running work up to 20 s, then closes its database connections cleanly, inside Docker's 30 s. |
+| Tender247 mails are read with IMAP "peek" and marked read only after their tenders are saved. A mail that fails stays unread and is retried. | `backend/src/main/java/com/tenderpocket/services/EmailSyncService.java` | Before, a mail counted as read as soon as it was opened, so a sync cut off by the stop could lose that mail's tenders. Tenders already saved are found again, not duplicated. |
+| Tender sync at fixed times: once at startup, then 08:00, 13:00, 19:00 IST | `backend/src/main/java/com/tenderpocket/scheduler/SyncScheduler.java` | The old "6 hours after the previous run" chain drifted and could start just before 22:00. A GeM sync that is cut off is still safe: a saved tender without its bid PDF gets the PDF on the next run. |
+| Backup jobs at 21:00 / 21:20 / 21:30 IST, written in UTC | `scripts/crontab.sample` | Jobs set at 02:00–05:00 IST would never run while the server is off. |
+
+## 46.4 Deploy this release on the server
+
+Deploying recreates the `postgres` and `tender-pocket-backend` containers so the new stop timeouts apply. Data is in the volumes and is kept. The app is down for about 1–2 minutes, so do it outside working hours. Do not run `docker compose down`, and do not recreate the frontend container (it holds the company documents).
+
+From the deployment folder (check 11 in 46.5):
+
+```bash
+git fetch
+git switch <release branch>
+git pull
+docker compose build tender-pocket-backend
+docker compose stop -t 60
+docker compose up -d postgres tender-pocket-backend
+docker compose start tender-pocket-frontend
+docker compose ps
+```
+
+Then check that the new stop timeouts are in place:
+
+```bash
+docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}} {{.Config.StopTimeout}}' \
+  tender-pocket-postgres tender-pocket-backend tender-pocket-frontend
+```
+
+Expected: `/tender-pocket-postgres always 60`, `/tender-pocket-backend always 30`, `/tender-pocket-frontend always <nil>` (Docker's default, 10 s).
+
+## 46.5 Checks before the first scheduled stop
+
+Run these on the server, or in AWS CloudShell for the `aws` commands. Replace `INSTANCE_ID` with the instance ID from check 1.
+
+| # | Check | Command | Expected |
+|---|---|---|---|
+| 1 | Instance ID | EC2 console → Instances → select the server → **Instance ID** | `i-` followed by 17 characters |
+| 2 | Root disk is EBS and the instance is not Spot | `aws ec2 describe-instances --region ap-south-1 --instance-ids INSTANCE_ID --query "Reservations[].Instances[].[RootDeviceType,InstanceLifecycle]" --output text` | `ebs` and `None` |
+| 3 | Elastic IP is attached | `aws ec2 describe-addresses --region ap-south-1 --filters Name=instance-id,Values=INSTANCE_ID --query "Addresses[].PublicIp" --output text` | The IP users open (`13.232.232.54` for client UAT). Empty means no Elastic IP: allocate one and associate it first, and tell users the new address. |
+| 4 | Docker starts at boot | `systemctl is-enabled docker.service containerd.service` | `enabled` twice. If not: `sudo systemctl enable docker.service containerd.service` |
+| 5 | Docker stops containers when the OS shuts down | `docker info --format '{{.LiveRestoreEnabled}}'` | `false` |
+| 6 | Hibernate never drops tables | `docker exec tender-pocket-backend printenv SPRING_JPA_HIBERNATE_DDL_AUTO` | `update` |
+| 7 | A shutdown means "stop", never "terminate" | `aws ec2 describe-instance-attribute --region ap-south-1 --instance-id INSTANCE_ID --attribute instanceInitiatedShutdownBehavior --query InstanceInitiatedShutdownBehavior.Value --output text` | `stop` |
+| 8 | Termination protection is on | `aws ec2 describe-instance-attribute --region ap-south-1 --instance-id INSTANCE_ID --attribute disableApiTermination --query DisableApiTermination.Value --output text` | `True`. If `False`: `aws ec2 modify-instance-attribute --region ap-south-1 --instance-id INSTANCE_ID --disable-api-termination` |
+| 9 | No Savings Plan or Reserved Instance covers the server | `aws savingsplans describe-savings-plans --states active --query "savingsPlans[].savingsPlanId"` and `aws ec2 describe-reserved-instances --region ap-south-1 --filters Name=state,Values=active --query "ReservedInstances[].InstanceType"` | Both empty (`[]`). If not, they are billed anyway and the stop saves nothing until they end. |
+| 10 | Server clock is UTC | `timedatectl` (line `Time zone`) | `Etc/UTC` (the backup cron times assume UTC) |
+| 11 | Deployment folder | `docker inspect tender-pocket-backend --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'` | The folder that holds `docker-compose.yml` and `.env` (this guide uses `/opt/tender-pocket`) |
+| 12 | Encryption key of the disk | `aws ec2 describe-volumes --region ap-south-1 --filters Name=attachment.instance-id,Values=INSTANCE_ID --query "Volumes[].[Encrypted,KmsKeyId]" --output text` | Not encrypted, or the AWS managed key (`alias/aws/ebs`): nothing to do. A customer managed key: add the KMS statement in 46.6, otherwise the 07:00 start fails. |
+
+## 46.6 IAM role for the scheduler
+
+The scheduler uses its own role, which can only start and stop this one instance.
+
+**Trust policy** (`scheduler-trust.json`). Replace `ACCOUNT_ID` with the 12-digit AWS account ID:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "scheduler.amazonaws.com" },
+      "Action": "sts:AssumeRole",
+      "Condition": { "StringEquals": { "aws:SourceAccount": "ACCOUNT_ID" } }
+    }
+  ]
+}
+```
+
+**Permissions policy** (`scheduler-start-stop.json`):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StartStopTenderPocketServerOnly",
+      "Effect": "Allow",
+      "Action": ["ec2:StartInstances", "ec2:StopInstances"],
+      "Resource": "arn:aws:ec2:ap-south-1:ACCOUNT_ID:instance/INSTANCE_ID"
+    }
+  ]
+}
+```
+
+Only if check 12 found a customer managed KMS key, add this statement to the `Statement` list (replace `KEY_ID`):
+
+```json
+{
+  "Sid": "UseEncryptedRootDisk",
+  "Effect": "Allow",
+  "Action": "kms:CreateGrant",
+  "Resource": "arn:aws:kms:ap-south-1:ACCOUNT_ID:key/KEY_ID",
+  "Condition": { "Bool": { "kms:GrantIsForAWSResource": "true" } }
+}
+```
+
+To schedule a second server later (client UAT after testing), list both instance ARNs in `Resource`: `["arn:aws:ec2:ap-south-1:ACCOUNT_ID:instance/TESTING_ID", "arn:aws:ec2:ap-south-1:ACCOUNT_ID:instance/UAT_ID"]`.
+
+**Console:**
+
+1. IAM → **Roles** → **Create role**.
+2. Trusted entity type: **Custom trust policy**. Paste the trust policy. **Next**.
+3. Skip the permissions page. **Next**.
+4. Role name: `TenderPocketEC2SchedulerRole`. **Create role**.
+5. Open the role → **Add permissions** → **Create inline policy** → **JSON**. Paste the permissions policy. **Next**.
+6. Policy name: `StartStopTenderPocketServer`. **Create policy**.
+
+**CLI** (with the two JSON files in the current folder):
+
+```bash
+aws iam create-role --role-name TenderPocketEC2SchedulerRole \
+  --assume-role-policy-document file://scheduler-trust.json
+aws iam put-role-policy --role-name TenderPocketEC2SchedulerRole \
+  --policy-name StartStopTenderPocketServer \
+  --policy-document file://scheduler-start-stop.json
+```
+
+## 46.7 Create the two schedules
+
+| | Stop schedule | Start schedule |
+|---|---|---|
+| Name | `tender-pocket-stop-2200-ist` | `tender-pocket-start-0700-ist` |
+| Cron expression | `cron(0 22 * * ? *)` | `cron(0 7 * * ? *)` |
+| Time zone | `Asia/Kolkata` | `Asia/Kolkata` |
+| Flexible time window | Off | Off |
+| Target (universal target) | `arn:aws:scheduler:::aws-sdk:ec2:stopInstances` | `arn:aws:scheduler:::aws-sdk:ec2:startInstances` |
+| Input | `{"InstanceIds": ["INSTANCE_ID"]}` | `{"InstanceIds": ["INSTANCE_ID"]}` |
+| Retry policy | Maximum age of event 30 minutes, 5 retries | Maximum age of event 30 minutes, 5 retries |
+| Role | `TenderPocketEC2SchedulerRole` | `TenderPocketEC2SchedulerRole` |
+
+Two settings matter:
+
+- **Input has `InstanceIds` only.** Never add `Force` or `SkipOsShutdown`: the server must shut down normally so PostgreSQL stops cleanly.
+- **Maximum age of event 30 minutes.** The default keeps retrying for 24 hours, so a stop that failed at 22:00 could be retried during the next working day and take the app down.
+
+**Console** (region **Asia Pacific (Mumbai) ap-south-1**). Do this once for the stop schedule and once for the start schedule:
+
+1. Amazon EventBridge → **Scheduler** → **Schedules** → **Create schedule**.
+2. **Schedule name**: from the table. **Schedule group**: `default`.
+3. **Occurrence**: Recurring schedule. **Time zone**: `(UTC+05:30) Asia/Kolkata`. **Schedule type**: Cron-based schedule.
+4. **Cron expression**: minutes `0`, hours `22` (start: `7`), day of month `*`, month `*`, day of the week `?`, year `*`. Check that the next trigger dates shown are at 22:00 (start: 07:00) IST.
+5. **Flexible time window**: Off. **Next**.
+6. **Target detail**: **All APIs** → search `EC2` → **Amazon EC2** → **StopInstances** (start: **StartInstances**).
+7. **Input**: `{"InstanceIds": ["INSTANCE_ID"]}`. **Next**.
+8. **Enable schedule**: on. **Action after schedule completion**: NONE.
+9. **Retry policy**: on. **Maximum age of event**: 0 hours 30 minutes. **Retry attempts**: 5. **Dead-letter queue**: None (or the queue from 46.9).
+10. **Permissions**: **Use existing role** → `TenderPocketEC2SchedulerRole`. **Next**.
+11. Review and **Create schedule**.
+
+**CLI** (AWS CloudShell in ap-south-1 is easiest). Set the three values, write the two target files, then create the schedules:
+
+```bash
+REGION=ap-south-1
+INSTANCE_ID=i-xxxxxxxxxxxxxxxxx
+ROLE_ARN=arn:aws:iam::ACCOUNT_ID:role/TenderPocketEC2SchedulerRole
+
+for ACTION in stop start; do
+cat > "$ACTION-target.json" <<EOF
+{
+  "Arn": "arn:aws:scheduler:::aws-sdk:ec2:${ACTION}Instances",
+  "RoleArn": "$ROLE_ARN",
+  "Input": "{\"InstanceIds\":[\"$INSTANCE_ID\"]}",
+  "RetryPolicy": { "MaximumEventAgeInSeconds": 1800, "MaximumRetryAttempts": 5 }
+}
+EOF
+done
+
+aws scheduler create-schedule --region "$REGION" \
+  --name tender-pocket-stop-2200-ist \
+  --description "Stop the TenderPocket EC2 at 22:00 IST" \
+  --schedule-expression "cron(0 22 * * ? *)" \
+  --schedule-expression-timezone Asia/Kolkata \
+  --flexible-time-window Mode=OFF \
+  --target file://stop-target.json \
+  --state ENABLED
+
+aws scheduler create-schedule --region "$REGION" \
+  --name tender-pocket-start-0700-ist \
+  --description "Start the TenderPocket EC2 at 07:00 IST" \
+  --schedule-expression "cron(0 7 * * ? *)" \
+  --schedule-expression-timezone Asia/Kolkata \
+  --flexible-time-window Mode=OFF \
+  --target file://start-target.json \
+  --state ENABLED
+
+aws scheduler list-schedules --region "$REGION" --name-prefix tender-pocket \
+  --query "Schedules[].[Name,State]" --output table
+```
+
+## 46.8 Test it
+
+**Day 0: a daytime dry run on the testing EC2.** One-time schedules run the full stop and start in about 15 minutes, so you do not have to wait for the night.
+
+1. On the server, save the current state:
+
+   ```bash
+   cd ~
+   docker exec tender-pocket-postgres psql -U postgres -d tender_pocket -At \
+     -c "SELECT id FROM tenders" | sort > tender-ids-before.txt
+   docker exec tender-pocket-postgres psql -U postgres -d tender_pocket -At -c "
+     SELECT 'tenders', COUNT(*) FROM tenders UNION ALL
+     SELECT 'users', COUNT(*) FROM users UNION ALL
+     SELECT 'approval requests', COUNT(*) FROM tender_approval_requests UNION ALL
+     SELECT 'workflow states', COUNT(*) FROM tender_workflow_states UNION ALL
+     SELECT 'workflow comments', COUNT(*) FROM tender_workflow_comments UNION ALL
+     SELECT 'status history', COUNT(*) FROM status_history UNION ALL
+     SELECT 'activity log', COUNT(*) FROM activity_log" > counts-before.txt
+   cat counts-before.txt
+   ```
+
+2. In CloudShell, using the target files from 46.7, create a stop about 10 minutes from now and a start 5 minutes after it. Write the times in IST as `yyyy-mm-ddThh:mm:ss`:
+
+   ```bash
+   aws scheduler create-schedule --region ap-south-1 --name tender-pocket-test-stop \
+     --schedule-expression "at(2026-11-17T15:00:00)" --schedule-expression-timezone Asia/Kolkata \
+     --flexible-time-window Mode=OFF --target file://stop-target.json --action-after-completion DELETE
+   aws scheduler create-schedule --region ap-south-1 --name tender-pocket-test-start \
+     --schedule-expression "at(2026-11-17T15:05:00)" --schedule-expression-timezone Asia/Kolkata \
+     --flexible-time-window Mode=OFF --target file://start-target.json --action-after-completion DELETE
+   ```
+
+3. Watch EC2 console → Instances: `running` → `stopping` → `stopped`, then `pending` → `running`. The test schedules delete themselves after they run.
+4. About 2 minutes after the start, run the morning checks below.
+
+**Nights 1–3:** create the recurring schedules (46.7). Save the "before" files from step 1 at about 21:50, and run the morning checks every day at about 07:15.
+
+**Morning checks:**
+
+| # | Check | How | Expected |
+|---|---|---|---|
+| 1 | The scheduler stopped and started the server | CloudTrail → **Event history** → Event name `StopInstances`, then `StartInstances` | One of each, at 22:00:xx and 07:00:xx IST. **User name** is a `TenderPocketEC2SchedulerRole` session. |
+| 2 | Server is up | EC2 console → Instances | `Running`, status checks passed, same Elastic IP |
+| 3 | All containers are up | `docker ps --format '{{.Names}}  {{.Status}}'` | 3 containers `Up`, backend `(healthy)` |
+| 4 | PostgreSQL shut down cleanly | `docker logs --since 12h tender-pocket-postgres 2>&1 \| grep -E "shut down\|interrupted\|redo starts"` | `database system was shut down at …`. Not `was interrupted` or `redo starts`: those mean PostgreSQL was killed and recovered. The data is still safe, but report it. |
+| 5 | Backend is on PostgreSQL, not SQLite | `docker logs --since 1h tender-pocket-backend 2>&1 \| grep -F "[DatabaseConfig]"` | `Configured PostgreSQL DataSource successfully`, maybe after a few `PostgreSQL is not ready yet` lines. Never `Configured SQLite DataSource` or `Falling back to SQLite` (the old code). The `[Database Migration] … normalized SQLite timestamps` line is normal. |
+| 6 | Backend is healthy | `docker exec tender-pocket-backend wget -qO- http://localhost:8090/api/health` | `status` `UP` and `database` `UP` |
+| 7 | Catch-up sync ran | `docker logs --since 1h tender-pocket-backend 2>&1 \| grep -F "[Scheduler]"` | `Running startup catch-up Tender sync...`, then `Email Sync completed` and `GeM Sync completed` |
+| 8 | No tender lost | `docker exec tender-pocket-postgres psql -U postgres -d tender_pocket -At -c "SELECT id FROM tenders" \| sort > tender-ids-after.txt` then `comm -23 tender-ids-before.txt tender-ids-after.txt` | Prints nothing: every tender ID from before is still there. |
+| 9 | Counts | Run the counts query from step 1 again and compare with `counts-before.txt` | Equal or higher (the catch-up sync and users add rows), never lower |
+| 10 | App works | Open `http://<Elastic IP>:8085`, log in, open a few tenders and documents | Same data as the evening before |
+| 11 | Mails | 08:00 alert mails | Arrive as before |
+
+After a few days, open **Billing → Cost Explorer**: service EC2-Instances, granularity Daily, group by Usage type. `BoxUsage:m7i.large` should be about 15 hours a day instead of 24.
+
+## 46.9 Alerts (recommended)
+
+**Email when the server stops or starts.** If the "running" mail is missing in the morning, the start failed.
+
+1. SNS → **Topics** → **Create topic** → Standard → name `tender-pocket-alerts` → **Create topic**. Then **Create subscription** → Protocol **Email** → your address, and confirm the mail AWS sends.
+2. EventBridge → **Rules** → **Create rule** → name `tender-pocket-ec2-state` → **Rule with an event pattern** → **Custom pattern (JSON editor)**:
+
+   ```json
+   {
+     "source": ["aws.ec2"],
+     "detail-type": ["EC2 Instance State-change Notification"],
+     "detail": {
+       "state": ["running", "stopped"],
+       "instance-id": ["INSTANCE_ID"]
+     }
+   }
+   ```
+
+3. Target: **SNS topic** → `tender-pocket-alerts` → **Create rule**.
+
+**Failed scheduler calls (optional).** Create an SQS queue `tender-pocket-scheduler-dlq`, choose it as the **Dead-letter queue** of both schedules (46.7 step 9), and add a CloudWatch alarm on the queue's `ApproximateNumberOfMessagesVisible` ≥ 1 that notifies `tender-pocket-alerts`.
+
+## 46.10 Pause, undo, or start the server at night
+
+| Need | Do |
+|---|---|
+| Server needed at night once | EC2 console → Instances → **Instance state** → **Start**. It runs until the next 22:00 stop. |
+| Server needed past 22:00 tonight | EventBridge → Scheduler → Schedules → `tender-pocket-stop-2200-ist` → **Disable**. **Enable** it again the next day. |
+| Stop using the schedule | **Disable** both schedules, or delete them with `aws scheduler delete-schedule --region ap-south-1 --name <name>`. Start the instance if it is stopped. The app then runs 24/7 as before; the code changes in 46.3 work for that too. |
+
+Costs (from the cost report): on-demand m7i.large in Mumbai is $0.1061/hour, so the 9 stopped hours save about $29 a month. The EBS disk and the Elastic IP are billed all the time, and the scheduler stays inside the free tier.
+
+---
+
 
 ## Production principle
 

@@ -72,6 +72,10 @@ public class EmailSyncService {
         properties.put("mail.imaps.ssl.enable", "true");
         properties.put("mail.imaps.connectiontimeout", "5000");
         properties.put("mail.imaps.timeout", "5000");
+        // Fetch mail bodies without marking them read. A mail is marked read only after all of
+        // its tenders are saved, so a sync that is cut off (for example by the nightly server
+        // stop) does not leave a mail marked read with its tenders missing.
+        properties.put("mail.imaps.peek", "true");
 
         Session emailSession = Session.getInstance(properties);
         Store store = emailSession.getStore("imaps");
@@ -144,92 +148,100 @@ public class EmailSyncService {
                     continue;
                 }
 
-                String content = getTextFromMessage(msg);
-                List<Map<String, String>> tenders = extractTendersFromEmailHtml(content);
-                System.out.println(String.format("Extracted %d tenders from email.", tenders.size()));
+                // Each mail is imported on its own. If a mail fails part-way (for example because the
+                // server is being stopped for the night), it stays unread and the next sync imports it
+                // again; tenders already saved from it are found and updated, not duplicated.
+                try {
+                    String content = getTextFromMessage(msg);
+                    List<Map<String, String>> tenders = extractTendersFromEmailHtml(content);
+                    System.out.println(String.format("Extracted %d tenders from email.", tenders.size()));
 
-                for (Map<String, String> tData : tenders) {
-                    String id = tData.get("id");
-                    String link = tData.get("url");
-                    String refNo = tData.getOrDefault("ref_no", "").trim();
-                    String title = tData.getOrDefault("title", "Tender " + id);
-                    String nameofWebsite = tData.getOrDefault("nameof_website", "");
+                    for (Map<String, String> tData : tenders) {
+                        String id = tData.get("id");
+                        String link = tData.get("url");
+                        String refNo = tData.getOrDefault("ref_no", "").trim();
+                        String title = tData.getOrDefault("title", "Tender " + id);
+                        String nameofWebsite = tData.getOrDefault("nameof_website", "");
 
-                    if (id == null || link == null) continue;
+                        if (id == null || link == null) continue;
 
-                    // If refNo is still blank, attempt to extract a GeM bid number from the title or link
-                    if (refNo.isEmpty()) {
-                        String extracted = TenderClassifier.extractGemBidNumber(title, link);
-                        if (extracted != null) {
-                            refNo = extracted;
+                        // If refNo is still blank, attempt to extract a GeM bid number from the title or link
+                        if (refNo.isEmpty()) {
+                            String extracted = TenderClassifier.extractGemBidNumber(title, link);
+                            if (extracted != null) {
+                                refNo = extracted;
+                            }
                         }
-                    }
 
-                    // Cross-source deduplication check:
-                    // 1) Match by official refNo (e.g. GeM bid number) if available and not a placeholder
-                    // 2) Match by primary key id (Tender247 ID) ONLY if existing record belongs to Tender247 namespace or refNo matches
-                    // 3) Match by sourceId ONLY if existing record belongs to Tender247 namespace or refNo matches
-                    Optional<Tender> existingOpt = Optional.empty();
-                    if (!TenderClassifier.isPlaceholderRefNo(refNo)) {
-                        existingOpt = tenderRepository.findFirstByRefNo(refNo);
-                    }
-                    if (existingOpt.isEmpty() && id != null && !id.isBlank()) {
-                        Optional<Tender> byId = tenderRepository.findById(id);
-                        if (byId.isPresent() && isLegitimateT247Match(byId.get(), id, refNo)) {
-                            existingOpt = byId;
+                        // Cross-source deduplication check:
+                        // 1) Match by official refNo (e.g. GeM bid number) if available and not a placeholder
+                        // 2) Match by primary key id (Tender247 ID) ONLY if existing record belongs to Tender247 namespace or refNo matches
+                        // 3) Match by sourceId ONLY if existing record belongs to Tender247 namespace or refNo matches
+                        Optional<Tender> existingOpt = Optional.empty();
+                        if (!TenderClassifier.isPlaceholderRefNo(refNo)) {
+                            existingOpt = tenderRepository.findFirstByRefNo(refNo);
                         }
-                    }
-                    if (existingOpt.isEmpty() && id != null && !id.isBlank()) {
-                        Optional<Tender> bySourceId = tenderRepository.findFirstBySourceId(id);
-                        if (bySourceId.isPresent() && isLegitimateT247Match(bySourceId.get(), id, refNo)) {
-                            existingOpt = bySourceId;
+                        if (existingOpt.isEmpty() && id != null && !id.isBlank()) {
+                            Optional<Tender> byId = tenderRepository.findById(id);
+                            if (byId.isPresent() && isLegitimateT247Match(byId.get(), id, refNo)) {
+                                existingOpt = byId;
+                            }
                         }
+                        if (existingOpt.isEmpty() && id != null && !id.isBlank()) {
+                            Optional<Tender> bySourceId = tenderRepository.findFirstBySourceId(id);
+                            if (bySourceId.isPresent() && isLegitimateT247Match(bySourceId.get(), id, refNo)) {
+                                existingOpt = bySourceId;
+                            }
+                        }
+
+                        if (existingOpt.isPresent()) {
+                            Tender existing = existingOpt.get();
+                            enrichExistingRecordFromTender247(existing, tData, refNo, link);
+                            tenderRepository.save(existing);
+                            System.out.println(String.format("[EmailSync] Enriched existing tender id=%s refNo=%s with classification=%s",
+                                    existing.getId(), existing.getRefNo(), existing.getTenderType()));
+                            continue;
+                        }
+
+                        // Prevent primary key collision with unrelated tender from another namespace
+                        String tenderId = id;
+                        if (tenderRepository.existsById(id)) {
+                            tenderId = "t247-" + id;
+                        }
+
+                        Tender tender = new Tender();
+                        tender.setId(tenderId);
+                        tender.setSourceId(id);
+                        tender.setRefNo(refNo);
+                        tender.setTitle(title);
+                        tender.setAuthority(tData.getOrDefault("authority", ""));
+                        tender.setEstimatedCost(null);
+                        tender.setEstimatedCostRaw(tData.getOrDefault("estimated_cost_raw", "N/A"));
+                        tender.setEmd(null);
+                        tender.setEmdRaw(tData.getOrDefault("emd_raw", "N/A"));
+                        tender.setDocumentFee(null);
+                        tender.setDocumentFeeRaw(tData.getOrDefault("document_fee_raw", "N/A"));
+                        tender.setLocation(tData.getOrDefault("location", "N/A"));
+                        tender.setSector(nameofWebsite.isEmpty() ? null : nameofWebsite);
+                        tender.setDueDate(tData.getOrDefault("due_date", ""));
+                        tender.setOpeningDate(null);
+                        tender.setDocumentUrl(null);
+                        tender.setOriginalUrl(link);
+                        tender.setStatus("Issued");
+                        tender.setScrapedAt(new Date().toString());
+                        tender.setEntryDate(LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy")));
+                        tender.setSource("Tender247");
+
+                        tenderRepository.save(tender);
+                        tendersImported++;
                     }
 
-                    if (existingOpt.isPresent()) {
-                        Tender existing = existingOpt.get();
-                        enrichExistingRecordFromTender247(existing, tData, refNo, link);
-                        tenderRepository.save(existing);
-                        System.out.println(String.format("[EmailSync] Enriched existing tender id=%s refNo=%s with classification=%s",
-                                existing.getId(), existing.getRefNo(), existing.getTenderType()));
-                        continue;
-                    }
-
-                    // Prevent primary key collision with unrelated tender from another namespace
-                    String tenderId = id;
-                    if (tenderRepository.existsById(id)) {
-                        tenderId = "t247-" + id;
-                    }
-
-                    Tender tender = new Tender();
-                    tender.setId(tenderId);
-                    tender.setSourceId(id);
-                    tender.setRefNo(refNo);
-                    tender.setTitle(title);
-                    tender.setAuthority(tData.getOrDefault("authority", ""));
-                    tender.setEstimatedCost(null);
-                    tender.setEstimatedCostRaw(tData.getOrDefault("estimated_cost_raw", "N/A"));
-                    tender.setEmd(null);
-                    tender.setEmdRaw(tData.getOrDefault("emd_raw", "N/A"));
-                    tender.setDocumentFee(null);
-                    tender.setDocumentFeeRaw(tData.getOrDefault("document_fee_raw", "N/A"));
-                    tender.setLocation(tData.getOrDefault("location", "N/A"));
-                    tender.setSector(nameofWebsite.isEmpty() ? null : nameofWebsite);
-                    tender.setDueDate(tData.getOrDefault("due_date", ""));
-                    tender.setOpeningDate(null);
-                    tender.setDocumentUrl(null);
-                    tender.setOriginalUrl(link);
-                    tender.setStatus("Issued");
-                    tender.setScrapedAt(new Date().toString());
-                    tender.setEntryDate(LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy")));
-                    tender.setSource("Tender247");
-
-                    tenderRepository.save(tender);
-                    tendersImported++;
+                    // Mark processed email as read
+                    msg.setFlag(Flags.Flag.SEEN, true);
+                } catch (Exception e) {
+                    System.err.println(String.format("[EmailSync] Could not import email \"%s\" from %s: %s. It stays unread and will be retried on the next sync.",
+                            subject, from, e.getMessage() != null ? e.getMessage() : e.toString()));
                 }
-
-                // Mark processed email as read
-                msg.setFlag(Flags.Flag.SEEN, true);
             }
 
             inbox.close(true);
