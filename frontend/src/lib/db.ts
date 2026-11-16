@@ -370,6 +370,11 @@ export interface Tender {
   final_tech_spec_uploaded_by?: string | null;
   final_tech_spec_uploaded_at?: string | null;
   spec_compliance_type?: string | null;
+  // Brochure step (after Clearance, before the bid package). null = cleared before the step existed.
+  brochure_status?: 'Pending' | 'Uploaded' | null;
+  brochure_filename?: string | null;
+  brochure_uploaded_by?: string | null;
+  brochure_uploaded_at?: string | null;
   emd_applicable?: boolean;
   emd_beneficiary_name?: string | null;
   emd_receipt_doc_path?: string | null;

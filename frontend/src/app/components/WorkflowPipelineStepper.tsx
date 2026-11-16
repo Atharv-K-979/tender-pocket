@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Tender } from '@/lib/db';
-import { PIPELINE_STEPS, resolveTenderStageDetails } from '@/lib/tenderStatus';
+import { PIPELINE_STEPS, isBrochurePending, isBrochureUploaded, resolveTenderStageDetails } from '@/lib/tenderStatus';
 import { AlertCircle, Clock, CheckCircle2, ShieldCheck, Calculator, Lock } from 'lucide-react';
 
 interface WorkflowPipelineStepperProps {
@@ -21,6 +21,9 @@ export default function WorkflowPipelineStepper({
   onActionClick
 }: WorkflowPipelineStepperProps) {
   const stage = resolveTenderStageDetails(tender, currentUser?.role);
+  // The brochure runs in parallel with the pipeline, so it is shown as a badge, not as a step
+  const brochurePending = isBrochurePending(tender);
+  const brochureUploaded = isBrochureUploaded(tender);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%' }}>
@@ -30,6 +33,22 @@ export default function WorkflowPipelineStepper({
             Current Stage: <strong style={{ color: stage.statusColor }}>{stage.stageName}</strong>
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {(brochurePending || brochureUploaded) && (
+              <span
+                title="The Brochure Team uploads the brochure in parallel. It does not block any step."
+                style={{
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  padding: '2px 6px',
+                  borderRadius: '8px',
+                  backgroundColor: brochureUploaded ? 'rgba(16, 185, 129, 0.1)' : 'rgba(20, 184, 166, 0.1)',
+                  color: brochureUploaded ? '#10b981' : '#14b8a6',
+                  border: `1px solid ${brochureUploaded ? 'rgba(16, 185, 129, 0.3)' : 'rgba(20, 184, 166, 0.3)'}`
+                }}
+              >
+                {brochureUploaded ? 'Brochure ✓' : 'Brochure Pending'}
+              </span>
+            )}
             {stage.isEmdSkipped && (
               <span style={{
                 fontSize: '10px',

@@ -31,10 +31,11 @@ import {
   SlidersHorizontal,
   Users,
   Package,
-  Check
+  Check,
+  BookOpen
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
-import { PIPELINE_STEPS, resolveTenderStageDetails } from '@/lib/tenderStatus';
+import { PIPELINE_STEPS, isBrochurePending, resolveTenderStageDetails } from '@/lib/tenderStatus';
 import { getClassificationDisplay, getSourceBadgeLabel } from '@/lib/tenderClassification';
 
 interface StatusDashboardProps {
@@ -191,6 +192,9 @@ export default function StatusDashboard({
     const stage5Count = tendersWithStage.filter(i => i.stage.stageNumber === 5 && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined).length;
     const stage6Count = tendersWithStage.filter(i => i.stage.stageNumber === 6 && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined).length;
 
+    // Brochure runs in parallel with Steps 3-6: active tenders still waiting for the Brochure Team
+    const brochurePendingCount = tendersWithStage.filter(i => isBrochurePending(i.tender) && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined).length;
+
     // Post-Submission & Outcome counts (Step 7 + Terminal)
     const stage7EvaluationCount = tendersWithStage.filter(i => (i.stage.stageKey === 'SUBMITTED' || i.flags.isSubmitted) && !i.flags.isWon && !i.flags.isLost).length;
     const wonCount = tendersWithStage.filter(i => i.flags.isWon).length;
@@ -284,6 +288,18 @@ export default function StatusDashboard({
         iconColor: '#06b6d4',
         bgColor: 'rgba(6, 182, 212, 0.12)',
         filterFn: (i: any) => i.stage.stageNumber === 6 && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined
+      },
+      {
+        key: 'BROCHURE_PARALLEL',
+        title: 'Brochure (Parallel)',
+        group: 'PIPELINE',
+        count: brochurePendingCount,
+        trend: 'Runs alongside Steps 3–6',
+        subText: 'Pending Brochure Upload',
+        icon: BookOpen,
+        iconColor: '#14b8a6',
+        bgColor: 'rgba(20, 184, 166, 0.12)',
+        filterFn: (i: (typeof tendersWithStage)[number]) => isBrochurePending(i.tender) && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined
       },
 
       // ── POST-SUBMISSION EVALUATION & FINAL OUTCOME STATUS CARDS ──
@@ -1139,6 +1155,17 @@ export default function StatusDashboard({
                           )}
                         </span>
                       </div>
+
+                      {/* Brochure (parallel): shown once the Brochure Team has been asked for it */}
+                      {(tender.brochure_status === 'Pending' || tender.brochure_status === 'Uploaded') && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <BookOpen size={14} style={{ color: tender.brochure_status === 'Uploaded' ? '#10b981' : '#14b8a6', flexShrink: 0 }} />
+                          <span style={{ color: 'var(--text-muted)' }}>Brochure:</span>
+                          <span style={{ fontWeight: '600', color: tender.brochure_status === 'Uploaded' ? '#10b981' : '#14b8a6' }}>
+                            {tender.brochure_status === 'Uploaded' ? 'Uploaded ✓' : 'Pending Upload'}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Dual-Track Pricing Route & Final Price (if in Step 5 or beyond) */}
                       {stage.stageNumber >= 5 && (

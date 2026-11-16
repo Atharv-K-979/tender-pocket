@@ -2,7 +2,7 @@ import { getAuthFromRequest, type AuthInfo } from '@/lib/auth';
 
 export type WorkflowAction = 'viewTenders' | 'uploadSpecs' | 'approveSpecs' | 'setTpcPrice'
   | 'viewTpcPrice' | 'setMisPrice' | 'generateBids' | 'reviewBids' | 'recordPayment'
-  | 'recordSubmission' | 'recordOutcome' | 'manageUsers' | 'viewAudit';
+  | 'recordSubmission' | 'recordOutcome' | 'manageUsers' | 'viewAudit' | 'uploadBrochure';
 
 export function canonicalRole(role: string | null | undefined): string {
   switch ((role || '').replace(/^ROLE_/i, '').replace(/_/g, ' ').trim().toLowerCase()) {
@@ -21,6 +21,8 @@ export function canonicalRole(role: string | null | undefined): string {
     case 'tpc pricing':
     case 'tpc team':
     case 'tpc pricing team': return 'TPC Pricing Team';
+    case 'brochure':
+    case 'brochure team': return 'Brochure Team';
     default: return '';
   }
 }
@@ -44,6 +46,7 @@ export function canPerform(role: string | null | undefined, action: WorkflowActi
     case 'recordPayment':
     case 'recordSubmission':
     case 'recordOutcome': return canonical === 'MIS Team';
+    case 'uploadBrochure': return canonical === 'Brochure Team';
     default: return false;
   }
 }
