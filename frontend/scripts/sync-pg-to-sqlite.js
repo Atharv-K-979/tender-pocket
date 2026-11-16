@@ -8,7 +8,7 @@ const path = require('path');
 
     const backendUrl = process.env.BACKEND_URL || (process.env.SPRING_PORT ? `http://localhost:${process.env.SPRING_PORT}` : 'http://localhost:8090');
     console.log(`Connecting to Spring Boot backend at ${backendUrl}...`);
-    const adminPwd = process.env.ADMIN_PASSWORD || process.env.ADMIN_DEFAULT_PASSWORD || 'Marken@123$';
+    const adminPwd = process.env.ADMIN_PASSWORD || process.env.ADMIN_DEFAULT_PASSWORD || '';
     const loginRes = await fetch(`${backendUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

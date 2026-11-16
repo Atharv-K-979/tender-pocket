@@ -63,7 +63,7 @@ TenderPocket was transformed from a preliminary tender tracking prototype into a
 
 ### 1. Role Architecture & Provisioning
 - Introduced the `Clearance Team` (alias `Specification Team`) role.
-- Seeded default test account: `clearance` / `clearance123`.
+- Seeded default test account: `clearance` (password from `CLEARANCE_DEFAULT_PASSWORD`).
 - Updated authentication validators in both frontend (`lib/auth.ts`) and backend (`JwtRequestFilter.java`, `ApprovalController.java`).
 
 ### 2. Specification Upload & Request Pipeline
@@ -89,7 +89,7 @@ TenderPocket was transformed from a preliminary tender tracking prototype into a
 
 ### 1. Role Architecture & Provisioning
 - Introduced the `TPC Pricing Team` (`TPC Team`) role.
-- Seeded default test account: `tpc` / `tpc123`.
+- Seeded default test account: `tpc` (password from `TPC_DEFAULT_PASSWORD`).
 - Dedicated workflow responsibility: contacting OEMs, evaluating technical equipment costs, and submitting manufacturer purchase quotes.
 
 ### 2. TPC Pricing Submission Pipeline

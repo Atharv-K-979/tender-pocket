@@ -206,7 +206,11 @@ console.log('SQLite tender_approval_requests populated successfully.');
 const backendUrl = process.env.BACKEND_URL || (process.env.SPRING_PORT ? `http://localhost:${process.env.SPRING_PORT}` : 'http://localhost:8090');
 console.log(`3. Syncing with Spring Boot backend (${backendUrl})...`);
 
-const JWT_SECRET = process.env.JWT_SECRET || '9a6156a5c2d3a3f5a2f8c5b8e9b6a1c8d5e6f3b2a5c8d3e4f5a8b9c1d2e3f4a5';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('Set JWT_SECRET (same value as the backend) before running this script.');
+  process.exit(1);
+}
 
 function createToken(sub, role) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS512' })).toString('base64url');

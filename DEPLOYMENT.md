@@ -495,6 +495,9 @@ A PostgreSQL connection failure must not silently cause production to serve stal
 
 Create the production `.env` outside Git.
 
+`docker-compose.yml` has no built-in secrets. It refuses to start until `JWT_SECRET`,
+`DATABASE_PASSWORD` and `BACKEND_URL` are set in `.env`.
+
 Example structure:
 
 ```env

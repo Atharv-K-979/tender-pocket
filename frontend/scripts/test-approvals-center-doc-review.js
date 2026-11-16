@@ -21,14 +21,14 @@ async function main() {
   const execLoginRes = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'executive', password: 'executive123' })
+    body: JSON.stringify({ username: 'executive', password: process.env.EXECUTIVE_DEFAULT_PASSWORD || '' })
   });
   const execAuth = await execLoginRes.json();
 
   const misLoginRes = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'misteam', password: 'misteam' })
+    body: JSON.stringify({ username: 'misteam', password: process.env.MISTEAM_DEFAULT_PASSWORD || '' })
   });
   const misAuth = await misLoginRes.json();
 
