@@ -33,9 +33,9 @@ import {
   Lock
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
-import { canPerform, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
+import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
-import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
+import { areBidDocsGenerated, hasWorkingPathSaved, isBrochurePending, isBrochureUploaded } from '@/lib/tenderStatus';
 import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
 
 interface Toast {
@@ -68,6 +68,9 @@ export default function TenderDetailPage() {
   const isMisRole = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS';
   const isTpcRole = currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team';
   const isAdmin = currentUser?.role === 'Admin';
+  const isBrochureRole = canonicalRole(currentUser?.role) === 'Brochure Team';
+  const [brochureFile, setBrochureFile] = useState<File | null>(null);
+  const [uploadingBrochure, setUploadingBrochure] = useState(false);
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
     status?: string;
@@ -592,6 +595,44 @@ export default function TenderDetailPage() {
     }
   };
 
+  // Brochure (parallel): the Brochure Team uploads one brochure (PDF, Word or Excel).
+  // The upload never moves the tender; the Tender Executive does not wait for it.
+  const submitBrochureUpload = async () => {
+    if (!selectedTender || !brochureFile || uploadingBrochure) return;
+    const extension = (brochureFile.name.split('.').pop() || '').toLowerCase();
+    if (!['pdf', 'docx', 'doc', 'xlsx', 'xls'].includes(extension)) {
+      showToast('Upload a PDF, Word (.docx / .doc) or Excel (.xlsx / .xls) file.', 'error');
+      return;
+    }
+    if (brochureFile.size > 50 * 1024 * 1024) {
+      showToast('The brochure is larger than 50 MB. Please upload a smaller file.', 'error');
+      return;
+    }
+    setUploadingBrochure(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', brochureFile);
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/upload-brochure`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'The brochure could not be uploaded.', 'error');
+        return;
+      }
+      showToast(data.message || 'Brochure uploaded.', 'success');
+      setBrochureFile(null);
+      const input = document.getElementById('brochure-file-input') as HTMLInputElement | null;
+      if (input) input.value = '';
+      await fetchTenderDetails(true);
+    } catch {
+      showToast('Network error while uploading the brochure. Please try again.', 'error');
+    } finally {
+      setUploadingBrochure(false);
+    }
+  };
+
   const submitClearanceDecision = async (complianceOption: 'ALL COMPLY' | 'COMPLY WITH DEVIATIONS') => {
     if (!selectedTender || submittingApproveClearance) return;
     setSubmittingApproveClearance(true);
@@ -618,7 +659,7 @@ export default function TenderDetailPage() {
         return;
       }
       showToast(data.message || `Clearance granted (${complianceOption})!`, 'success');
-      alert(`Clearance granted (${complianceOption})! Returned to Tender Executive to prepare the standard bid package.`);
+      alert(`Clearance granted (${complianceOption})! Returned to Tender Executive to prepare the standard bid package. The Brochure Team can upload the brochure in parallel.`);
       setClearancePdfFile(null);
       setClearanceDocxFile(null);
       setClearanceXlsxFile(null);
@@ -1473,8 +1514,13 @@ export default function TenderDetailPage() {
     selectedTender.final_tech_spec_filename
   )) || isOutcomeState;
 
+  // Brochure (parallel with Steps 3-7): requested at clearance, never blocks a step.
+  // Tenders cleared before the Brochure Team existed have no brochure_status.
+  const brochurePending = isBrochurePending(selectedTender);
+  const brochureUploaded = isBrochureUploaded(selectedTender);
+
   // Step 3: Executive Handover & Document Preparation (Bid Docs Prep)
-  // Returned to Executive immediately after clearance - NOT blocked on pricing!
+  // Returned to Executive immediately after clearance - NOT blocked on pricing or the brochure!
   const isStep3Complete = (isStep2Complete && areDocsGenerated) || isOutcomeState;
 
   // Step 4: EMD Payment Step
@@ -1507,10 +1553,11 @@ export default function TenderDetailPage() {
 
   const canFinalSubmit = isStep5Complete && !isStep6Complete;
 
-  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team';
+  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && !isBrochureRole;
 
   // Section Visibility:
   const isCard1Visible = true; // Step 2 (Tech Spec) is always visible
+  const isBrochureCardVisible = (isBrochureRole || isOperationalRole) && (brochurePending || brochureUploaded); // Brochure (parallel)
   const isCard2Visible = isOperationalRole && (isStep2Complete || isOutcomeState); // Step 3 (Bid Docs Prep)
   const isCard3Visible = isOperationalRole && (isStep3Complete || isOutcomeState); // Step 4 EMD opens after the bid package exists
   const isCard4Visible = isOperationalRole && (isStep4Complete || isOutcomeState); // Step 5 (Dual Track)
@@ -2499,6 +2546,18 @@ export default function TenderDetailPage() {
                     }
                   }
                   
+                  // Brochure uploaded by the Brochure Team: always listed, even if another step rewrote the document list
+                  const repoBrochureFilename = selectedTender.brochure_filename;
+                  if (repoBrochureFilename && !docList.some(d => d && (d.filename === repoBrochureFilename || (typeof d.local_path === 'string' && d.local_path.split('?')[0].endsWith(`/${repoBrochureFilename}`))))) {
+                    docList.push({
+                      name: `Brochure - ${repoBrochureFilename}`,
+                      filename: repoBrochureFilename,
+                      local_path: `/documents/${selectedTender.id}/${repoBrochureFilename}`,
+                      created_date: (selectedTender.brochure_uploaded_at || '').split('T')[0] || 'N/A',
+                      source: 'brochure'
+                    });
+                  }
+
                   if (docList.length === 0) {
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px 0', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
@@ -2792,7 +2851,7 @@ export default function TenderDetailPage() {
                     </div>
 
                     <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
-                      Choose All Comply to send this tender to the Tender Executive for EMD payment, or Comply with deviations and upload three replacement documents. Those new PDF, DOCX, and XLSX files replace the previous specification documents and continue through the rest of the tender.
+                      Choose All Comply to send this tender to the Tender Executive for the bid package (the Brochure Team is asked for the brochure at the same time), or Comply with deviations and upload three replacement documents. Those new PDF, DOCX, and XLSX files replace the previous specification documents and continue through the rest of the tender.
                     </p>
 
                     {/* Tender Quantities Parameter Badges for Clearance Team Review */}
@@ -3170,7 +3229,7 @@ export default function TenderDetailPage() {
                                 <div>
                                   <strong style={{ fontSize: '13px', color: '#10b981', display: 'block' }}>ALL COMPLY</strong>
                                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '2px', lineHeight: '1.4' }}>
-                                    All specification requirements fully comply. Forwards to Tender Executive for Bid Document Preparation.
+                                    All specification requirements fully comply. Forwards to Tender Executive for Bid Document Preparation; the Brochure Team uploads the brochure in parallel.
                                   </span>
                                 </div>
                               </label>
@@ -3425,6 +3484,136 @@ export default function TenderDetailPage() {
                 </div>
               </div>
 
+              {/* Brochure Upload Card (parallel: the Brochure Team uploads after Clearance approval; nothing waits for it) */}
+              {isBrochureCardVisible && (() => {
+                const brochureFilename = selectedTender.brochure_filename || '';
+                let brochureDoc: { name?: string; filename?: string; local_path?: string; source?: string } | null = null;
+                try {
+                  const rawDocs = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
+                  const docs: unknown = typeof rawDocs === 'string' ? JSON.parse(rawDocs) : rawDocs;
+                  if (Array.isArray(docs)) {
+                    brochureDoc = docs.find(d => d && (d.source === 'brochure' || (brochureFilename && d.filename === brochureFilename))) || null;
+                  }
+                } catch {
+                  brochureDoc = null;
+                }
+                const brochurePath = brochureDoc?.local_path || (brochureFilename ? `/documents/${selectedTender.id}/${brochureFilename}` : '');
+                const brochureLabel = brochureDoc?.name || (brochureFilename ? `Brochure - ${brochureFilename}` : 'Brochure');
+                const brochureIsPdf = brochureFilename.toLowerCase().endsWith('.pdf');
+                return (
+                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <BookOpen size={16} style={{ color: '#14b8a6' }} />
+                      Brochure Upload (Parallel)
+                    </h4>
+                    <span style={{
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      backgroundColor: brochureUploaded ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                      color: brochureUploaded ? '#10b981' : '#f59e0b',
+                      fontWeight: '600'
+                    }}>
+                      {brochureUploaded ? 'Uploaded' : 'Pending Upload'}
+                    </span>
+                  </div>
+
+                  <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: '1.5' }}>
+                    After the Clearance Team approves the tender, the Brochure Team uploads the brochure (PDF, Word or Excel). This runs in parallel: the Tender Executive does not wait for it, and it is listed in the Document Repository once uploaded.
+                  </p>
+
+                  {brochureUploaded && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '14px 16px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.06)', border: '1px solid rgba(16, 185, 129, 0.3)', marginBottom: isBrochureRole ? '14px' : 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '12.5px', fontWeight: '700' }}>
+                        <CheckCircle2 size={16} />
+                        <span>Brochure uploaded. It is listed in the Document Repository.</span>
+                      </div>
+                      {brochurePath && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <a
+                            href={getDocDownloadUrl(brochurePath)}
+                            target={brochureIsPdf ? '_blank' : undefined}
+                            rel="noreferrer"
+                            download={!brochureIsPdf ? (brochureFilename || undefined) : undefined}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '11.5px', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            {brochureIsPdf ? <ExternalLink size={13} style={{ color: '#ef4444' }} /> : <Download size={13} />} {brochureLabel}
+                          </a>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <span>Uploaded by: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.brochure_uploaded_by || 'Brochure Team'}</strong></span>
+                        {selectedTender.brochure_uploaded_at && (
+                          <span>Uploaded on: {new Date(selectedTender.brochure_uploaded_at).toLocaleString()}</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {isBrochureRole ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px', borderRadius: '10px', background: 'rgba(20, 184, 166, 0.05)', border: '1px solid rgba(20, 184, 166, 0.25)' }}>
+                      <label htmlFor="brochure-file-input" style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                        {brochureUploaded ? 'Replace Brochure Document (optional)' : 'Upload Brochure Document'}
+                      </label>
+                      <input
+                        type="file"
+                        id="brochure-file-input"
+                        accept=".pdf,.docx,.doc,.xlsx,.xls"
+                        disabled={uploadingBrochure}
+                        onChange={e => setBrochureFile(e.target.files?.[0] || null)}
+                        style={{ fontSize: '12px', width: '100%' }}
+                      />
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        Allowed: PDF, Word (.docx / .doc), Excel (.xlsx / .xls). Maximum 50 MB.
+                      </span>
+                      {brochureFile && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11.5px', color: '#10b981' }}>
+                          <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>✓ {brochureFile.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBrochureFile(null);
+                              const input = document.getElementById('brochure-file-input') as HTMLInputElement | null;
+                              if (input) input.value = '';
+                            }}
+                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                      <button
+                        className="btn btn-primary"
+                        disabled={!brochureFile || uploadingBrochure}
+                        onClick={submitBrochureUpload}
+                        style={{
+                          width: '100%',
+                          justifyContent: 'center',
+                          padding: '11px 18px',
+                          fontWeight: '700',
+                          background: '#14b8a6',
+                          borderColor: '#14b8a6',
+                          opacity: !brochureFile || uploadingBrochure ? 0.6 : 1,
+                          cursor: !brochureFile || uploadingBrochure ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {uploadingBrochure
+                          ? '⏳ Uploading Brochure...'
+                          : brochureUploaded ? 'Replace Brochure' : 'Upload Brochure'}
+                      </button>
+                    </div>
+                  ) : !brochureUploaded && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', background: 'rgba(20, 184, 166, 0.06)', border: '1px solid rgba(20, 184, 166, 0.25)', color: '#14b8a6' }}>
+                      <BookOpen size={14} />
+                      <span>Waiting for the Brochure Team to upload the brochure. This does not block the bid package or any other step.</span>
+                    </div>
+                  )}
+                </div>
+                );
+              })()}
+
               {/* 3. Executive Handover & Bid Document Preparation Card */}
               {isCard2Visible && (
                 <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
@@ -3449,6 +3638,31 @@ export default function TenderDetailPage() {
                   <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: '1.5' }}>
                     After clearance, the Tender Executive prepares the bid package from the standard template. The cleared specification is the one that continues. EMD opens after this package is generated.
                   </p>
+
+                  {brochureUploaded && selectedTender.brochure_filename && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(20, 184, 166, 0.06)', border: '1px solid rgba(20, 184, 166, 0.25)', marginBottom: '14px' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <BookOpen size={14} style={{ color: '#14b8a6' }} />
+                        Brochure from the Brochure Team ({selectedTender.brochure_uploaded_by || 'Brochure Team'}):
+                      </span>
+                      <a
+                        href={getDocDownloadUrl(`/documents/${selectedTender.id}/${selectedTender.brochure_filename}`)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary"
+                        style={{ fontSize: '11.5px', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Download size={13} /> {selectedTender.brochure_filename}
+                      </a>
+                    </div>
+                  )}
+
+                  {brochurePending && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '8px', fontSize: '12px', color: 'var(--text-secondary)', background: 'rgba(20, 184, 166, 0.05)', border: '1px solid rgba(20, 184, 166, 0.2)', marginBottom: '14px' }}>
+                      <BookOpen size={14} style={{ color: '#14b8a6', flexShrink: 0 }} />
+                      <span>Brochure pending from the Brochure Team. It does not block this step; it appears in the Document Repository once uploaded.</span>
+                    </div>
+                  )}
 
                   {!areDocsGenerated ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -5289,8 +5503,8 @@ export default function TenderDetailPage() {
             width: '8px',
             height: '8px',
             borderRadius: '50%',
-            backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
-            boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
+            backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'Brochure Team' ? '#14b8a6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
+            boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'Brochure Team' ? '#14b8a6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
           }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px' }}>
