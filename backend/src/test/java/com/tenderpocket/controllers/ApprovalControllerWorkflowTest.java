@@ -156,6 +156,7 @@ public class ApprovalControllerWorkflowTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Approved", tender.getSpecVerificationStatus());
         assertEquals("BID_DOCS_PREPARATION", tender.getCurrentStage());
+        assertEquals("Pending", tender.getBrochureStatus(), "Clearance also asks the Brochure Team for the brochure, in parallel");
         assertEquals("APPROVED", request.getStatus());
         verify(tenderRepository).save(tender);
     }
@@ -188,6 +189,7 @@ public class ApprovalControllerWorkflowTest {
         assertEquals("Approved", tender.getSpecVerificationStatus());
         assertEquals("COMPLY WITH DEVIATIONS", tender.getSpecComplianceType());
         assertEquals("BID_DOCS_PREPARATION", tender.getCurrentStage());
+        assertEquals("Pending", tender.getBrochureStatus(), "Clearance also asks the Brochure Team for the brochure, in parallel");
         assertEquals("APPROVED", request.getStatus());
         verify(tenderRepository).save(tender);
     }
