@@ -1,6 +1,6 @@
 # TenderPocket — Detailed Workflow & Architecture Specification
 
-**Document Version:** 2.4.0
+**Document Version:** 2.5.0
 **Target Audience:** Senior Technical Reviewer / Architecture Board / QA Lead
 **Classification:** Enterprise System Architecture & Operational Workflow
 **Repository Working State:** Production-Ready (Verified against Next.js 16 & Spring Boot 3)
@@ -11,7 +11,7 @@
 
 **TenderPocket** is an enterprise-grade tender tracking, GeM (Government e-Marketplace) portal synchronization, multi-department approval, and automated bid compilation platform.
 
-This document details the **end-to-end operational workflow** implemented in the codebase, with a specific focus on the **7-Step Gated Workflow**, the **Dual-Track Concurrent Clearance Engine**, and the exact concurrent state visible across the **Status Dashboard (`StatusDashboard.tsx`)** and the **Approvals Dashboard (`ApprovalsCenter.tsx`)**.
+This document details the **end-to-end operational workflow** implemented in the codebase, with a specific focus on the **7-Step Gated Workflow** (plus the parallel **Brochure Team** upload that starts at specification clearance), the **Dual-Track Concurrent Clearance Engine**, and the exact concurrent state visible across the **Status Dashboard (`StatusDashboard.tsx`)** and the **Approvals Dashboard (`ApprovalsCenter.tsx`)**.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -28,6 +28,7 @@ This document details the **end-to-end operational workflow** implemented in the
 │               │ └─ Track B: Folder Doc Audit│ MIS Team (Folder Scanner)      │ 100% Manifest Verified │
 │ Step 6        │ Final Portal Submission     │ Tender Executive & MIS Team    │ Portal Ref & Ack File  │
 │ Step 7        │ Outcome & Contract Award    │ MIS Team                       │ Won (L1) / Lost Reason │
+│ Parallel      │ Brochure Upload             │ Brochure Team                  │ Optional, non-blocking │
 └───────────────┴─────────────────────────────┴────────────────────────────────┴────────────────────────┘
 ```
 
@@ -94,13 +95,14 @@ flowchart TB
 
 | Layer                      | File / Module                                                                                                                                                                                  | Responsibility                                                                                                                   |
 | :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------- |
-| **Frontend UI**      | [`frontend/src/app/components/StatusDashboard.tsx`](file:///d:/tender-pocket/frontend/src/app/components/StatusDashboard.tsx)                                                                 | Pipeline-wide control desk; 11 KPI cards (4 Overview + 7 Stage cards); urgency and executive filters.                            |
+| **Frontend UI**      | [`frontend/src/app/components/StatusDashboard.tsx`](file:///d:/tender-pocket/frontend/src/app/components/StatusDashboard.tsx)                                                                 | Pipeline-wide control desk; 12 KPI cards (4 Overview + 7 Stage cards + 1 parallel **Brochure** card); urgency and executive filters. |
 | **Frontend UI**      | [`frontend/src/app/components/ApprovalsCenter.tsx`](file:///d:/tender-pocket/frontend/src/app/components/ApprovalsCenter.tsx)                                                                 | Multi-role approval desk; stage tabs (`PAYMENT`, `DOCS`, `SUBMISSION`, `SPEC`, `PRICING`, `WIN_LOSS`); review modal. |
-| **Frontend UI**      | [`frontend/src/app/components/WorkflowPipelineStepper.tsx`](file:///d:/tender-pocket/frontend/src/app/components/WorkflowPipelineStepper.tsx)                                                 | Visual 7-step tracker; Dual-Track split indicators; lock badges on Step 6.                                                       |
+| **Frontend UI**      | [`frontend/src/app/components/WorkflowPipelineStepper.tsx`](file:///d:/tender-pocket/frontend/src/app/components/WorkflowPipelineStepper.tsx)                                                 | Visual 7-step tracker; Dual-Track split indicators; lock badges on Step 6; `Brochure Pending` / `Brochure ✓` badge.            |
 | **Frontend Logic**   | [`frontend/src/lib/tenderStatus.ts`](file:///d:/tender-pocket/frontend/src/lib/tenderStatus.ts)                                                                                               | Canonical stage resolution engine (`resolveTenderStageDetails`); calculates progress %, active card keys, and deadlines.       |
 | **Backend API**      | [`backend/src/main/java/com/tenderpocket/controllers/ApprovalController.java`](file:///d:/tender-pocket/backend/src/main/java/com/tenderpocket/controllers/ApprovalController.java)           | REST endpoints for `/api/approvals/counts`, `/pending`, and `/{id}/review`; enforces team queue ownership.                 |
 | **Backend API**      | [`backend/src/main/java/com/tenderpocket/controllers/WorkflowSyncController.java`](file:///d:/tender-pocket/backend/src/main/java/com/tenderpocket/controllers/WorkflowSyncController.java)   | Modern `/api/v2/workflow` endpoints for executive assignment, spec clearance upload, EMD submission, and dual-track review.    |
-| **Backend Engine**   | [`backend/src/main/java/com/tenderpocket/services/WorkflowSyncService.java`](file:///d:/tender-pocket/backend/src/main/java/com/tenderpocket/services/WorkflowSyncService.java)               | Atomic transaction orchestrator transitioning `Tender`, `TenderWorkflowState`, and `TenderApprovalRequest`.                |
+| **Backend Engine**   | [`backend/src/main/java/com/tenderpocket/services/WorkflowSyncService.java`](file:///d:/tender-pocket/backend/src/main/java/com/tenderpocket/services/WorkflowSyncService.java)               | Atomic transaction orchestrator transitioning `Tender`, `TenderWorkflowState`, and `TenderApprovalRequest`; asks the Brochure Team for the brochure at clearance and records the upload. |
+| **Backend API**      | [`backend/src/main/java/com/tenderpocket/controllers/TenderController.java`](backend/src/main/java/com/tenderpocket/controllers/TenderController.java) | Tender CRUD and role-filtered tender lists; Brochure Team upload (`POST /api/tenders/{id}/upload-brochure`), which never changes the workflow stage. |
 | **Backend Storage**  | [`backend/src/main/java/com/tenderpocket/services/TenderFolderScannerService.java`](file:///d:/tender-pocket/backend/src/main/java/com/tenderpocket/services/TenderFolderScannerService.java) | Scans file directory paths (`working_path`), building authoritative file manifests for Track B audit.                          |
 | **Backend Security** | [`backend/src/main/java/com/tenderpocket/config/WorkflowPermissions.java`](file:///d:/tender-pocket/backend/src/main/java/com/tenderpocket/config/WorkflowPermissions.java)                   | Centralized role permission matrix enforcing role separation and masking sensitive pricing data.                                 |
 
@@ -108,7 +110,7 @@ flowchart TB
 
 ## 2. End-to-End 7-Step Workflow Lifecycle
 
-The workflow enforces strict sequential gating across initial stages, branches into **concurrent parallel tracks** at Step 5, imposes a **hard barrier gate** before Step 6, and records audited post-bid results at Step 7.
+The workflow enforces strict sequential gating across initial stages, asks the **Brochure Team** for a brochure in parallel when clearance is granted (it never blocks a step), branches into **concurrent parallel tracks** at Step 5, imposes a **hard barrier gate** before Step 6, and records audited post-bid results at Step 7.
 
 ```mermaid
 flowchart TD
@@ -131,6 +133,13 @@ flowchart TD
         S2_CLR_REV -->|Approved| S2_APP["Clearance Team uploads final sealed spec<br/>Marks 'All Comply' or 'Deviations'"]
         S2_APP --> S3
     end
+
+    %% Parallel: Brochure (asked for at clearance, never blocks a step)
+    subgraph BROCHURE ["Parallel: Brochure Upload (Brochure Team)"]
+        BR1["brochure_status = Pending"] --> BR2["Brochure Team uploads one brochure<br/>(PDF / Word / Excel, max 50 MB)"]
+        BR2 --> BR3["brochure_status = Uploaded<br/>Listed in the Document Repository<br/>(current_stage unchanged)"]
+    end
+    S2_APP -.->|In parallel| BR1
 
     %% Step 3
     subgraph STEP3 ["Step 3: Bid Document Preparation"]
@@ -198,10 +207,12 @@ flowchart TD
     classDef success fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ecfdf5;
     classDef alert fill:#7f1d1d,stroke:#ef4444,stroke-width:2px,color:#fef2f2;
     classDef locked fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fffbeb;
+    classDef brochure fill:#134e4a,stroke:#14b8a6,stroke-width:2px,color:#f0fdfa;
 
     class S7_WON,TA_APP,TB_APP,S2_APP success;
     class S2_REJ,S4_REJ,S6_FIX,S7_LOST alert;
     class S6_LOCK locked;
+    class BR1,BR2,BR3 brochure;
 ```
 
 ---
@@ -216,7 +227,8 @@ The following comprehensive matrix details what occurs in the backend data layer
 | **Step 1: Executive Assigned**MIS Team or Admin assigns executive via dropdown & saves                                    | `mis_executive = 'executive_1'assigned_by = username``status = 'Participating'current_stage = 'SPEC_GENERATION_PENDING'``stepCompleted[0] = true`                                               | • **Active KPI Card**: `STAGE_1_ASSIGNMENT` decreases (-1); `STAGE_2_TECH_SPEC` increases (+1)• **Stage Badge**: Blue `"Generate Specs"`• **Action Banner**: `"Action: Generate Technical Specification"`• **Stepper**: Node 1 green checkmark `✓`; Node 2 active (15%)• **Action Button**: `"Generate Specs"` (Executive)                          | • **Queue Badge**: `TOTAL: 0` (Executive is actively generating spec sheets).                                                                                                                                                                                                    |
 | **Step 2A: Specs Uploaded & Sent to Clearance**Executive generates specs and clicks `"Request Spec Clearance"`          | `specVerificationStatus = 'Pending'current_stage = 'SPEC_CLEARANCE'`Spawns `TenderApprovalRequest`:`stage = SPEC_CLEARANCEassigned_to = 'clearance'``status = 'PENDING'`                      | • **Active KPI Card**: `STAGE_2_TECH_SPEC` active• **Stage Badge**: Purple `"Clearance Pending"`• **Action Banner**: `"Awaiting Clearance Team Review"`• **Stepper**: Node 2 pulsing purple (22%)• **Action Button**: `"Review & Comply"` (Clearance) / `"View Status"` (Others)                                                                       | • **Queue Badge**: `SPEC_CLEARANCE` (+1) & `TOTAL` (+1)• **Assigned Queue**: `Clearance Team` (`clearance`)• **Metadata Column**: Shows spec document preview link• **Review Modal**: Approve (with Comply/Deviations) or Reject with rework remarks. |
 | **Step 2B (Branch): Clearance Team Rejects Specs**Clearance reviewer selects `"REJECTED"` with comments                 | `specVerificationStatus = 'Rejected'current_stage = 'SPEC_REJECTED'``ApprovalRequest.status = 'REJECTED'`                                                                                         | • **Active KPI Card**: `ACTION_REQUIRED` (+1, red alert)• **Stage Badge**: Red `"Specs Rejected"`• **Action Banner**: `"Action: Re-upload Technical Specs"`• **Action Button**: `"Revise Specs"` (Executive)                                                                                                                                                    | • **Pending Queue**: Request removed from pending queue.• **History Tab**: Displays `REJECTED` with reviewer remarks.                                                                                                                                                     |
-| **Step 2C: Clearance Team Approves Specs**Clearance team uploads sealed PDF and marks `ALL_COMPLY` or `DEVIATIONS`    | `final_tech_spec_filename = 'spec_final.pdf'spec_compliance_type = 'ALL_COMPLY'``specVerificationStatus = 'Approved'current_stage = 'BID_DOCS_PREPARATION'``stepCompleted[1] = true`            | • **Active KPI Card**: `STAGE_2_TECH_SPEC` decreases (-1); `STAGE_3_BID_PREP` increases (+1)• **Stage Badge**: Green `"Prepare Package"` (`BID_DOCS_PREP`)• **Action Banner**: `"Action: Compile Standard Bid Package"`• **Stepper**: Node 1 & 2 green `✓`; Node 3 active (35%)• **Action Button**: `"Compile Bid Package"` (Executive)           | • **Queue Badge**: `SPEC_CLEARANCE` decreases (-1)• **History Tab**: Shows `APPROVED` by Clearance reviewer.                                                                                                                                                            |
+| **Step 2C: Clearance Team Approves Specs**Clearance team uploads sealed PDF and marks `ALL_COMPLY` or `DEVIATIONS`    | `final_tech_spec_filename = 'spec_final.pdf'spec_compliance_type = 'ALL_COMPLY'``specVerificationStatus = 'Approved'current_stage = 'BID_DOCS_PREPARATION'``brochure_status = 'Pending'stepCompleted[1] = true`            | • **Active KPI Card**: `STAGE_2_TECH_SPEC` decreases (-1); `STAGE_3_BID_PREP` increases (+1)• **Stage Badge**: Green `"Prepare Package"` (`BID_DOCS_PREP`)• **Action Banner**: `"Action: Compile Standard Bid Package"`• **Stepper**: Node 1 & 2 green `✓`; Node 3 active (35%); header badge `Brochure Pending`• **Brochure (Parallel)** card (+1)• **Action Button**: `"Compile Bid Package"` (Executive)           | • **Queue Badge**: `SPEC_CLEARANCE` decreases (-1)• **History Tab**: Shows `APPROVED` by Clearance reviewer.                                                                                                                                                            |
+| **Parallel: Brochure Uploaded**Brochure Team uploads the brochure at any time after clearance | `brochure_status = 'Uploaded'brochure_filename = 'Brochure_LabFridge.pdf'``brochure_uploaded_by = usernamebrochure_uploaded_at = now (UTC)`Brochure added to `downloaded_docs` (`source = 'brochure'`); `current_stage` is **not** changed | • **Brochure (Parallel)** card decreases (-1)• **Stepper**: header badge changes to `Brochure ✓`; the active node does not move• **Tender page**: the brochure is linked in the Bid Document Preparation card and listed in the Document Repository | • No approval request: the upload is a direct Brochure Team action.• `/api/approvals/*` returns `403` for the Brochure Team. |
 | **Step 3: Executive Compiles Bid Package**Executive configures MAF, undertakings, and saves `working_path`              | `working_path = '/shared/tenders/9849390'bidPackageStatus = 'GENERATED'``folderScannerService.scanAndSyncFolder()` indexes all files on disk                                                      | • **Active KPI Card**: Evaluates EMD applicability.• If EMD is exempt (₹0 or exempt flag): advances directly to `STAGE_5_DUAL_TRACK` (+1)• If EMD is applicable: advances to `STAGE_4_EMD` (+1)                                                                                                                                                                                       | • No approval pending during local document compilation.                                                                                                                                                                                                                                 |
 | **Step 4A (Exemption Bypass): EMD is ₹0 / Exempt**System evaluates `tender.emd == 0` or `emd_applicable == false`    | `payment_status = 'Approved'emd_status = 'EXEMPT_SKIPPED'``current_stage = 'DUAL_TRACK'stepCompleted[3] = true`Spawns Track A (`MIS_PRICING`) and Track B (`DOC_VERIFICATION`) approvals      | • **Active KPI Card**: Skips Step 4 completely; `STAGE_5_DUAL_TRACK` (+1)• **Stepper**: Node 4 marked green `✓` with badge `EMD Exempt`• **Progress**: Automatically jumps to 68%                                                                                                                                                                                       | • Skips EMD payment approval request.• Automatically raises two concurrent requests:1. `MIS_PRICING` (assigned to `MIS Team`)2. `DOC_VERIFICATION` (assigned to `MIS Team`)                                                                                                     |
 | **Step 4B: EMD Applicable — Details Submitted**Executive enters Beneficiary Name, Payment Mode, and confidential receipt | `emd_beneficiary_name = 'Director of Accounts'payment_status = 'Pending'``current_stage = 'PAYMENT_APPROVAL'`Spawns `TenderApprovalRequest`:`stage = PAYMENT_APPROVALassigned_to = 'misteam'` | • **Active KPI Card**: `STAGE_4_EMD` active (+1)• **Stage Badge**: Amber `"EMD Approval"`• **Action Banner**: `"Awaiting EMD Payment Sign-Off"`• **Stepper**: Node 4 pulsing amber (50%)• **Action Button**: `"Approve EMD"` (MIS) / `"View EMD"` (Executive)                                                                                          | • **Queue Badge**: `PAYMENT_APPROVAL` (+1) & `TOTAL` (+1)• **Metadata Column**: Beneficiary Name, EMD Amount, Mode (NEFT/RTGS), Confidential Receipt Link• **Review Modal**: MIS reviewer verifies bank transmission proof and signs off.                        |
@@ -294,13 +306,14 @@ sequenceDiagram
 
 ## 5. Role-Based Access Control & Information Hiding
 
-TenderPocket enforces strict separation of duties and zero-leakage commercial confidentiality across 5 distinct operational roles.
+TenderPocket enforces strict separation of duties and zero-leakage commercial confidentiality across 6 distinct operational roles.
 
 ```mermaid
 flowchart LR
     subgraph Roles ["Operational User Roles"]
         R_EXEC["Tender Executive<br/>(Front-Line Bidding)"]
         R_CLR["Clearance Team<br/>(Technical Spec Engineers)"]
+        R_BRO["Brochure Team<br/>(Product Brochures)"]
         R_TPC["TPC Pricing Team<br/>(OEM Sourcing & Procurement)"]
         R_MIS["MIS Team<br/>(Commercial & Compliance Desk)"]
         R_ADM["Admin<br/>(Supervisory Oversight)"]
@@ -316,6 +329,7 @@ flowchart LR
     R_TPC -->|Read / Write| SEC_TPC
     R_MIS -->|Read Only| SEC_TPC
     R_ADM -->|Read Only| SEC_TPC
+    R_BRO -.->|Masked / Redacted| SEC_TPC
 
     R_EXEC -.->|Masked / Redacted| SEC_EMD
     R_MIS -->|Full Access| SEC_EMD
@@ -323,6 +337,7 @@ flowchart LR
 
     R_EXEC -.->|403 Forbidden| SEC_APP
     R_CLR -->|Approve Spec Only| SEC_APP
+    R_BRO -->|Brochure Upload Only| SEC_APP
     R_TPC -->|Input Quote Only| SEC_APP
     R_MIS -->|Full Review Authority| SEC_APP
     R_ADM -.->|View Only / No Operational Approval| SEC_APP
@@ -330,13 +345,14 @@ flowchart LR
 
 ### 5.1 Role Matrix & Field-Level Security
 
-| Role                       |     Specification Clearance     |       TPC Base Price       |        MIS Final Quote        | Bid Document Prep |        EMD Sign-Off        |      Submission Audit      |      Outcome Decision      |
-| :------------------------- | :-----------------------------: | :------------------------: | :----------------------------: | :---------------: | :------------------------: | :-------------------------: | :-------------------------: |
-| **Tender Executive** |           Upload Only           |   **REDACTED** 🔒   |           View Only           |  Full Authoring  |     Enter Beneficiary     |        Portal Filing        |          View Only          |
-| **Clearance Team**   | **Approve / Reject** ✍️ |           Hidden           |             Hidden             |     No Access     |         No Access         |          No Access          |          No Access          |
-| **TPC Pricing Team** |            View Spec            | **Enter Quote** ✍️ |             Hidden             |     No Access     |         No Access         |          No Access          |          No Access          |
-| **MIS Team**         |           View Final           |         View Only         | **Set Final Quote** ✍️ | Verify Files ✍️ | **Approve EMD** ✍️ | **Audit Filing** ✍️ | **Record Award** ✍️ |
-| **Admin**            |        View / Edit Spec        |         View Only         |           View Only           |     View Only     |         View Only         |          View Only          |       Audit Logs Only       |
+| Role                       |     Specification Clearance     |  Brochure Upload (Parallel)  |       TPC Base Price       |        MIS Final Quote        | Bid Document Prep |        EMD Sign-Off        |      Submission Audit      |      Outcome Decision      |
+| :------------------------- | :-----------------------------: | :--------------------------: | :------------------------: | :----------------------------: | :---------------: | :------------------------: | :-------------------------: | :-------------------------: |
+| **Tender Executive** |           Upload Only           |       View / Download       |   **REDACTED** 🔒   |           View Only           |  Full Authoring  |     Enter Beneficiary     |        Portal Filing        |          View Only          |
+| **Clearance Team**   | **Approve / Reject** ✍️ |          View Only          |           Hidden           |             Hidden             |     No Access     |         No Access         |          No Access          |          No Access          |
+| **Brochure Team**    |        View Cleared Spec        |  **Upload / Replace** ✍️  |   **REDACTED** 🔒   |             Hidden             |     No Access     |         No Access         |          No Access          |          No Access          |
+| **TPC Pricing Team** |            View Spec            |          View Only          | **Enter Quote** ✍️ |             Hidden             |     No Access     |         No Access         |          No Access          |          No Access          |
+| **MIS Team**         |           View Final           |          View Only          |         View Only         | **Set Final Quote** ✍️ | Verify Files ✍️ | **Approve EMD** ✍️ | **Audit Filing** ✍️ | **Record Award** ✍️ |
+| **Admin**            |        View / Edit Spec        |          View Only          |         View Only         |           View Only           |     View Only     |         View Only         |          View Only          |       Audit Logs Only       |
 
 > [!IMPORTANT]
 > **Admin Review Restriction**: The `ApprovalController.java` strictly enforces that Admin users have **view-only** access to the Approvals Center (`403 Forbidden: Admin has view-only access to Approvals Center. Approvals must be provided by assigned operational teams`). This preserves audit integrity and prevents management override of technical compliance gates.
@@ -353,6 +369,7 @@ The Approvals Center (`ApprovalsCenter.tsx`) functions as the centralized operat
    - **Team Queues**: Requests assigned to `'misteam'`, `'clearance'`, or `'tpc'` are visible to all members of that designated team.
    - **Individual Assignment**: Requests assigned to a specific username (`assigned_to = 'team_1'`) are visible in that user's personal queue.
    - **Admin Supervisory View**: Admins view aggregated counts and can inspect all pending requests across every department.
+   - **Brochure Team**: No approvals queue. The brochure upload is a direct action on the tender page that runs in parallel with the workflow, so it creates no `TenderApprovalRequest`, and `/api/approvals/*` returns `403` for this role.
 2. **Tabbed Structure**:
    - **Pending Tab (`PENDING`)**: Displays active actionable requests requiring immediate operational review.
    - **History Tab (`HISTORY`)**: Displays chronologically audited approvals, filterable by `APPROVED`, `REJECTED`, or `CHANGES_REQUESTED`.
@@ -409,7 +426,10 @@ The system architecture and workflow logic have been verified across automated s
 2. **Production Compilation**:
    - Next.js 16 App Router: Compiled cleanly with **0 errors** across all routes (`npm run build --prefix frontend`).
    - Spring Boot 3 / Java 21: Clean compilation with `BUILD SUCCESS` (`mvn clean compile -f backend/pom.xml`).
-3. **Dual-Database Parity**:
+3. **Brochure Team (Backend Unit Tests)**:
+   - `ApprovalControllerWorkflowTest`: granting clearance returns the tender to `BID_DOCS_PREPARATION` and sets `brochure_status = 'Pending'` (the brochure is requested in parallel).
+   - `WorkflowPermissionsTest`: `uploadBrochure` is allowed only for the Brochure Team, the Brochure Team cannot approve specifications, view the TPC price or change `current_stage` through a PATCH, and the upload endpoint refuses every other role.
+4. **Dual-Database Parity**:
    - Verified that SQLite schema (`tender_approval_requests`, `tenders`) and PostgreSQL JPA mappings are completely aligned, enabling seamless offline-first local development and enterprise PostgreSQL clustering.
 
 ---
@@ -418,5 +438,6 @@ The system architecture and workflow logic have been verified across automated s
 
 - **Architecture Integrity**: Clean separation between presentation (`StatusDashboard`, `ApprovalsCenter`), proxy API routes, Spring Boot domain controllers, and dual database engines.
 - **Workflow Correctness**: Every single step of the 7-stage workflow is gated by authoritative server-side checks. EMD exemption bypass handles ₹0 bids gracefully.
+- **Parallel Brochure**: The Brochure Team's upload never blocks or moves a tender; a tender can complete every step without a brochure.
 - **Dual-Track Security**: The barrier gate at Step 5 guarantees that no tender can be submitted on the GeM portal without both commercial pricing go-ahead and complete folder verification.
 - **Production Readiness**: Hardened with cryptographic JWT role resolution, team queue ownership safeguards, and zero-leakage pricing confidentiality.

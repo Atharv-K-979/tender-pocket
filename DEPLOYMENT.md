@@ -514,6 +514,7 @@ MISTEAM_DEFAULT_PASSWORD=<production-secret>
 EXECUTIVE_DEFAULT_PASSWORD=<production-secret>
 CLEARANCE_DEFAULT_PASSWORD=<production-secret>
 TPC_DEFAULT_PASSWORD=<production-secret>
+BROCHURE_DEFAULT_PASSWORD=<production-secret>
 
 AWS_REGION=ap-south-1
 AWS_S3_BUCKET_NAME=<production-document-bucket>
@@ -571,8 +572,13 @@ admin
 misteam
 executive
 clearance
+brochure
 tpc
 ```
+
+The `brochure` login (Brochure Team) is created on the first login after the backend starts with
+`BROCHURE_DEFAULT_PASSWORD` set. Set the production value before the first start: changing the
+variable later does not change an existing account's password (Admin can reset it in Team Profiles).
 
 Verify:
 
@@ -1206,6 +1212,7 @@ After every release, test:
 - MIS Team login
 - Tender Executive login
 - Clearance Team login
+- Brochure Team login
 - TPC Team login
 
 ## Dashboard
@@ -1232,6 +1239,13 @@ After every release, test:
 - S3 object is available
 - generated document works
 
+## Brochure Team
+
+- a tender approved by the Clearance Team appears under **Pending Upload** for the Brochure Team
+- the Tender Executive can generate the bid package before the brochure is uploaded (the brochure never blocks a step)
+- the Brochure Team uploads a PDF, Word or Excel brochure
+- the brochure is listed in the tender's Document Repository and downloads, and the tender's step does not change
+
 ## Technical Specification / Gemini V1
 
 If AI is enabled:
@@ -1257,6 +1271,7 @@ Admin
 MIS Team
 Tender Executive
 Clearance Team
+Brochure Team
 TPC Team
 ```
 
