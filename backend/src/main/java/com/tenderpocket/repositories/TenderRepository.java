@@ -71,6 +71,9 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
 
     List<Tender> findByAssignedMisMemberSpec(String assignedMisMemberSpec);
 
+    /** Brochure step counts: brochureStatus is "Pending" or "Uploaded" (null before the step). */
+    long countByBrochureStatus(String brochureStatus);
+
     @Query("SELECT DISTINCT t.location FROM Tender t WHERE t.location IS NOT NULL AND t.location != '' ORDER BY t.location")
     List<String> findUniqueLocations();
 

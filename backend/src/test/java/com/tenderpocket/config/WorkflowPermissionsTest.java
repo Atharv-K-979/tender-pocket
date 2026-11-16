@@ -22,7 +22,7 @@ import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 class WorkflowPermissionsTest {
     private static final String[] ACTION_NAMES = {"viewTenders", "uploadSpecs", "approveSpecs", "setTpcPrice",
             "viewTpcPrice", "setMisPrice", "generateBids", "reviewBids", "recordPayment",
-            "recordSubmission", "recordOutcome", "manageUsers", "viewAudit"};
+            "recordSubmission", "recordOutcome", "manageUsers", "viewAudit", "uploadBrochure"};
 
     static Stream<Arguments> matrix() throws Exception {
         JsonNode matrix = new ObjectMapper().readTree(
@@ -57,6 +57,9 @@ class WorkflowPermissionsTest {
         assertFalse(WorkflowPermissions.allowed("MIS Executive", REVIEW_BIDS));
         assertTrue(WorkflowPermissions.allowed("Specification Team", APPROVE_SPEC));
         assertTrue(WorkflowPermissions.allowed("TPC Team", SET_TPC_PRICE));
+        assertTrue(WorkflowPermissions.allowed("Brochure", UPLOAD_BROCHURE));
+        assertFalse(WorkflowPermissions.allowed("Brochure Team", APPROVE_SPEC));
+        assertFalse(WorkflowPermissions.allowed("Brochure Team", VIEW_TPC_PRICE));
         assertFalse(WorkflowPermissions.allowed("User", VIEW_TENDERS));
         assertFalse(WorkflowPermissions.allowed((String) null, UPLOAD_SPEC));
     }
@@ -72,7 +75,7 @@ class WorkflowPermissionsTest {
         assertEquals("Admin", jwt.extractRole(token));
     }
 
-    @ParameterizedTest @ValueSource(strings = {"Admin", "Tender Executive", "Clearance Team", "TPC Pricing Team", "MIS Team"})
+    @ParameterizedTest @ValueSource(strings = {"Admin", "Tender Executive", "Clearance Team", "Brochure Team", "TPC Pricing Team", "MIS Team"})
     void endpointGuardsRunBeforeRepositoryOrProviderEffects(String role) {
         authenticate(role);
         var repository = mock(TenderRepository.class);
@@ -82,7 +85,7 @@ class WorkflowPermissionsTest {
         ReflectionTestUtils.setField(workflow, "tenderRepository", repository);
         ReflectionTestUtils.setField(tenders, "tenderRepository", repository);
         var actions = List.of(UPLOAD_SPEC, APPROVE_SPEC, SET_TPC_PRICE, SET_MIS_PRICE, GENERATE_BIDS,
-                RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME);
+                RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME, UPLOAD_BROCHURE);
         var responses = List.of(
             workflow.sendClearanceRequest("missing", "Admin", "spoofed", Map.of()),
             workflow.approveClearance("missing", "spoofed", Map.of()),
@@ -91,7 +94,8 @@ class WorkflowPermissionsTest {
             tenders.generateBidDocs("Admin", "spoofed", "missing", Map.of()),
             workflow.submitPaymentRequest("missing", "spoofed", Map.of()),
             workflow.submitSubmissionRequest("missing", "spoofed", Map.of()),
-            workflow.submitWinLossRequest("missing", "spoofed", Map.of()));
+            workflow.submitWinLossRequest("missing", "spoofed", Map.of()),
+            tenders.uploadBrochure("missing", null));
         for (int i = 0; i < actions.size(); i++) {
             assertEquals(WorkflowPermissions.allowed(role, actions.get(i)) ? 404 : 403,
                     responses.get(i).getStatusCode().value(), actions.get(i).name());
@@ -146,6 +150,10 @@ class WorkflowPermissionsTest {
         authenticate("MIS Team");
         assertTrue(WorkflowPermissions.allowedPatch(Map.of("assigned_mis_member_spec", "clearance"), "SPEC_CLEARANCE"));
         assertTrue(WorkflowPermissions.allowedPatch(Map.of("mis_executive", "exec2"), "SPEC_CLEARANCE"));
+
+        authenticate("Brochure Team");
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("current_stage", "PAYMENT_APPROVAL"), "BID_DOCS_PREPARATION"));
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("spec_verification_status", "Approved"), "BID_DOCS_PREPARATION"));
     }
 
     @Test void completedApprovalCannotBypassStageAuthorization() {
@@ -164,7 +172,7 @@ class WorkflowPermissionsTest {
         var original = Map.of("tpc_purchase_price", 450000, "nested", List.of(Map.of(
                 "tpcPurchasePrice", 450000, "stage", "TPC_PRICING", "commentText", "Quote 450000")));
         var advice = new ManufacturerPriceAdvice(new ObjectMapper());
-        for (String role : List.of("Tender Executive", "Clearance Team")) {
+        for (String role : List.of("Tender Executive", "Clearance Team", "Brochure Team")) {
             authenticate(role);
             Object result = advice.beforeBodyWrite(original, null, MediaType.APPLICATION_JSON,
                     MappingJackson2HttpMessageConverter.class, null, null);
