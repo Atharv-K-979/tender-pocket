@@ -2002,7 +2002,7 @@ export default function TenderDetailPage() {
                           type="text"
                           readOnly
                           value={getClassificationLabel(classifyByRefNo(specForm.ref_no))}
-                          title="Set automatically: GeM when the Organization Tender ID contains GEM, otherwise Non-GeM"
+                          title="Set automatically: GeM when the Organization Tender ID starts with GEM, otherwise Non-GeM"
                           style={{ ...specInputStyle, opacity: 0.8, cursor: 'not-allowed' }}
                         />
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Set from Organization Tender ID</span>

@@ -9,11 +9,12 @@ public final class TenderClassifier {
     public static final String NON_GEM = "Non GeM";
 
     /**
-     * The word GEM inside an Organization Tender ID (ref_no), in any letter case, not part of a longer
-     * word: matches GEM/2026/B/7570015, GEM_2026_B_12345 and "GeM Bid 123", but not "Management".
-     * TenderIdCleanupMigration uses the same rule in SQL.
+     * An Organization Tender ID (ref_no) that starts with the word GEM, in any letter case: matches
+     * GEM/2026/B/7570015, GEM_2026_B_12345 and "GeM Bid 123", but not "GEMINI-2026" or a department
+     * number that only mentions GEM later on (e.g. "PHED/GEM/2026/14").
+     * TenderIdCleanupMigration and the frontend's classifyByRefNo use the same rule.
      */
-    private static final Pattern GEM_WORD = Pattern.compile("(?i)(^|[^a-z])gem([^a-z]|$)");
+    private static final Pattern GEM_PREFIX = Pattern.compile("(?i)^\\s*gem([^a-z]|$)");
 
     // Official GeM Bid format: e.g. GEM/2026/B/7570015, GEM/2025/R/6859576, GEM_2026_B_12345
     private static final Pattern GEM_BID_PATTERN = Pattern.compile("(?i)\\bGEM[/_]\\d{4}[/_][A-Z][/_]\\d+\\b");
@@ -22,11 +23,11 @@ public final class TenderClassifier {
 
     /**
      * Tender type is decided only by the Organization Tender ID (ref_no):
-     * if it contains the word GEM the tender is "GeM", otherwise (no ref_no, or a ref_no without GEM)
-     * it is "Non GeM". The T247 ID, links, portal and title play no part.
+     * if it starts with the word GEM the tender is "GeM", otherwise (no ref_no, or a ref_no that does
+     * not start with GEM) it is "Non GeM". The T247 ID, links, portal and title play no part.
      */
     public static String classify(String refNo) {
-        return refNo != null && GEM_WORD.matcher(refNo).find() ? GEM : NON_GEM;
+        return refNo != null && GEM_PREFIX.matcher(refNo).find() ? GEM : NON_GEM;
     }
 
     /**

@@ -2,8 +2,8 @@
  * Centralized Tender Classification & Ingestion Source Display Mapping
  *
  * Rules:
- * 1. Tender type comes only from the Organization Tender ID (ref_no): if it contains the word GEM
- *    the tender is 'GeM', otherwise (no ref_no, or a ref_no without GEM) it is 'Non GeM'.
+ * 1. Tender type comes only from the Organization Tender ID (ref_no): if it starts with the word GEM
+ *    the tender is 'GeM', otherwise (no ref_no, or a ref_no not starting with GEM) it is 'Non GeM'.
  *    The backend stores the result in tender_type; classifyByRefNo is the same rule for live previews.
  * 2. User-Facing Classification Badges:
  *    - 'GeM' -> displays as 'GeM' with green styling (#10b981)
@@ -14,9 +14,9 @@
  *    - Remains separate and unchanged from classification.
  */
 
-/** Same rule as the backend's TenderClassifier.classify: ref_no contains the word GEM, in any letter case. */
+/** Same rule as the backend's TenderClassifier.classify: ref_no starts with the word GEM, in any letter case. */
 export function classifyByRefNo(refNo?: string | null): 'GeM' | 'Non GeM' {
-  return refNo && /(^|[^a-z])gem([^a-z]|$)/i.test(refNo) ? 'GeM' : 'Non GeM';
+  return refNo && /^\s*gem([^a-z]|$)/i.test(refNo) ? 'GeM' : 'Non GeM';
 }
 
 export interface ClassificationDisplayBadge {

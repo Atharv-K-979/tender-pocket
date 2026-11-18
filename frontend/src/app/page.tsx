@@ -8223,7 +8223,7 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Tender Type: <strong>{getClassificationLabel(classifyByRefNo(addTenderForm.ref_no))}</strong> (GeM when the Organization Tender ID contains GEM, otherwise Non-GeM)
+                  Tender Type: <strong>{getClassificationLabel(classifyByRefNo(addTenderForm.ref_no))}</strong> (GeM when the Organization Tender ID starts with GEM, otherwise Non-GeM)
                 </p>
 
                 <h4 style={{ margin: '20px 0 12px 0', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>

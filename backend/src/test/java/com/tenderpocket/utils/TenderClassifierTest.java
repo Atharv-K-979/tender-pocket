@@ -18,10 +18,11 @@ class TenderClassifierTest {
             "GEM_2026_B_12345",
             "gem/2026/b/7570015",
             "GeM Bid 7570015",
-            "Ref: GEM/2026/B/8260101 (corrigendum)",
+            "  GEM/2026/B/7570015",
+            "GEM-2026-77",
             "GEM"
     })
-    @DisplayName("Organization Tender ID containing the word GEM is GeM")
+    @DisplayName("Organization Tender ID starting with the word GEM is GeM")
     void testRefNoWithGemIsGem(String refNo) {
         assertEquals("GeM", TenderClassifier.classify(refNo));
     }
@@ -35,9 +36,12 @@ class TenderClassifierTest {
             "KMSCL/2026/EQP/0193",
             "TNMSC/EQ/2026-27/045",
             "MANAGEMENT/2026/01",
-            "GEMINI-2026-77"
+            "GEMINI-2026-77",
+            "Ref: GEM/2026/B/8260101 (corrigendum)",
+            "PHED/GEM/2026/14",
+            "2026_GEM_812345_1"
     })
-    @DisplayName("Missing Organization Tender ID, or one without the word GEM, is Non GeM")
+    @DisplayName("Missing Organization Tender ID, or one not starting with the word GEM, is Non GeM")
     void testRefNoWithoutGemIsNonGem(String refNo) {
         assertEquals("Non GeM", TenderClassifier.classify(refNo));
     }

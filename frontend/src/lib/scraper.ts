@@ -1070,7 +1070,7 @@ export function computeDefaultBusinessMetadata(t: Partial<Tender>): Partial<Tend
   const formattedCurrentDate = `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 
   // 1. Tender Type & Source
-  // Tender type comes only from the Organization Tender ID (ref_no): GeM if it contains the word GEM, else Non GeM.
+  // Tender type comes only from the Organization Tender ID (ref_no): GeM if it starts with the word GEM, else Non GeM.
   const tenderType = classifyByRefNo(t.ref_no);
   const hasGemUrl = !!(t.original_url && t.original_url.includes('gem.gov.in'));
 

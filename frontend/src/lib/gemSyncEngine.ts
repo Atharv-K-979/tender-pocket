@@ -147,7 +147,7 @@ export async function syncGeMTenders(): Promise<{ success: boolean; importedCoun
           vertical_name: 'Medical Equipment',
           place: 'India',
           state: 'Maharashtra',
-          tender_type: classifyByRefNo(refNo), // same rule as the backend: ref_no contains GEM -> GeM
+          tender_type: classifyByRefNo(refNo), // same rule as the backend: ref_no starts with GEM -> GeM
           publish_date: publishDate,
           start_date: startDateFormatted,
           time: '18:00:00',
