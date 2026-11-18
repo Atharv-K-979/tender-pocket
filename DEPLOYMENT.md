@@ -1246,7 +1246,7 @@ After every release, test:
 
 - a tender approved by the Clearance Team appears under **Pending Upload** for the Brochure Team
 - the Tender Executive can generate the bid package before the brochure is uploaded (the brochure never blocks a step)
-- the Brochure Team uploads a PDF, Word or Excel brochure
+- the Brochure Team uploads several brochure documents (PDF, Word, Excel, ZIP), renames one and deletes one
 - the brochure is listed in the tender's Document Repository and downloads, and the tender's step does not change
 
 ## Technical Specification / Gemini V1

@@ -378,7 +378,7 @@ public class WorkflowSyncController {
         String message = (isDeviation
                 ? "Comply with deviations saved. The three new documents replace the previous specification files. The Tender Executive can now generate the bid package."
                 : "All comply recorded. The Tender Executive can now generate the bid package. EMD follows that package.")
-                + (brochureRequested ? " The Brochure Team uploads the brochure in parallel." : "");
+                + (brochureRequested ? " The Brochure Team was asked for the brochure." : "");
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", message,
