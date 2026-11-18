@@ -2,7 +2,9 @@ package com.tenderpocket.repositories;
 
 import com.tenderpocket.models.Tender;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Repository;
 
 import org.springframework.data.domain.Page;
@@ -15,6 +17,16 @@ import java.util.Optional;
 
 @Repository
 public interface TenderRepository extends JpaRepository<Tender, String> {
+
+    @Query("SELECT t FROM Tender t WHERE LOWER(t.source) = 'tender247' AND t.sourceId IS NOT NULL")
+    List<Tender> findTender247WithT247Id();
+
+    /** Sets the Organization Tender ID only while it is still empty, so a value saved meanwhile is never overwritten. */
+    @Modifying
+    @Transactional
+    @Query("UPDATE Tender t SET t.refNo = :refNo, t.tenderType = :tenderType WHERE t.id = :id AND (t.refNo IS NULL "
+            + "OR TRIM(t.refNo) = '' OR UPPER(TRIM(t.refNo)) IN ('N/A','NA','NULL','-','--','TBD','NONE'))")
+    int fillMissingRefNo(@Param("id") String id, @Param("refNo") String refNo, @Param("tenderType") String tenderType);
 
     public interface TenderAnalyticsProjection {
         String getId();

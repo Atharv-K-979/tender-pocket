@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.TenderRepository;
 import com.tenderpocket.utils.TenderClassifier;
+import com.tenderpocket.utils.UnderscoreHostHttps;
 import jakarta.mail.*;
 import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.search.*;
@@ -53,7 +54,8 @@ public class EmailSyncService {
     @Value("${imap.sender-filter}")
     private String senderFilter;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    // Tender247's API host (t247_api.tender247.com) contains "_", which Java's default HTTPS check rejects.
+    private final RestTemplate restTemplate = new RestTemplate(UnderscoreHostHttps.requestFactory(15_000, 60_000));
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public int syncEmails() throws Exception {
@@ -500,47 +502,63 @@ public class EmailSyncService {
         return tenders;
     }
 
+    /**
+     * The Organization Tender ID (Tender247's tender_number) for a T247 ID, or null when Tender247 has none.
+     * Unlike fetchTenderDetailSafe, a failed request is thrown so callers can tell it from a missing number.
+     */
+    public String fetchOrganizationTenderId(String t247Id) {
+        JsonNode detail = requestTenderDetail(t247Id, "", null);
+        if (detail == null || !detail.has("tender_number") || detail.get("tender_number").isNull()) return null;
+        String tenderNumber = detail.get("tender_number").asText("").trim();
+        return TenderClassifier.isPlaceholderRefNo(tenderNumber) ? null : tenderNumber;
+    }
+
+    private JsonNode requestTenderDetail(String tenderId, String securityCode, String token) {
+        String detailUrl = "https://t247_api.tender247.com/apigateway/T247Tender/api/tender/tender-detail/" + tenderId;
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("User-Agent", "Mozilla/5.0");
+        headers.set("Referer", "https://www.tender247.com/");
+        if (token != null && !token.isBlank()) {
+            headers.setBearerAuth(token);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("guest_user_id", 0);
+        payload.put("security_code", securityCode != null ? securityCode : "");
+        payload.put("ip", "");
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
+        ResponseEntity<JsonNode> response = restTemplate.postForEntity(detailUrl, request, JsonNode.class);
+        if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null && response.getBody().has("Data")) {
+            JsonNode data = response.getBody().get("Data");
+            if (data.isArray() && data.size() > 0) return data.get(0);
+        }
+        return null;
+    }
+
     private Map<String, String> fetchTenderDetailSafe(String tenderId, String securityCode, String token) {
         if (tenderId == null || tenderId.isBlank()) return Collections.emptyMap();
         try {
-            String detailUrl = "https://t247_api.tender247.com/apigateway/T247Tender/api/tender/tender-detail/" + tenderId;
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("User-Agent", "Mozilla/5.0");
-            headers.set("Referer", "https://www.tender247.com/");
-            if (token != null && !token.isBlank()) {
-                headers.setBearerAuth(token);
-            }
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("guest_user_id", 0);
-            payload.put("security_code", securityCode != null ? securityCode : "");
-            payload.put("ip", "");
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
-            ResponseEntity<JsonNode> response = restTemplate.postForEntity(detailUrl, request, JsonNode.class);
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null && response.getBody().has("Data")) {
-                JsonNode data = response.getBody().get("Data");
-                if (data.isArray() && data.size() > 0) {
-                    JsonNode detail = data.get(0);
-                    Map<String, String> res = new HashMap<>();
-                    if (detail.has("tender_number") && !detail.get("tender_number").isNull()) {
-                        res.put("tender_number", detail.get("tender_number").asText("").trim());
-                    }
-                    if (detail.has("nameof_website") && !detail.get("nameof_website").isNull()) {
-                        res.put("nameof_website", detail.get("nameof_website").asText("").trim());
-                    }
-                    if (detail.has("tender_estimatedcost") && !detail.get("tender_estimatedcost").isNull()) {
-                        res.put("estimated_cost_raw", detail.get("tender_estimatedcost").asText());
-                    }
-                    if (detail.has("earnest_money_deposite") && !detail.get("earnest_money_deposite").isNull()) {
-                        res.put("emd_raw", detail.get("earnest_money_deposite").asText());
-                    }
-                    if (detail.has("document_fees") && !detail.get("document_fees").isNull()) {
-                        res.put("document_fee_raw", detail.get("document_fees").asText());
-                    }
-                    return res;
+            JsonNode detail = requestTenderDetail(tenderId, securityCode, token);
+            if (detail != null) {
+                Map<String, String> res = new HashMap<>();
+                if (detail.has("tender_number") && !detail.get("tender_number").isNull()) {
+                    res.put("tender_number", detail.get("tender_number").asText("").trim());
                 }
+                if (detail.has("nameof_website") && !detail.get("nameof_website").isNull()) {
+                    res.put("nameof_website", detail.get("nameof_website").asText("").trim());
+                }
+                if (detail.has("tender_estimatedcost") && !detail.get("tender_estimatedcost").isNull()) {
+                    res.put("estimated_cost_raw", detail.get("tender_estimatedcost").asText());
+                }
+                if (detail.has("earnest_money_deposite") && !detail.get("earnest_money_deposite").isNull()) {
+                    res.put("emd_raw", detail.get("earnest_money_deposite").asText());
+                }
+                if (detail.has("document_fees") && !detail.get("document_fees").isNull()) {
+                    res.put("document_fee_raw", detail.get("document_fees").asText());
+                }
+                return res;
             }
         } catch (Exception e) {
             System.out.println(String.format("[T247Detail] Warning: Failed to fetch detail for tender %s: %s", tenderId, e.getMessage()));
