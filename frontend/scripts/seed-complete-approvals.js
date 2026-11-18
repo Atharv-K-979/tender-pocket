@@ -342,7 +342,7 @@ for (const dbFile of dbs) {
   try {
     const backendUrl = process.env.BACKEND_URL || (process.env.SPRING_PORT ? `http://localhost:${process.env.SPRING_PORT}` : 'http://localhost:8090');
     console.log(`\nSyncing with Spring Boot (${backendUrl})...`);
-    const p = process.env.ADMIN_PASSWORD || process.env.ADMIN_DEFAULT_PASSWORD || 'Marken@123$';
+    const p = process.env.ADMIN_PASSWORD || process.env.ADMIN_DEFAULT_PASSWORD || '';
     const loginRes = await fetch(`${backendUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

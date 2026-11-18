@@ -38,5 +38,5 @@ The React / Next.js frontend application for TenderPocket, running on default po
 - **Framework**: Next.js 16 (App Router), React 19, Tailwind CSS 4
 - **Local Persistence**: Built-in SQLite (`tenders.db`) via `better-sqlite3` with dynamic schema migrations
 - **Spring Boot Proxying**: Automatically proxies requests to the Spring Boot backend (`http://localhost:8090` by default) when available
-- **5-Stage Approval Desk**: Role-based views for Executive, Clearance Team, TPC Team, MIS Team, and Admin
+- **Role-Based Views**: Executive, Clearance Team, Brochure Team, TPC Team, MIS Team, and Admin (the Approvals Center serves Clearance, TPC, MIS and Admin; the Brochure Team uploads brochures on the tender page)
 

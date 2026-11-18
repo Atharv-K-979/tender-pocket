@@ -20,7 +20,7 @@ tender-pocket/
 │   │   │   └── ...                          # Tender tables, filters, and modal dialogs
 │   │   └── api/                             # SQLite Handlers & Spring Boot Proxy Routes
 │   │       ├── approvals/                   # Centralized Approvals & Review Pipeline
-│   │       ├── tenders/[id]/                # Clearance, TPC, MIS Price, Bid Docs, Payment
+│   │       ├── tenders/[id]/                # Clearance, Brochure, TPC, MIS Price, Bid Docs, Payment
 │   │       └── auth/                        # Role authentication & user management
 │   ├── src/lib/                             # Shared Utilities & Business Logic
 │   │   ├── db.ts                            # SQLite Schema, Migrations, Auto-Seeders
@@ -55,103 +55,127 @@ tender-pocket/
 
 ---
 
-## 🔄 The 8-Stage GeM Tender Approval & Document Lifecycle
+## 🔄 GeM Tender Workflow: 7 Steps and the Parallel Brochure
 
-TenderPocket implements a strictly gated, sequential role-based approval pipeline to guarantee specification compliance, commercial pricing confidentiality, document verification, and submission accountability.
+TenderPocket moves every tender through a strictly gated, sequential, role-based pipeline of seven steps that guarantees specification compliance, commercial pricing confidentiality, document verification, and submission accountability. These are the same steps shown in each tender's **Workflow Pipeline Progress** stepper and on the **Status** dashboard cards. When the Clearance Team grants clearance, the **Brochure Team** is also asked for a product brochure. That upload runs **in parallel** and never blocks a step.
 
 ### End-to-End Workflow Diagram
 
 ```mermaid
 flowchart TD
-    %% Nodes
-    START([Tender Discovered / Scraped]) --> S1[Stage 1: Spec Upload & Clearance]
-  
-    subgraph S1_BOX [Stage 1: Specification Clearance]
-        S1 --> S1_ACT[Tender Executive uploads Tech Spec]
-        S1_ACT --> S1_REQ[Clearance Request Initiated]
-        S1_REQ --> S1_REV{Clearance Team Review}
-        S1_REV -->|Rejected / Rework| S1_REJ[Status: DRAFT / REWORK<br/>Feedback sent to Executive]
-        S1_REJ --> S1_ACT
-        S1_REV -->|Approved| S2[Stage 2: TPC Pricing Review]
+    START([Tender discovered on GeM]) --> S1
+
+    subgraph STEP1 ["Step 1: Executive Assignment · MIS Team"]
+        S1["MIS Team reviews the new tender"] --> S1_DEC{"Participate?"}
+        S1_DEC -->|"Not Participating"| S1_NO(["Not Participating"])
+        S1_DEC -->|"Assign & Participate"| S1_OK["Tender Executive assigned"]
     end
 
-    subgraph S2_BOX [Stage 2: TPC Manufacturer Pricing]
-        S2 --> S2_ACT[TPC Pricing Team contacts OEM]
-        S2_ACT --> S2_INP[Input Confidential Purchase Price & Terms]
-        S2_INP --> S2_SEC[🔒 Purchase Price Masked from Executive]
-        S2_SEC --> S3[Stage 3: MIS Pricing Review]
+    subgraph STEP2 ["Step 2: Technical Specification · Tender Executive → Clearance Team"]
+        S2_GEN["Executive uploads the tender document<br/>AI builds the specification sheet: PDF, Word, Excel"]
+        S2_GEN --> S2_REQ["Executive sends the specification to a Clearance Team member"]
+        S2_REQ --> S2_REV{"Clearance Team review"}
+        S2_REV -->|"Grant Clearance: All Comply or Comply with Deviations"| S2_OK["Specification cleared<br/>Corrected files, if uploaded, replace the AI files"]
     end
 
-    subgraph S3_BOX [Stage 3: MIS Pricing]
-        S3 --> S3_ACT[MIS Team reviews TPC Quote & Margins]
-        S3_ACT --> S3_REV{MIS Price Set?}
-        S3_REV -->|Rejected| S3_REJ[Returned to TPC for Revision]
-        S3_REJ --> S2_ACT
-        S3_REV -->|Approved Final Price| S4[Stage 4: Docs Prep - Bid Generation]
+    subgraph BROCHURE ["Parallel: Brochure Upload · Brochure Team (never blocks a step)"]
+        BR_PEND["brochure_status = Pending"] --> BR_UP["Brochure Team uploads one brochure<br/>PDF, Word or Excel, up to 50 MB"]
+        BR_UP --> BR_OK["brochure_status = Uploaded<br/>Listed in the Document Repository"]
     end
 
-    subgraph S4_BOX [Stage 4: Document Preparation]
-        S4 --> S4_GATE{Gated Check:<br/>Spec Approved + MIS Price Set?}
-        S4_GATE -->|No| S4_BLOCK[Locked: Generation Blocked]
-        S4_GATE -->|Yes| S4_GEN[Executive configures MAF, Undertaking & Compliance]
-        S4_GEN --> S4_DOCX[Engine Compiles DOCX & PDF Bid Pack]
-        S4_DOCX --> S4_SUB[Executive Submits Docs for Verification]
-        S4_SUB --> S5[Stage 5: Document Verification]
+    subgraph STEP3 ["Step 3: Bid Document Preparation · Tender Executive"]
+        S3_GEN["Executive generates the bid package: DOCX and PDF<br/>Does not wait for the brochure"]
     end
 
-    subgraph S5_BOX [Stage 5: Document Verification]
-        S5 --> S5_REV{MIS Team Document Review}
-        S5_REV -->|Rejected / Corrections| S5_REJ[Status: REVISE_DOCS<br/>Executive updates attachments]
-        S5_REJ --> S4_GEN
-        S5_REV -->|Approved| S6[Stage 6: EMD Payment Processing]
+    subgraph STEP4 ["Step 4: EMD Payment · Tender Executive → MIS Team"]
+        S4_CHK{"EMD applicable?"}
+        S4_CHK -->|"Yes"| S4_PAY["Executive enters the EMD payment details"]
+        S4_PAY --> S4_REV{"MIS Team sign-off"}
+        S4_REV -->|"Changes requested"| S4_PAY
     end
 
-    subgraph S6_BOX [Stage 6: EMD / Security Deposit Payment]
-        S6 --> S6_LOCK{Strict Lock:<br/>Docs Approved by MIS?}
-        S6_LOCK -->|No| S6_BLOCKED[Locked: Payment Disabled]
-        S6_LOCK -->|Yes| S6_PAY[MIS / Finance verifies EMD Exemption / Records Transaction]
-        S6_PAY --> S6_REV{Payment Verified?}
-        S6_REV -->|Rejected| S6_REJ[Payment Correction Required]
-        S6_REJ --> S6_PAY
-        S6_REV -->|Approved| S7[Stage 7: Final Portal Submission]
+    subgraph STEP5 ["Step 5: Pricing & Verification · Dual Track"]
+        S5_FORK(("Both tracks<br/>run in parallel"))
+        S5_FORK --> TA_ROUTE{"Track A: pricing route<br/>chosen by the Executive"}
+        TA_ROUTE -->|"Option 1: TPC"| TA_TPC["TPC Pricing Team enters the purchase price<br/>🔒 masked from the Executive"]
+        TA_ROUTE -->|"Option 2: direct to MIS"| TA_FIN["MIS Team sets the final price<br/>commercial go-ahead"]
+        TA_TPC --> TA_FIN
+        S5_FORK --> TB["Track B: MIS Team audits the bid folder documents"]
+        TA_FIN --> S5_JOIN{"Both tracks approved?"}
+        TB --> S5_JOIN
     end
 
-    subgraph S7_BOX [Stage 7: GeM Portal Submission]
-        S7 --> S7_SUB[MIS Team validates complete Bid Pack on GeM]
-        S7_SUB --> S7_REC[Record GeM Bid Reference & Ack Slip]
-        S7_REC --> S8[Stage 8: Tender Outcome Tracking]
+    subgraph STEP6 ["Step 6: Final Submission · Tender Executive → MIS Team"]
+        S6_SUB["Executive submits the bid on the GeM portal"]
+        S6_SUB --> S6_AUD{"MIS Team filing audit"}
+        S6_AUD -->|"Confirmed"| S6_OK["Officially submitted"]
     end
 
-    subgraph S8_BOX [Stage 8: Outcome & Post-Bid Analysis]
-        S8 --> S8_DEC{Bid Result}
-        S8_DEC -->|Won| S8_WON([🏆 Status: WON<br/>Award Contract & Record Margins])
-        S8_DEC -->|Lost| S8_LOST([❌ Status: LOST<br/>Record L1 Price & Loss Reason])
-        S8_DEC -->|Disqualified| S8_DQ([⚠️ Status: DISQUALIFIED<br/>Record Technical Cause])
+    subgraph STEP7 ["Step 7: Outcome · MIS Team"]
+        S7_DEC{"Bid result"}
+        S7_DEC -->|"Won"| S7_WON(["🏆 Won / Awarded"])
+        S7_DEC -->|"Lost"| S7_LOST(["❌ Lost, reason recorded"])
     end
 
-    %% Style
-    classDef approved fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
-    classDef rejected fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
-    classDef locked fill:#fef3c7,stroke:#d97706,stroke-width:2px;
-    class S8_WON approved;
-    class S1_REJ,S3_REJ,S5_REJ,S6_REJ,S8_LOST,S8_DQ rejected;
-    class S4_BLOCK,S6_BLOCKED locked;
+    %% Hand-offs between steps (kept outside the subgraphs so every node stays in its own step)
+    S1_OK --> S2_GEN
+    S2_OK --> S3_GEN
+    S2_OK -.->|"in parallel"| BR_PEND
+    S3_GEN --> S4_CHK
+    S4_CHK -->|"Exempt or not applicable"| S5_FORK
+    S4_REV -->|"Approved"| S5_FORK
+    S5_JOIN -->|"Yes"| S6_SUB
+    S6_OK --> S7_DEC
+
+    classDef brochure fill:#ccfbf1,stroke:#0d9488,stroke-width:2px,color:#134e4a;
+    classDef approved fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d;
+    classDef rejected fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d;
+    class BR_PEND,BR_UP,BR_OK brochure;
+    class S7_WON approved;
+    class S1_NO,S7_LOST rejected;
 ```
 
 ---
 
-### Detailed Stage Breakdown
+### Detailed Step Breakdown
 
-| Stage       | Name                                 | Key Actor          | System Stage Code                          | Gating Precondition                                       | Description                                                                                                                                    |
-| :---------- | :----------------------------------- | :----------------- | :----------------------------------------- | :-------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1** | **Spec Clearance**             | Clearance Team     | `CLEARANCE_PENDING` / `SPEC_CLEARANCE` | Tech specs uploaded by Executive                          | Clearance Team inspects technical parameters, certifications, and drawings. Can approve to next stage or reject with specific rework feedback. |
-| **2** | **TPC Pricing**                | TPC Pricing Team   | `TPC_PRICING`                            | Stage 1 approved                                          | TPC contacts OEM/vendors and enters manufacturer purchase price (`tpc_purchase_price`) and warranty/delivery terms.                          |
-| **3** | **MIS Pricing**                | MIS Team           | `MIS_PRICING`                            | Stage 2 completed                                         | MIS Team reviews OEM base cost, applies organizational margin, and sets the final selling price (`mis_final_price`).                         |
-| **4** | **Docs Prep (Bid Generation)** | Tender Executive   | `BID_DOC_PENDING`                        | Stage 1 approved**AND** Stage 3 MIS price finalized | Executive prepares attachments, inputs compliance parameters, and generates final DOCX/PDF bid documents.                                      |
-| **5** | **Document Verification**      | MIS Team           | `DOC_VERIFICATION`                       | Stage 4 bid docs compiled                                 | MIS Team reviews compiled documents for legal compliance, signatures, and format errors before releasing funds.                                |
-| **6** | **EMD Payment**                | MIS Team / Finance | `PAYMENT_PENDING`                        | Stage 5 bid docs**APPROVED** by MIS Team            | EMD payment released; transaction reference, BG number, or exemption certificate recorded.                                                     |
-| **7** | **GeM Submission**             | MIS Team           | `SUBMISSION_PENDING`                     | Stage 6 EMD paid/exempt                                   | Bid pack uploaded to GeM; acknowledgment slip recorded and verified. Tender moves to`SUBMITTED`.                                             |
-| **8** | **Outcome & Analysis**         | MIS Team           | `SUBMITTED` &rarr; `WON`/`LOST`      | Portal results declared                                   | Post-bid opening analysis: records final status (`WON`, `LOST`, `DISQUALIFIED`), competitor prices, and learnings.                       |
+| Step | Name | Who acts | `current_stage` | Opens when | What happens |
+| :--: | :--- | :--- | :--- | :--- | :--- |
+| **1** | **Executive Assignment** | MIS Team | `NEW` | A new tender arrives from GeM | MIS assigns a Tender Executive and records the participation decision (**Assign & Participate** or **Not Participating**). |
+| **2** | **Technical Specification** | Tender Executive → Clearance Team | `SPEC_CLEARANCE` | An executive is assigned | The executive uploads the tender document, the AI builds the specification sheet (PDF / Word / Excel), and the executive sends it to a Clearance Team member. Clearance checks the parameters, can upload corrected files, and grants clearance as **All Comply** or **Comply with Deviations**. The tender then returns to the executive, and the Brochure Team is asked for the brochure at the same time. |
+| **3** | **Bid Document Preparation** | Tender Executive | `BID_DOCS_PREPARATION` | Clearance is granted | The executive generates the bid package (DOCX & PDF) from the standard template. It does not wait for the brochure; once uploaded, the brochure is linked on this step. Pricing is not needed yet. |
+| **4** | **EMD Payment** | Tender Executive → MIS Team | `PAYMENT_APPROVAL` | The bid package is generated | The executive enters the EMD payment details and MIS approves them or requests changes. A tender with exempt / not-applicable EMD skips this step. |
+| **5** | **Pricing & Verification (Dual Track)** | Tender Executive, TPC Pricing Team, MIS Team | `DUAL_TRACK`, `TPC_PRICING`, `MIS_PRICING`, `DOC_VERIFICATION` | EMD is approved or exempt | **Track A:** the executive routes pricing to the TPC Pricing Team (confidential purchase price, masked from the executive) or directly to MIS, and MIS sets the final price. **Track B:** MIS audits the bid folder documents. Both tracks must pass. |
+| **6** | **Final Submission** | Tender Executive → MIS Team | `SUBMISSION_READY` → `SUBMISSION_PENDING` | Both tracks are approved | The executive submits the bid on the GeM portal and MIS audits and confirms the filing. |
+| **7** | **Outcome** | MIS Team | `WIN_LOSS_PENDING` → `WON` / `LOST` | The filing is confirmed | MIS records the result: **Won / Awarded**, or **Lost** with the reason. |
+| **Parallel** | **Brochure Upload** | **Brochure Team** | Not changed (`brochure_status`: `Pending` → `Uploaded`) | Clearance is granted | The Brochure Team uploads one brochure (PDF / Word / Excel, up to 50 MB). It is listed in the tender's **Document Repository**. It never blocks a step and never changes `current_stage`. |
+
+### The Brochure Team (Parallel)
+
+After the Clearance Team grants clearance (**All Comply** or **Comply with Deviations**), the tender
+goes back to the Tender Executive for the bid package, and at the same time the **Brochure Team**
+is asked for the brochure (`brochure_status = Pending`). Nothing waits for the brochure: a tender
+can go through every step without one.
+
+1. The Brochure Team logs in (`brochure`). Its dashboard shows **All Tenders**, **Pending Upload**
+   and **Uploaded** cards, and its tender list contains only tenders with a brochure request.
+2. It opens a tender and, in the **Brochure Upload (Parallel)** card, uploads one brochure
+   document: PDF, Word (`.docx` / `.doc`) or Excel (`.xlsx` / `.xls`), up to 50 MB. PDF, `.docx`
+   and `.xlsx` files are also checked by content, so a renamed file of another type is rejected.
+3. The file is stored with the tender's other documents and listed in the tender's
+   **Document Repository** as `Brochure - <file name>` (`brochure_status = Uploaded`). The
+   tender stays at whatever step it has reached. The Tender Executive sees a link to the
+   brochure in **3. Executive Handover & Document Preparation**.
+
+Uploading again (**Replace Brochure**) replaces the file. Each tender's progress header shows a
+**Brochure Pending** / **Brochure ✓** badge, and the Status page has a **Brochure (Parallel)**
+card that counts active tenders still waiting for a brochure. Tenders cleared before the Brochure
+Team existed have no `brochure_status` and do not appear in its list.
+
+The `brochure` account is created on the first login after the backend starts with
+`BROCHURE_DEFAULT_PASSWORD` set. Changing the variable later does not change an existing account's
+password: Admin can reset it in **Team Profiles** by saving the `brochure` username again with the
+**Brochure Team** role and the new password. More Brochure Team users can be created there too.
 
 ---
 
@@ -159,31 +183,32 @@ flowchart TD
 
 TenderPocket enforces role-based access control (RBAC) at both the Next.js API layer and the Spring Boot controller layer.
 
-| Feature / Action                                            |  Tender Executive  | Clearance Team | TPC Pricing Team |  MIS Team  | Admin |
-| :---------------------------------------------------------- | :----------------: | :------------: | :--------------: | :--------: | :---: |
-| **Discover & View Tenders**                           |         ✅         |       ✅       |        ✅        |     ✅     |  ✅  |
-| **Upload Technical Specs**                            |         ✅         |       ❌       |        ❌        |     ❌     |  ✅  |
-| **Approve / Reject Tech Specs**                       |         ❌         |       ✅       |        ❌        |     ❌     |  ✅  |
-| **Input Manufacturer Quote (`tpc_purchase_price`)** |         ❌         |       ❌       |        ✅        |     ❌     |  ✅  |
-| **View Manufacturer Quote (`tpc_purchase_price`)**  | 🚫**MASKED** |       ❌       |        ✅        |     ✅     |  ✅  |
-| **Set Final Selling Price (`mis_final_price`)**     |         ❌         |       ❌       |        ❌        |     ✅     |  ✅  |
-| **Generate Bid Documents (DOCX/PDF)**                 |     ✅ (Gated)     |       ❌       |        ❌        |     ❌     |  ✅  |
-| **Verify & Approve Bid Documents**                    |         ❌         |       ❌       |        ❌        |     ✅     |  ✅  |
-| **Process / Record EMD Payment**                      |         ❌         |       ❌       |        ❌        | ✅ (Gated) |  ✅  |
-| **Record GeM Submission**                             |         ❌         |       ❌       |        ❌        |     ✅     |  ✅  |
-| **Record Final Outcome (Won/Lost)**                   |         ❌         |       ❌       |        ❌        |     ✅     |  ✅  |
-| **User Management & Audit Logs**                      |         ❌         |       ❌       |        ❌        |     ❌     |  ✅  |
+| Feature / Action                                            |  Tender Executive  | Clearance Team |   Brochure Team    | TPC Pricing Team |  MIS Team  | Admin |
+| :---------------------------------------------------------- | :----------------: | :------------: | :----------------: | :--------------: | :--------: | :---: |
+| **Discover & View Tenders**                           |         ✅         |       ✅       | ✅ (brochure requests) |        ✅        |     ✅     |  ✅  |
+| **Upload Technical Specs**                            |         ✅         |       ❌       |         ❌         |        ❌        |     ❌     |  ✅  |
+| **Approve / Reject Tech Specs**                       |         ❌         |       ✅       |         ❌         |        ❌        |     ❌     |  ✅  |
+| **Upload Brochure (PDF / Word / Excel)**              |         ❌         |       ❌       |         ✅         |        ❌        |     ❌     |  ❌  |
+| **Input Manufacturer Quote (`tpc_purchase_price`)** |         ❌         |       ❌       |         ❌         |        ✅        |     ❌     |  ✅  |
+| **View Manufacturer Quote (`tpc_purchase_price`)**  | 🚫**MASKED** |       ❌       |   🚫**MASKED**   |        ✅        |     ✅     |  ✅  |
+| **Set Final Selling Price (`mis_final_price`)**     |         ❌         |       ❌       |         ❌         |        ❌        |     ✅     |  ✅  |
+| **Generate Bid Documents (DOCX/PDF)**                 |     ✅ (Gated)     |       ❌       |         ❌         |        ❌        |     ❌     |  ✅  |
+| **Verify & Approve Bid Documents**                    |         ❌         |       ❌       |         ❌         |        ❌        |     ✅     |  ✅  |
+| **Process / Record EMD Payment**                      |         ❌         |       ❌       |         ❌         |        ❌        | ✅ (Gated) |  ✅  |
+| **Record GeM Submission**                             |         ❌         |       ❌       |         ❌         |        ❌        |     ✅     |  ✅  |
+| **Record Final Outcome (Won/Lost)**                   |         ❌         |       ❌       |         ❌         |        ❌        |     ✅     |  ✅  |
+| **User Management & Audit Logs**                      |         ❌         |       ❌       |         ❌         |        ❌        |     ❌     |  ✅  |
 
 ### Commercial Confidentiality Guarantee
 
 The matrix also applies to direct API calls and generic tender updates, not only
 visible buttons. Legacy `MIS Executive` / `Executive` accounts are treated as
-Tender Executives, `Specification Team` as Clearance Team, and `TPC Team` as TPC
-Pricing Team. An invalid supplied JWT never falls back to role headers.
+Tender Executives, `Specification Team` as Clearance Team, `TPC Team` as TPC
+Pricing Team, and `Brochure` as Brochure Team. An invalid supplied JWT never falls back to role headers.
 Authenticated teams may read a minimal username/role directory for assignments;
 user-management operations, detailed account statistics, and audit logs are
 Admin-only. Manufacturer pricing and cached pricing summaries are hidden from
-both Executive and Clearance roles, including nested API responses.
+the Executive, Clearance and Brochure roles, including nested API responses.
 
 To protect sensitive vendor pricing, `tpc_purchase_price` is **strictly stripped and redacted** whenever an authenticated user with role `Tender Executive` requests tender data. Even if inspected via browser developer tools or network logs, the JSON response never contains the purchase price field for the Executive role.
 
@@ -198,6 +223,7 @@ The Approvals Center is a centralized workflow hub accessible via the **Approval
    - `TPC Pricing Team` sees tenders requiring OEM purchase quotes.
    - `MIS Team` sees pricing reviews, document verifications, EMD payments, and submission approvals.
    - `Admin` has a comprehensive view across all pending department stages.
+   - `Brochure Team` has no Approvals Center queue: it uploads the brochure directly on the tender page, in parallel with the other steps, so no approval request is created.
 2. **Request Deduplication & Uniqueness**:
    - Resubmitting a clearance or document request for a tender that already has an active pending request updates the existing record rather than creating duplicate queue items.
 3. **Audit Trail & Feedback History**:
@@ -219,6 +245,8 @@ The Approvals Center is a centralized workflow hub accessible via the **Approval
 
 ## ⚙️ Environment Configuration
 
+For Docker, copy `.env.example` to `.env` in the repository root and replace every placeholder. `docker-compose.yml` contains no passwords, secrets or keys: it reads them all from `.env`, and it stops with an error if `JWT_SECRET`, `DATABASE_PASSWORD` or `BACKEND_URL` is missing. `.env` must never be committed.
+
 ### 1. Frontend Configuration (`frontend/.env.local`)
 
 Copy the frontend environment template:
@@ -237,7 +265,7 @@ Key environment variables:
 PORT=8085
 NEXT_PUBLIC_APP_URL=http://localhost:8085
 BACKEND_URL=http://localhost:8090
-JWT_SECRET=9a6156a5c2d3a3f5a2f8c5b8e9b6a1c8d5e6f3b2a5c8d3e4f5a8b9c1d2e3f4a5
+JWT_SECRET=<same-long-random-secret-as-the-backend>
 DATABASE_PATH=./tenders.db
 ```
 
@@ -248,8 +276,8 @@ PORT=8090
 SPRING_PORT=8090
 DATABASE_URL=jdbc:postgresql://localhost:5432/tenderpocket
 DATABASE_USERNAME=postgres
-DATABASE_PASSWORD=postgres
-JWT_SECRET=9a6156a5c2d3a3f5a2f8c5b8e9b6a1c8d5e6f3b2a5c8d3e4f5a8b9c1d2e3f4a5
+DATABASE_PASSWORD=<your-postgres-password>
+JWT_SECRET=<same-long-random-secret-as-the-backend>
 ```
 
 ---
@@ -296,15 +324,16 @@ The Spring Boot backend will bind to: 👉 **[http://localhost:8090](http://loca
 
 ## 👥 Default User Accounts
 
-The database auto-seeds the following role-based test accounts upon startup:
+The backend creates these accounts on the first login, using the passwords set in `.env`. Never commit real passwords:
 
-| Username                | Role                       | Default Password | Dashboard & Functional Responsibility                                     |
+| Username                | Role                       | Password (set in `.env`) | Dashboard & Functional Responsibility                                     |
 | :---------------------- | :------------------------- | :--------------- | :------------------------------------------------------------------------ |
-| **`admin`**     | **Admin**            | `Marken@123$`  | Full system oversight, audit logs, user management, overrides.            |
-| **`executive`** | **Tender Executive** | `executive123` | Specification uploads, bid document prep (DOCX/PDF).                      |
-| **`clearance`** | **Clearance Team**   | `clearance123` | Technical specification reviews, approvals, and rework feedback.          |
-| **`tpc`**       | **TPC Pricing Team** | `tpc123`       | OEM quotes, manufacturer pricing (confidential).                          |
-| **`misteam`**   | **MIS Team**         | `misteam`      | Final pricing, doc verification, EMD payments, GeM submissions, outcomes. |
+| **`admin`**     | **Admin**            | `ADMIN_DEFAULT_PASSWORD` | Full system oversight, audit logs, user management, overrides.            |
+| **`executive`** | **Tender Executive** | `EXECUTIVE_DEFAULT_PASSWORD` | Specification uploads, bid document prep (DOCX/PDF).                      |
+| **`clearance`** | **Clearance Team**   | `CLEARANCE_DEFAULT_PASSWORD` | Technical specification reviews, approvals, and rework feedback.          |
+| **`brochure`**  | **Brochure Team**    | `BROCHURE_DEFAULT_PASSWORD` | Uploads the brochure (PDF / Word / Excel) for tenders the Clearance Team approved. |
+| **`tpc`**       | **TPC Pricing Team** | `TPC_DEFAULT_PASSWORD` | OEM quotes, manufacturer pricing (confidential).                          |
+| **`misteam`**   | **MIS Team**         | `MISTEAM_DEFAULT_PASSWORD` | Final pricing, doc verification, EMD payments, GeM submissions, outcomes. |
 
 ---
 
@@ -403,3 +432,4 @@ docker compose up -d --build
 
 - Detailed Engineering Changelog: [TASK_CHANGELOG.md](TASK_CHANGELOG.md)
 - Local Code Changes Audit: [LOCAL_CHANGES_REPORT.md](LOCAL_CHANGES_REPORT.md)
+- Workflow & Architecture Specification: [WORKFLOW_SYSTEM_ARCHITECTURE_REVIEW.md](WORKFLOW_SYSTEM_ARCHITECTURE_REVIEW.md)

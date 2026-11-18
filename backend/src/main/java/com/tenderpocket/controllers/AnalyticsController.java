@@ -3,6 +3,7 @@ import com.tenderpocket.config.WorkflowPermissions;
 
 import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.TenderRepository;
+import com.tenderpocket.services.WorkflowSyncService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
@@ -241,6 +242,13 @@ public class AnalyticsController {
         metrics.put("tpcPendingCount", tpcPendingCount);
         metrics.put("tpcApprovedCount", tpcApprovedCount);
         metrics.put("tpcRejectedCount", tpcRejectedCount);
+        if ("Brochure Team".equals(WorkflowPermissions.canonicalRole(userRole))) {
+            long brochurePendingCount = tenderRepository.countByBrochureStatus(WorkflowSyncService.BROCHURE_PENDING);
+            long brochureUploadedCount = tenderRepository.countByBrochureStatus(WorkflowSyncService.BROCHURE_UPLOADED);
+            metrics.put("brochurePendingCount", brochurePendingCount);
+            metrics.put("brochureUploadedCount", brochureUploadedCount);
+            metrics.put("brochureTotalCount", brochurePendingCount + brochureUploadedCount);
+        }
         metrics.put("status", statusRows);
 
         return ResponseEntity.ok(Map.of(

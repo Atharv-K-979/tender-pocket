@@ -916,9 +916,11 @@ public class ApprovalController {
                         } catch (Exception ex) {
                             System.err.println("[ApprovalController] Error syncing workflow state: " + ex.getMessage());
                             tender.setCurrentStage("BID_DOCS_PREPARATION");
+                            WorkflowSyncService.requestBrochure(tender);
                         }
                     } else {
                         tender.setCurrentStage("BID_DOCS_PREPARATION");
+                        WorkflowSyncService.requestBrochure(tender);
                     }
                 }
                 case "TPC_PRICING"    -> {

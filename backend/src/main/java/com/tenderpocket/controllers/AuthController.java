@@ -58,6 +58,9 @@ public class AuthController {
     @Value("${app.auth.tpc-password:${TPC_DEFAULT_PASSWORD:}}")
     private String tpcDefaultPassword;
 
+    @Value("${app.auth.brochure-password:${BROCHURE_DEFAULT_PASSWORD:}}")
+    private String brochureDefaultPassword;
+
     private final ObjectMapper mapper = new ObjectMapper();
 
     @PostMapping("/login")
@@ -84,6 +87,11 @@ public class AuthController {
         }
         if (!userRepository.existsById("tpc")) {
             userRepository.save(new User("tpc", passwordEncoder.encode(tpcDefaultPassword), "TPC Team", "tpc@company.com"));
+        }
+        // The Brochure Team login is created only once BROCHURE_DEFAULT_PASSWORD is set,
+        // so the account never exists with a blank password.
+        if (brochureDefaultPassword != null && !brochureDefaultPassword.isBlank() && !userRepository.existsById("brochure")) {
+            userRepository.save(new User("brochure", passwordEncoder.encode(brochureDefaultPassword), "Brochure Team", "brochure@company.com"));
         }
 
         Optional<User> opt = userRepository.findById(username);
@@ -248,11 +256,11 @@ public class AuthController {
             role = "Tender Executive";
         }
 
-        List<String> validRoles = List.of("Admin", "MIS Team", "Tender Executive", "Clearance Team", "TPC Team", "Specification Team");
+        List<String> validRoles = List.of("Admin", "MIS Team", "Tender Executive", "Clearance Team", "TPC Team", "Specification Team", "Brochure Team");
         if (!validRoles.contains(role)) {
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "error", "Invalid role specified. Allowed roles: Tender Executive, Clearance Team, TPC Team, MIS Team, Specification Team, Admin"
+                "error", "Invalid role specified. Allowed roles: Tender Executive, Clearance Team, Brochure Team, TPC Team, MIS Team, Specification Team, Admin"
             ));
         }
 
@@ -367,6 +375,7 @@ public class AuthController {
         List<String> roles = List.of(
             "Tender Executive",
             "Clearance Team",
+            "Brochure Team",
             "TPC Team",
             "MIS Team",
             "Specification Team",

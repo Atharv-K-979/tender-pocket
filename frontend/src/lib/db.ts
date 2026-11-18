@@ -258,11 +258,14 @@ export function hashPassword(password: string): string {
 
 // Seed default users if missing for all standard roles
 try {
-  const adminPwd = process.env.ADMIN_DEFAULT_PASSWORD || 'Marken@123$';
-  const execPwd = process.env.EXECUTIVE_DEFAULT_PASSWORD || 'executive123';
-  const clearancePwd = process.env.CLEARANCE_DEFAULT_PASSWORD || 'clearance123';
-  const misPwd = process.env.MISTEAM_DEFAULT_PASSWORD || 'misteam';
-  const tpcPwd = process.env.TPC_DEFAULT_PASSWORD || 'tpc123';
+  // Passwords come only from the environment; without one the local account gets a random,
+  // unusable password (logins are checked by the backend).
+  const randomPwd = () => crypto.randomBytes(24).toString('hex');
+  const adminPwd = process.env.ADMIN_DEFAULT_PASSWORD || randomPwd();
+  const execPwd = process.env.EXECUTIVE_DEFAULT_PASSWORD || randomPwd();
+  const clearancePwd = process.env.CLEARANCE_DEFAULT_PASSWORD || randomPwd();
+  const misPwd = process.env.MISTEAM_DEFAULT_PASSWORD || randomPwd();
+  const tpcPwd = process.env.TPC_DEFAULT_PASSWORD || randomPwd();
 
   const insertOrUpdateUser = db.prepare(`
     INSERT INTO users (username, password_hash, role, email) 
@@ -370,6 +373,11 @@ export interface Tender {
   final_tech_spec_uploaded_by?: string | null;
   final_tech_spec_uploaded_at?: string | null;
   spec_compliance_type?: string | null;
+  // Brochure step (after Clearance, before the bid package). null = cleared before the step existed.
+  brochure_status?: 'Pending' | 'Uploaded' | null;
+  brochure_filename?: string | null;
+  brochure_uploaded_by?: string | null;
+  brochure_uploaded_at?: string | null;
   emd_applicable?: boolean;
   emd_beneficiary_name?: string | null;
   emd_receipt_doc_path?: string | null;

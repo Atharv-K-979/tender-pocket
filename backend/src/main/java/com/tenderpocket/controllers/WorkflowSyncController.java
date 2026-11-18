@@ -316,6 +316,7 @@ public class WorkflowSyncController {
 
                 // Purge ALL prior technical spec entries (AI specs, drafts)
                 docsList.removeIf(item -> {
+                    if ("brochure".equals(String.valueOf(item.get("source")))) return false; // the Brochure Team's upload stays
                     String fn = item.get("filename") != null ? item.get("filename").toString().toLowerCase() : "";
                     String nm = item.get("name") != null ? item.get("name").toString().toLowerCase() : "";
                     return fn.contains("combined_technical") || fn.contains("tech_spec") || fn.contains("technical_specification") || fn.equals("specification.pdf")
@@ -371,9 +372,13 @@ public class WorkflowSyncController {
         TenderWorkflowState state = workflowSyncService.recordFinalTechSpec(tenderId, effectiveFilename, type, remarks, getUsername());
 
         String stageNow = state != null && state.getStepName() != null ? state.getStepName() : "BID_DOCS_PREPARATION";
-        String message = isDeviation
+        boolean brochureRequested = tenderRepository.findById(tenderId)
+                .map(t -> WorkflowSyncService.BROCHURE_PENDING.equalsIgnoreCase(t.getBrochureStatus()))
+                .orElse(false);
+        String message = (isDeviation
                 ? "Comply with deviations saved. The three new documents replace the previous specification files. The Tender Executive can now generate the bid package."
-                : "All comply recorded. The Tender Executive can now generate the bid package. EMD follows that package.";
+                : "All comply recorded. The Tender Executive can now generate the bid package. EMD follows that package.")
+                + (brochureRequested ? " The Brochure Team uploads the brochure in parallel." : "");
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", message,

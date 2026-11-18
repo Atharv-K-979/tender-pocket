@@ -251,6 +251,21 @@ public class Tender {
     @Column(name = "spec_compliance_type")
     private String specComplianceType;
 
+    // Brochure step (after Clearance approval, before the Tender Executive's bid package).
+    // null = tender was cleared before this step existed, "Pending" = waiting for the
+    // Brochure Team, "Uploaded" = brochure uploaded and tender handed to the Tender Executive.
+    @Column(name = "brochure_status")
+    private String brochureStatus;
+
+    @Column(name = "brochure_filename")
+    private String brochureFilename;
+
+    @Column(name = "brochure_uploaded_by")
+    private String brochureUploadedBy;
+
+    @Column(name = "brochure_uploaded_at")
+    private String brochureUploadedAt;
+
     @Column(name = "pricing_status")
     private String pricingStatus = "None";
 
@@ -530,6 +545,18 @@ public class Tender {
 
     public String getSpecComplianceType() { return specComplianceType; }
     public void setSpecComplianceType(String specComplianceType) { this.specComplianceType = specComplianceType; }
+
+    public String getBrochureStatus() { return brochureStatus; }
+    public void setBrochureStatus(String brochureStatus) { this.brochureStatus = brochureStatus; }
+
+    public String getBrochureFilename() { return brochureFilename; }
+    public void setBrochureFilename(String brochureFilename) { this.brochureFilename = brochureFilename; }
+
+    public String getBrochureUploadedBy() { return brochureUploadedBy; }
+    public void setBrochureUploadedBy(String brochureUploadedBy) { this.brochureUploadedBy = brochureUploadedBy; }
+
+    public String getBrochureUploadedAt() { return brochureUploadedAt; }
+    public void setBrochureUploadedAt(String brochureUploadedAt) { this.brochureUploadedAt = brochureUploadedAt; }
 
     public String getPricingStatus() { return pricingStatus; }
     public void setPricingStatus(String pricingStatus) { this.pricingStatus = pricingStatus; }

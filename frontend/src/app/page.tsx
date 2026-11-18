@@ -218,6 +218,7 @@ export default function Dashboard() {
   // MIS Team and Admin can add tenders by hand
   const canAddTender = isMisRole || currentUser?.role === 'Admin';
   const isExecutive = currentUser && (currentUser.role === 'Tender Executive' || currentUser.role === 'Executive' || currentUser.role === 'MIS Executive' || canonicalRole(currentUser.role) === 'Tender Executive');
+  const isBrochureRole = canonicalRole(currentUser?.role) === 'Brochure Team';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
     status?: string;
@@ -420,7 +421,7 @@ export default function Dashboard() {
   const isStage4Complete = (isStage5Complete && docsVerified) || isOutcomeState; // Track B after EMD
   const isStage6Complete = ((isStage2Complete && isStage4Complete) && Boolean(selectedTender && (selectedTender.submission_status === 'Approved' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed'))) || isOutcomeState;
 
-  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team';
+  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && !isBrochureRole;
   const isStage1Visible = true; // Step 2 spec clearance
   const isStage3Visible = isOperationalRole && (isStage1Complete || isOutcomeState); // Step 3 bid package after clearance
   const isStage5Visible = isOperationalRole && (isStage3Complete || isOutcomeState); // Step 4 EMD after the bid package
@@ -1689,6 +1690,24 @@ export default function Dashboard() {
     }
   };
 
+  // Brochure Team list badge: Pending Upload / Uploaded
+  const renderBrochureBadge = (tender: Tender) => {
+    const uploaded = tender.brochure_status === 'Uploaded';
+    return (
+      <span style={{
+        fontSize: '11px',
+        fontWeight: '700',
+        padding: '3px 8px',
+        borderRadius: '6px',
+        backgroundColor: uploaded ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+        color: uploaded ? '#10b981' : '#f59e0b',
+        border: '1px solid ' + (uploaded ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)')
+      }}>
+        {uploaded ? 'Brochure Uploaded' : 'Pending Upload'}
+      </span>
+    );
+  };
+
   // Handle Dashboard Metric Card Click
   const handleMetricCardClick = (status: string) => {
     setSearchQuery('');
@@ -2413,6 +2432,11 @@ export default function Dashboard() {
   const nonSubmissionLossTenders = analytics?.metrics?.nonSubmissionLossCount || 0;
   const nonParticipationLossTenders = analytics?.metrics?.nonParticipationLossCount || 0;
 
+  // Brochure Team counts come from analytics so the cards do not change with list filters
+  const brochurePendingCount = analytics?.metrics?.brochurePendingCount ?? tenders.filter(t => t.brochure_status === 'Pending').length;
+  const brochureUploadedCount = analytics?.metrics?.brochureUploadedCount ?? tenders.filter(t => t.brochure_status === 'Uploaded').length;
+  const brochureTotalCount = analytics?.metrics?.brochureTotalCount ?? (brochurePendingCount + brochureUploadedCount);
+
   const specTotalCount = analytics?.metrics?.specTotalCount ?? tenders.length;
   const specPendingCount = analytics?.metrics?.specPendingCount ?? tenders.filter((t: any) => t.spec_verification_status === 'Pending').length;
   const specApprovedCount = analytics?.metrics?.specApprovedCount ?? tenders.filter((t: any) => t.spec_verification_status === 'Approved').length;
@@ -2691,6 +2715,7 @@ export default function Dashboard() {
                   backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' :
                     currentUser.role === 'MIS Team' ? '#10b981' :
                     currentUser.role === 'Clearance Team' ? '#8b5cf6' :
+                    currentUser.role === 'Brochure Team' ? '#14b8a6' :
                     currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'
                 }} />
                 <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Active Session</span>
@@ -2795,8 +2820,8 @@ export default function Dashboard() {
                     fontSize: '12.5px'
                   }}
                 >
-                  <option value="ALL">All Cards (11)</option>
-                  <option value="PIPELINE">Steps 1-6 Pipeline</option>
+                  <option value="ALL">All Cards (12)</option>
+                  <option value="PIPELINE">Steps 1-6 & Brochure</option>
                   <option value="OUTCOMES">Outcomes & Won/Lost</option>
                   <option value="ACTION_REQUIRED">Action Required Only</option>
                 </select>
@@ -2884,6 +2909,49 @@ export default function Dashboard() {
                             <h3>Rejected</h3>
                             <div className="metric-number">{specRejectedCount}</div>
                             <div className="metric-trend">Rejected specification review</div>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  ) : isBrochureRole ? (
+                    <div>
+                      <h2 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>
+                        Brochure Upload Statuses
+                      </h2>
+                      <section className="metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+                        {/* All Tenders */}
+                        <div className="card metric-card" onClick={() => handleMetricCardClick('')}>
+                          <div className="metric-icon-box total">
+                            <FileText size={24} />
+                          </div>
+                          <div className="metric-info">
+                            <h3>All Tenders</h3>
+                            <div className="metric-number">{brochureTotalCount}</div>
+                            <div className="metric-trend">Approved by the Clearance Team</div>
+                          </div>
+                        </div>
+
+                        {/* Pending Upload */}
+                        <div className="card metric-card" onClick={() => handleMetricCardClick('Pending')} style={{ borderLeft: '3px solid var(--accent-yellow)' }}>
+                          <div className="metric-icon-box" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--accent-yellow)' }}>
+                            <Clock size={24} />
+                          </div>
+                          <div className="metric-info">
+                            <h3>Pending Upload</h3>
+                            <div className="metric-number">{brochurePendingCount}</div>
+                            <div className="metric-trend">Waiting for the brochure document</div>
+                          </div>
+                        </div>
+
+                        {/* Uploaded */}
+                        <div className="card metric-card" onClick={() => handleMetricCardClick('Uploaded')} style={{ borderLeft: '3px solid var(--accent-green)' }}>
+                          <div className="metric-icon-box" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)' }}>
+                            <CheckCircle2 size={24} />
+                          </div>
+                          <div className="metric-info">
+                            <h3>Uploaded</h3>
+                            <div className="metric-number">{brochureUploadedCount}</div>
+                            <div className="metric-trend">Listed in the Document Repository</div>
                           </div>
                         </div>
                       </section>
@@ -3141,7 +3209,9 @@ export default function Dashboard() {
                       <div className="empty-state" style={{ flexGrow: 1 }}>
                         <Mail size={48} />
                         <h3>No Tenders Found</h3>
-                        <p>Paste or upload your first email digest from Tender247 to begin tracking.</p>
+                        <p>{isBrochureRole
+                          ? 'Tenders appear here after the Clearance Team approves them.'
+                          : 'Paste or upload your first email digest from Tender247 to begin tracking.'}</p>
                       </div>
                     ) : (
                       <div className="tender-list-container" style={{ maxHeight: '420px' }}>
@@ -3150,7 +3220,9 @@ export default function Dashboard() {
                             <div className="tender-item-left">
                               <div className="tender-meta-row">
                                 <span className="tender-id-badge">{tender.id}</span>
-                                <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
+                                {isBrochureRole ? renderBrochureBadge(tender) : (
+                                  <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
+                                )}
                                 {(() => {
                                   const classification = getClassificationDisplay(tender.tender_type || tender.tenderType);
                                   const sourceLabel = getSourceBadgeLabel(tender.source);
@@ -3299,7 +3371,13 @@ export default function Dashboard() {
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
                   >
-                    {currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' ? (
+                    {isBrochureRole ? (
+                      <>
+                        <option value="">All Tenders</option>
+                        <option value="Pending">Pending Upload</option>
+                        <option value="Uploaded">Uploaded</option>
+                      </>
+                    ) : currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' ? (
                       <>
                         <option value="">All Tenders</option>
                         <option value="Pending">Pending</option>
@@ -3418,6 +3496,11 @@ export default function Dashboard() {
                       const s = (t.status || '').toLowerCase().trim();
                       const f = statusFilter.toLowerCase().trim();
 
+                      // Role-specific definitions for Brochure Team
+                      if (isBrochureRole && (f === 'pending' || f === 'uploaded')) {
+                        return (t.brochure_status || '').toLowerCase() === f;
+                      }
+
                       // Role-specific definitions for TPC Pricing Team
                       if (currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team') {
                         if (f === 'pending') {
@@ -3479,7 +3562,7 @@ export default function Dashboard() {
                         <div className="tender-item-left">
                           <div className="tender-meta-row">
                             <span className="tender-id-badge">{tender.id}</span>
-                            {currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' ? (
+                            {isBrochureRole ? renderBrochureBadge(tender) : currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' ? (
                               <span style={{
                                 fontSize: '11px',
                                 fontWeight: '700',
@@ -4636,18 +4719,21 @@ export default function Dashboard() {
                                       user.role === 'Admin' ? 'rgba(245, 158, 11, 0.1)' :
                                       user.role === 'MIS Executive' || user.role === 'Tender Executive' ? 'rgba(99, 102, 241, 0.1)' :
                                       user.role === 'Clearance Team' ? 'rgba(139, 92, 246, 0.1)' :
+                                      user.role === 'Brochure Team' ? 'rgba(20, 184, 166, 0.1)' :
                                       user.role === 'TPC Pricing Team' || user.role === 'TPC Team' ? 'rgba(236, 72, 153, 0.1)' :
                                       'rgba(59, 130, 246, 0.1)',
                                     color: 
                                       user.role === 'Admin' ? '#f59e0b' :
                                       user.role === 'MIS Executive' || user.role === 'Tender Executive' ? '#818cf8' :
                                       user.role === 'Clearance Team' ? '#8b5cf6' :
+                                      user.role === 'Brochure Team' ? '#14b8a6' :
                                       user.role === 'TPC Pricing Team' || user.role === 'TPC Team' ? '#ec4899' :
                                       '#3b82f6',
                                     border: '1px solid ' + (
                                       user.role === 'Admin' ? 'rgba(245, 158, 11, 0.2)' :
                                       user.role === 'MIS Executive' || user.role === 'Tender Executive' ? 'rgba(99, 102, 241, 0.2)' :
                                       user.role === 'Clearance Team' ? 'rgba(139, 92, 246, 0.2)' :
+                                      user.role === 'Brochure Team' ? 'rgba(20, 184, 166, 0.2)' :
                                       user.role === 'TPC Pricing Team' || user.role === 'TPC Team' ? 'rgba(236, 72, 153, 0.2)' :
                                       'rgba(59, 130, 246, 0.2)'
                                     )
@@ -4812,6 +4898,7 @@ export default function Dashboard() {
                       >
                         <option value="Tender Executive">Tender Executive</option>
                         <option value="Clearance Team">Clearance Team</option>
+                        <option value="Brochure Team">Brochure Team</option>
                         <option value="TPC Pricing Team">TPC Pricing Team</option>
                         <option value="MIS Team">MIS Team</option>
                       </select>
@@ -8820,10 +8907,12 @@ export default function Dashboard() {
             backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' :
               currentUser.role === 'MIS Team' ? '#10b981' :
               currentUser.role === 'Clearance Team' ? '#8b5cf6' :
+              currentUser.role === 'Brochure Team' ? '#14b8a6' :
               currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
             boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' :
               currentUser.role === 'MIS Team' ? '#10b981' :
               currentUser.role === 'Clearance Team' ? '#8b5cf6' :
+              currentUser.role === 'Brochure Team' ? '#14b8a6' :
               currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
           }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>

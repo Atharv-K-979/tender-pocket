@@ -19,6 +19,10 @@ import java.util.*;
 @Service
 public class WorkflowSyncService {
 
+    /** Tender.brochureStatus values. null means no brochure was requested (cleared before the Brochure Team existed). */
+    public static final String BROCHURE_PENDING = "Pending";
+    public static final String BROCHURE_UPLOADED = "Uploaded";
+
     @Autowired
     private TenderRepository tenderRepository;
 
@@ -214,6 +218,9 @@ public class WorkflowSyncService {
         commentRepository.save(new TenderComment(tenderId, "SPEC_CLEARANCE", clearanceUser, "Clearance Team",
                 "Final technical specification sealed with " + ("ALL_COMPLY".equalsIgnoreCase(complianceType) ? "All Comply" : "Deviations")
                 + ". Tender returned to the Tender Executive to generate the bid package. EMD follows the package."
+                + (BROCHURE_PENDING.equalsIgnoreCase(tender.getBrochureStatus())
+                    ? " The Brochure Team uploads the brochure in parallel."
+                    : "")
                 + ("DEVIATIONS".equalsIgnoreCase(complianceType)
                     ? " Replacement PDF, DOCX, and XLSX files are now the specification documents for the rest of this tender."
                     : "")));
@@ -222,16 +229,59 @@ public class WorkflowSyncService {
     }
 
     /**
-     * After clearance, the executive's next job is EMD payment.
+     * After clearance the tender goes back to the executive for the bid package, and the Brochure
+     * Team is asked for the brochure at the same time (see requestBrochure).
      * Returns true when EMD does not apply and the tender skips ahead.
      */
     public boolean handOffClearedSpecToExecutive(Tender tender, TenderWorkflowState state) {
         tender.setCurrentStage("BID_DOCS_PREPARATION");
+        requestBrochure(tender);
         if (state != null) {
             state.setCurrentStep(3);
             state.setStepName("BID_DOCS_PREPARATION");
         }
         return false;
+    }
+
+    /**
+     * Clearance approved: the Brochure Team is asked for the brochure (brochure_status Pending).
+     * This runs in parallel with the Tender Executive's work; no step waits for the brochure.
+     * A brochure that is already uploaded is kept.
+     */
+    public static void requestBrochure(Tender tender) {
+        if (!BROCHURE_UPLOADED.equalsIgnoreCase(tender.getBrochureStatus())) {
+            tender.setBrochureStatus(BROCHURE_PENDING);
+        }
+    }
+
+    /** Records the uploaded brochure on the tender. The tender's workflow stage is not changed. */
+    public static void applyBrochureUpload(Tender tender, String filename, String uploadedBy) {
+        tender.setBrochureStatus(BROCHURE_UPLOADED);
+        tender.setBrochureFilename(filename);
+        tender.setBrochureUploadedBy(uploadedBy);
+        // UTC instant with a 'Z' so the browser shows the upload time in the viewer's own time zone
+        tender.setBrochureUploadedAt(java.time.Instant.now().toString());
+    }
+
+    /**
+     * The Brochure Team uploaded the brochure. The upload runs in parallel with the bid package,
+     * so the tender stays at whatever step it has reached. Uploading again replaces the document.
+     */
+    @Transactional
+    public Tender recordBrochureUpload(String tenderId, String filename, String uploadedBy) {
+        Optional<Tender> tOpt = tenderRepository.findById(tenderId);
+        if (tOpt.isEmpty()) return null;
+        Tender tender = tOpt.get();
+
+        boolean firstUpload = !BROCHURE_UPLOADED.equalsIgnoreCase(tender.getBrochureStatus());
+        applyBrochureUpload(tender, filename, uploadedBy);
+        tenderRepository.save(tender);
+
+        commentRepository.save(new TenderComment(tenderId, "BROCHURE_UPLOAD", uploadedBy, "Brochure Team",
+                firstUpload
+                        ? "Brochure uploaded (" + filename + ")."
+                        : "Brochure replaced with " + filename + "."));
+        return tender;
     }
 
     /**

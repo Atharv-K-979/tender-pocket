@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-tender_pocket}
       POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -32,16 +32,17 @@ services:
       JAVA_TOOL_OPTIONS: "-Xmx3g -Xms512m"
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/${POSTGRES_DB:-tender_pocket}?sslmode=disable}
       SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD}
+      SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
       SPRING_JPA_DATABASE_PLATFORM: ${SPRING_JPA_DATABASE_PLATFORM:-org.hibernate.dialect.PostgreSQLDialect}
       SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}
-      JWT_SECRET: ${JWT_SECRET:-tender_pocket_production_jwt_signing_secret_key_2026_marken_512bit_secure}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-315360000}
       ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-}
       MISTEAM_DEFAULT_PASSWORD: ${MISTEAM_DEFAULT_PASSWORD:-}
       EXECUTIVE_DEFAULT_PASSWORD: ${EXECUTIVE_DEFAULT_PASSWORD:-}
       CLEARANCE_DEFAULT_PASSWORD: ${CLEARANCE_DEFAULT_PASSWORD:-}
       TPC_DEFAULT_PASSWORD: ${TPC_DEFAULT_PASSWORD:-}
+      BROCHURE_DEFAULT_PASSWORD: ${BROCHURE_DEFAULT_PASSWORD:-}
       AWS_REGION: ${AWS_REGION:-ap-south-1}
       AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-}
       AWS_S3_ENABLED: ${AWS_S3_ENABLED:-false}
@@ -105,8 +106,8 @@ services:
     environment:
       PORT: 8085
       NODE_ENV: production
-      BACKEND_URL: ${BACKEND_URL:-http://tender-pocket-backend:8090}
-      JWT_SECRET: ${JWT_SECRET:-tender_pocket_production_jwt_signing_secret_key_2026_marken_512bit_secure}
+      BACKEND_URL: ${BACKEND_URL:?Set BACKEND_URL in .env (http://tender-pocket-backend:8090 for Docker)}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
     volumes:
       - backend_documents:/app/public/documents
     networks:

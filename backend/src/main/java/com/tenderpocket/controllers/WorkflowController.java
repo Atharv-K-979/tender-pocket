@@ -351,6 +351,7 @@ public class WorkflowController {
 
             // Purge ALL prior technical spec entries (AI specs, previous drafts)
             docsList.removeIf(item -> {
+                if ("brochure".equals(String.valueOf(item.get("source")))) return false; // the Brochure Team's upload stays
                 String fn = item.get("filename") != null ? item.get("filename").toString().toLowerCase() : "";
                 String nm = item.get("name") != null ? item.get("name").toString().toLowerCase() : "";
                 return fn.contains("combined_technical") || fn.contains("tech_spec") || fn.contains("technical_specification") || fn.equals("specification.pdf")
@@ -446,7 +447,10 @@ public class WorkflowController {
                     : "All comply. Existing specification documents continue with this tender.";
         }
         String finalComment = (comment != null && !comment.isBlank()) ? comment : defaultComment;
-        String handoff = " Tender returned to the Tender Executive to generate the bid package.";
+        String handoff = " Tender returned to the Tender Executive to generate the bid package."
+                + (com.tenderpocket.services.WorkflowSyncService.BROCHURE_PENDING.equalsIgnoreCase(tender.getBrochureStatus())
+                    ? " The Brochure Team uploads the brochure in parallel."
+                    : "");
         commentRepository.save(new TenderComment(id, "SPEC_CLEARANCE", username, "Clearance Team",
                 finalComment + " [" + compType + "." + handoff + "]"));
 
@@ -465,6 +469,7 @@ public class WorkflowController {
 
     private void workflowSyncServiceMissingHandoff(Tender tender) {
         tender.setCurrentStage("BID_DOCS_PREPARATION");
+        com.tenderpocket.services.WorkflowSyncService.requestBrochure(tender);
     }
 
     private boolean isEmdSettled(Tender tender) {
@@ -1077,6 +1082,7 @@ public class WorkflowController {
                         workflowSyncService.recordFinalTechSpec(tender.getId(), specFile, "ALL_COMPLY", comment, authUsername);
                     } else {
                         tender.setCurrentStage("BID_DOCS_PREPARATION");
+                        com.tenderpocket.services.WorkflowSyncService.requestBrochure(tender);
                     }
                 }
                 case "TPC_PRICING"    -> {

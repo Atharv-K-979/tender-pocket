@@ -2,6 +2,7 @@
   "Admin": ["viewTenders", "setTpcPrice", "viewTpcPrice", "manageUsers", "viewAudit"],
   "Tender Executive": ["viewTenders", "uploadSpecs", "generateBids"],
   "Clearance Team": ["viewTenders", "approveSpecs"],
+  "Brochure Team": ["viewTenders", "uploadBrochure"],
   "TPC Pricing Team": ["viewTenders", "setTpcPrice", "viewTpcPrice"],
   "MIS Team": ["viewTenders", "setTpcPrice", "viewTpcPrice", "setMisPrice", "reviewBids", "recordPayment", "recordSubmission", "recordOutcome"]
 }

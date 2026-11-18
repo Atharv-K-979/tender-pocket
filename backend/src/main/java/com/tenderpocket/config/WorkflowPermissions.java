@@ -10,7 +10,8 @@ public final class WorkflowPermissions {
     private WorkflowPermissions() {}
     public enum Action {
         VIEW_TENDERS, UPLOAD_SPEC, APPROVE_SPEC, SET_TPC_PRICE, VIEW_TPC_PRICE, SET_MIS_PRICE,
-        GENERATE_BIDS, REVIEW_BIDS, RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME, MANAGE_USERS, VIEW_AUDIT
+        GENERATE_BIDS, REVIEW_BIDS, RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME, MANAGE_USERS, VIEW_AUDIT,
+        UPLOAD_BROCHURE
     }
 
     public static String canonicalRole(String role) {
@@ -21,6 +22,7 @@ public final class WorkflowPermissions {
             case "SPECIFICATION TEAM", "CLEARANCE TEAM", "CLEARANCE", "SPECIFICATION" -> "Clearance Team";
             case "TPC TEAM", "TPC PRICING TEAM", "TPC", "TPC PRICING" -> "TPC Pricing Team";
             case "MIS TEAM", "MISTEAM", "MIS" -> "MIS Team";
+            case "BROCHURE TEAM", "BROCHURE" -> "Brochure Team";
             default -> "";
         };
     }
@@ -56,6 +58,7 @@ public final class WorkflowPermissions {
             case SET_MIS_PRICE -> canonical.equals("MIS Team");
             case MANAGE_USERS, VIEW_AUDIT -> false;
             case REVIEW_BIDS, RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME -> canonical.equals("MIS Team");
+            case UPLOAD_BROCHURE -> canonical.equals("Brochure Team");
             default -> false;
         };
     }
@@ -108,6 +111,7 @@ public final class WorkflowPermissions {
         boolean isMis = "MIS Team".equals(canonical);
         boolean isClearance = "Clearance Team".equals(canonical);
         boolean isTpc = "TPC Pricing Team".equals(canonical);
+        boolean isBrochure = "Brochure Team".equals(canonical);
 
         // Admin has no edit permission except to provide TPC purchase price. Rest are view only.
         if (isAdmin) {
@@ -186,8 +190,9 @@ public final class WorkflowPermissions {
             if (!List.of("Approved", "Rejected", "Pending", "None").contains(val) && !isClearance) return false;
         }
 
-        // Current stage
+        // Current stage. The Brochure Team moves a tender forward only by uploading the brochure.
         if (hasAnyKey(body, "current_stage", "currentStage")) {
+            if (isBrochure) return false;
             String newStage = String.valueOf(getAnyVal(body, "current_stage", "currentStage")).toUpperCase(Locale.ROOT);
             if (List.of("WON", "LOST", "WIN_LOSS_PENDING").contains(newStage) && !isMis) return false;
             if ("DOC_VERIFICATION".equals(newStage) && !isExec && !isMis) return false;

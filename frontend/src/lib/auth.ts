@@ -1,8 +1,7 @@
 import crypto from 'crypto';
 
-// NOTE: Never commit a real secret here. Set JWT_SECRET in your .env.local / deployment environment.
-// The fallback below is for local dev convenience only — override it in production.
-const JWT_SECRET = process.env.JWT_SECRET || '9a6156a5c2d3a3f5a2f8c5b8e9b6a1c8d5e6f3b2a5c8d3e4f5a8b9c1d2e3f4a5';
+// JWT_SECRET comes only from the environment (.env / .env.local). Never commit a secret here.
+const JWT_SECRET = process.env.JWT_SECRET || '';
 
 export interface AuthInfo {
   username: string;
@@ -73,7 +72,7 @@ export function getAuthFromRequest(request: Request): AuthInfo | null {
 
           const supplied = Buffer.from(parts[2]);
           const expected = Buffer.from(expectedSig);
-          if (supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) {
+          if (JWT_SECRET && supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) {
             const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
             const now = Math.floor(Date.now() / 1000);
             if (payload.nbf !== undefined && (!Number.isFinite(payload.nbf) || payload.nbf > now)) return null;
@@ -113,7 +112,7 @@ export function getAuthFromRequest(request: Request): AuthInfo | null {
   if (username && role) {
     const validRoles = [
       'Admin', 'MIS Team', 'MIS Executive',
-      'Clearance Team', 'Specification Team',
+      'Clearance Team', 'Specification Team', 'Brochure Team',
       'TPC Pricing Team', 'TPC Team',
       'Tender Executive', 'Executive', 'User'
     ];

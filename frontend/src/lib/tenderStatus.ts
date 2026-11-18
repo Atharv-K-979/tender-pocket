@@ -8,6 +8,10 @@
  * Step 5: Dual Track (Simultaneous parallel execution: Track A Commercial Pricing + Track B Full Path Document Verification)
  * Step 6: Final Submission (Submit Tender button unlocks ONLY when BOTH Track A & Track B pass)
  * Step 7: Outcome (Won / Lost / Commercial Evaluation)
+ *
+ * Parallel: Brochure. After clearance the Brochure Team uploads one brochure (PDF, Word or Excel).
+ * It runs alongside Steps 3-7 and never blocks a step. Tenders cleared before the Brochure Team
+ * existed have no brochure_status.
  */
 
 export * from './tenderClassification';
@@ -77,6 +81,20 @@ export const PIPELINE_STEPS: PipelineStep[] = [
   { num: 6, name: 'Final Submission', short: 'Submit Tender' },
   { num: 7, name: 'Outcome', short: 'Outcome' }
 ];
+
+type BrochureFields = { brochure_status?: string | null; brochureStatus?: string | null } | null | undefined;
+
+/** True while the Brochure Team has been asked for the brochure and has not uploaded it yet. */
+export function isBrochurePending(tender: BrochureFields): boolean {
+  if (!tender) return false;
+  return String(tender.brochure_status || tender.brochureStatus || '').toLowerCase() === 'pending';
+}
+
+/** True once the Brochure Team has uploaded the brochure. */
+export function isBrochureUploaded(tender: BrochureFields): boolean {
+  if (!tender) return false;
+  return String(tender.brochure_status || tender.brochureStatus || '').toLowerCase() === 'uploaded';
+}
 
 export interface TenderStageDetails {
   stageNumber: number; // 0 to 7
