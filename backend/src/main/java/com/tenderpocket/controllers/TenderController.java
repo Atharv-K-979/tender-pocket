@@ -72,7 +72,7 @@ public class TenderController {
     private com.tenderpocket.services.EmailSyncService emailSyncService;
 
     @Autowired
-    private com.tenderpocket.services.EmailNotificationService emailNotificationService;
+    private com.tenderpocket.notifications.DailyDigestService dailyDigestService;
 
     @Autowired(required = false)
     private com.tenderpocket.services.ProductCatalogueService productCatalogueService;
@@ -270,12 +270,12 @@ public class TenderController {
         }
     }
 
+    /** Kept for existing callers; same as POST /api/notifications/run. Sends only mails not yet sent today. */
     @PostMapping("/trigger-due-alerts")
     public ResponseEntity<?> triggerDueAlerts() {
+        if (!"Admin".equals(WorkflowPermissions.role())) return WorkflowPermissions.denied();
         try {
-            System.out.println("[API Trigger] Initiating manual due-date email alerts...");
-            emailNotificationService.sendDueDateAlerts();
-            return ResponseEntity.ok(Map.of("success", true, "message", "Manual due-date alerts triggered successfully."));
+            return ResponseEntity.ok(dailyDigestService.run("manual").toMap());
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

@@ -54,6 +54,20 @@ function assignedExecutiveOf(misExecutive: string | null | undefined): string {
   return UNASSIGNED_EXECUTIVE_PLACEHOLDERS.includes(value.toLowerCase()) ? '' : value;
 }
 
+/**
+ * Remembers the tender being opened so the login screen can bring the user straight back to it,
+ * for example when a TenderPocket mail link is opened while logged out.
+ */
+function rememberTenderForLogin() {
+  try {
+    if (/^\/tenders\/[^/]+\/?$/.test(window.location.pathname)) {
+      sessionStorage.setItem('tp.afterLogin', window.location.pathname);
+    }
+  } catch {
+    // storage unavailable: the user simply lands on the dashboard after login
+  }
+}
+
 export default function TenderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -370,6 +384,7 @@ export default function TenderDetailPage() {
 
     const userStr = localStorage.getItem('currentUser');
     if (!userStr || userStr === 'undefined') {
+      rememberTenderForLogin();
       router.push('/');
       return;
     }

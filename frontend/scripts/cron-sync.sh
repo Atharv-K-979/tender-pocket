@@ -21,5 +21,4 @@ for i in {1..30}; do
 done
 
 /usr/local/bin/node --env-file=.env scripts/sync-emails.js >> cron-sync.log 2>&1
-/usr/local/bin/node --env-file=.env scripts/send-alerts.js >> cron-sync.log 2>&1
 echo "=== Sync completed at $(date) ===" >> cron-sync.log

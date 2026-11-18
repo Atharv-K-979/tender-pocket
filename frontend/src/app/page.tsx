@@ -2249,6 +2249,19 @@ export default function Dashboard() {
         setCurrentUser(data.user);
         setUsernameInput('');
         setPasswordInput('');
+        // Return to the tender the user was opening before login (e.g. from a mail link).
+        try {
+          const target = sessionStorage.getItem('tp.afterLogin');
+          if (target) {
+            sessionStorage.removeItem('tp.afterLogin');
+            if (/^\/tenders\/[^/]+\/?$/.test(target)) {
+              window.location.href = target;
+              return;
+            }
+          }
+        } catch {
+          // storage unavailable: stay on the dashboard
+        }
       } else {
         setLoginError(data.error || 'Invalid credentials');
       }

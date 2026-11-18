@@ -13,4 +13,5 @@ public interface TenderWorkflowStateRepository extends JpaRepository<TenderWorkf
     List<TenderWorkflowState> findByCurrentStep(Integer currentStep);
     List<TenderWorkflowState> findByAssignedExecutive(String assignedExecutive);
     void deleteByTenderId(String tenderId);
+    List<TenderWorkflowState> findByTenderIdIn(java.util.Collection<String> tenderIds);
 }
