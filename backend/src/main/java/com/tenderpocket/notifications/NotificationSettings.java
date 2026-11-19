@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Settings for the daily Due / Pending mails, read from the NOTIFY_* environment variables
+ * Settings for the daily tender mail (Due and Pending sections), read from the NOTIFY_* environment variables
  * (see the "Daily tender mails" section of .env.example; docker-compose.yml passes them to
  * the backend).
  *
@@ -93,7 +93,7 @@ public class NotificationSettings {
         return v.equals("true") || v.equals("yes") || v.equals("1") || v.equals("on");
     }
 
-    /** A pending action shows in the Pending mail once it has waited strictly more than this many days. */
+    /** A pending action shows in the Pending section once it has waited strictly more than this many days. */
     public int getPendingDays() { return number("NOTIFY_PENDING_DAYS", pendingDays, 3, 0, 365); }
 
     /** The Due mail covers tenders due today and up to this many days ahead. */

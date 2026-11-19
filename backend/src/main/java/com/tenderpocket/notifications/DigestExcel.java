@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The Excel attachment: every row of a mail, with full titles and authorities, so nothing is
+ * The Excel attachment: every row of the daily mail, with full titles and authorities, so nothing is
  * lost when the mail body cannot show everything. One row per tender in the Due list and one
  * row per waiting action in the Pending list, in the same order and groups as the mail, with a
  * column saying whether the row is also in the mail body.
@@ -43,30 +43,39 @@ public final class DigestExcel {
     /** Excel's limit for one cell. */
     private static final int MAX_CELL = 32_000;
 
+    /** One file per login per day, holding both lists of the daily mail. */
     public static String fileName(Digest d) {
         String login = d.recipient().username().replaceAll("[^A-Za-z0-9._-]", "_");
-        return "TenderPocket_" + login + "_" + (d.type() == Digest.DigestType.DUE ? "Due" : "Pending") + "_" + d.date() + ".xlsx";
+        return "TenderPocket_" + login + "_Daily_" + d.date() + ".xlsx";
     }
 
     /**
+     * Builds the attachment of the daily mail: a "Due tenders" sheet and a "Waiting tenders"
+     * sheet with every row of each list, and an "About" sheet.
+     *
      * @param shownTenderKeys keys (see {@link #key}) of the rows that are also in the mail body
      */
-    public static byte[] build(Digest d, Set<String> shownTenderKeys, String appUrl, LocalDateTime generatedAt) {
+    public static byte[] build(Digest due, Digest pending, Set<String> shownTenderKeys, String appUrl, LocalDateTime generatedAt) {
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Styles st = new Styles(wb);
-            Sheet sheet = wb.createSheet(d.type() == Digest.DigestType.DUE ? "Due tenders" : "Waiting tenders");
-            int rows = d.type() == Digest.DigestType.DUE
-                    ? writeDue(sheet, st, d, shownTenderKeys, appUrl)
-                    : writePending(sheet, st, d, shownTenderKeys, appUrl);
-            sheet.createFreezePane(0, 1);
-            int lastCol = sheet.getRow(0).getLastCellNum() - 1;
-            sheet.setAutoFilter(new CellRangeAddress(0, Math.max(0, rows), 0, lastCol));
-            writeAbout(wb.createSheet("About"), st, d, rows, shownTenderKeys.size(), generatedAt);
+            Sheet dueSheet = wb.createSheet("Due tenders");
+            int dueRows = writeDue(dueSheet, st, due, shownTenderKeys, appUrl);
+            finishSheet(dueSheet, dueRows);
+            Sheet pendingSheet = wb.createSheet("Waiting tenders");
+            int pendingRows = writePending(pendingSheet, st, pending, shownTenderKeys, appUrl);
+            finishSheet(pendingSheet, pendingRows);
+            writeAbout(wb.createSheet("About"), st, due, dueRows, pendingRows, shownTenderKeys.size(), generatedAt);
             wb.write(out);
             return out.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException("Could not build the Excel attachment: " + e.getMessage(), e);
         }
+    }
+
+    private static void finishSheet(Sheet sheet, int rows) {
+        sheet.createFreezePane(0, 1);
+        int lastCol = sheet.getRow(0).getLastCellNum() - 1;
+        sheet.setAutoFilter(new CellRangeAddress(0, Math.max(0, rows), 0, lastCol));
     }
 
     /** Identifies a row: the tender for Due rows, tender plus action for Pending rows. */
@@ -156,13 +165,15 @@ public final class DigestExcel {
         return r;
     }
 
-    private static void writeAbout(Sheet sheet, Styles st, Digest d, int rows, int shownRows, LocalDateTime generatedAt) {
+    private static void writeAbout(Sheet sheet, Styles st, Digest d, int dueRows, int pendingRows, int shownRows,
+                                   LocalDateTime generatedAt) {
         String[][] lines = {
-                {"Mail", d.type() == Digest.DigestType.DUE ? "Due in the next " + d.dueWindowDays() + " days"
-                        : "Waiting more than " + d.pendingDays() + " days"},
+                {"Mail", "Daily TenderPocket mail: tenders due in the next " + d.dueWindowDays()
+                        + " days, and work waiting more than " + d.pendingDays() + " days"},
                 {"For", d.recipient().username() + " (" + d.recipient().team().getLabel() + ")"},
                 {"Date", d.date().format(DateTimeFormatter.ofPattern("d MMM yyyy"))},
-                {"Rows in this file", String.valueOf(rows)},
+                {"Rows in 'Due tenders'", String.valueOf(dueRows)},
+                {"Rows in 'Waiting tenders'", String.valueOf(pendingRows)},
                 {"Rows also shown in the mail", String.valueOf(shownRows)},
                 {"Generated", generatedAt.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm")) + " IST"},
                 {"Note", "This file lists every row of the mail, including the ones the mail body had no room for. "

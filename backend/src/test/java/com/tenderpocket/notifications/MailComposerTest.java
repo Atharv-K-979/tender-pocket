@@ -65,24 +65,29 @@ class MailComposerTest {
         return ids;
     }
 
-    /** Every data row of the first sheet, as {TenderPocket ID, Shown in mail}. */
+    /** Every data row of both list sheets, as {TenderPocket ID, Shown in mail}. */
     private static List<String[]> excelRows(byte[] xlsx) throws Exception {
+        List<String[]> out = new ArrayList<>();
         try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
-            Sheet sheet = wb.getSheetAt(0);
-            Row header = sheet.getRow(0);
-            int idCol = -1, shownCol = -1;
-            for (int c = 0; c < header.getLastCellNum(); c++) {
-                String h = header.getCell(c).getStringCellValue();
-                if (h.equals("TenderPocket ID")) idCol = c;
-                if (h.equals("Shown in mail")) shownCol = c;
-            }
-            List<String[]> out = new ArrayList<>();
-            for (int r = 1; r <= sheet.getLastRowNum(); r++) {
-                Row row = sheet.getRow(r);
-                out.add(new String[]{row.getCell(idCol).getStringCellValue(), row.getCell(shownCol).getStringCellValue()});
-            }
-            return out;
+            for (String name : List.of("Due tenders", "Waiting tenders")) out.addAll(sheetRows(wb.getSheet(name)));
         }
+        return out;
+    }
+
+    private static List<String[]> sheetRows(Sheet sheet) {
+        Row header = sheet.getRow(0);
+        int idCol = -1, shownCol = -1;
+        for (int c = 0; c < header.getLastCellNum(); c++) {
+            String h = header.getCell(c).getStringCellValue();
+            if (h.equals("TenderPocket ID")) idCol = c;
+            if (h.equals("Shown in mail")) shownCol = c;
+        }
+        List<String[]> out = new ArrayList<>();
+        for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+            Row row = sheet.getRow(r);
+            out.add(new String[]{row.getCell(idCol).getStringCellValue(), row.getCell(shownCol).getStringCellValue()});
+        }
+        return out;
     }
 
     @Test
@@ -144,7 +149,7 @@ class MailComposerTest {
 
         MailComposer.Attachment x = mail.attachment();
         assertNotNull(x);
-        assertEquals("TenderPocket_misteam_Pending_2026-11-12.xlsx", x.fileName());
+        assertEquals("TenderPocket_misteam_Daily_2026-11-12.xlsx", x.fileName());
         assertEquals(DigestExcel.CONTENT_TYPE, x.contentType());
         List<String[]> rows = excelRows(x.bytes());
         assertEquals(480, rows.size());
@@ -164,7 +169,7 @@ class MailComposerTest {
         assertEquals(inBody, shownInExcel, "the 'Shown in mail' column matches the body exactly");
 
         assertTrue(mail.html().contains("Full list attached."));
-        assertTrue(mail.html().contains("TenderPocket_misteam_Pending_2026-11-12.xlsx"));
+        assertTrue(mail.html().contains("TenderPocket_misteam_Daily_2026-11-12.xlsx"));
         assertTrue(mail.html().contains("Summary of all 480 rows"));
         assertTrue(mail.text().contains("FULL LIST ATTACHED"));
     }
@@ -237,6 +242,49 @@ class MailComposerTest {
         List<String[]> rows = excelRows(mail.attachment().bytes());
         assertEquals(225, rows.size());
         assertEquals(5, rows.stream().filter(r -> r[0].startsWith("M")).count(), "missed-yesterday rows are in the Excel file");
+    }
+
+    @Test
+    void oneDailyMailCarriesBothListsAndOneExcelWithBothSheets() throws Exception {
+        List<ClockSnapshot.TenderEntry> entries = new ArrayList<>();
+        for (int i = 1; i <= 260; i++) entries.add(entry(due(titled(undecided(String.format("D%04d", i)), i), i % 4), DECIDE, List.of(), 1));
+        for (int i = 1; i <= 300; i++) entries.add(entry(due(titled(undecided(String.format("P%04d", i)), i), 5 + (i % 30)), DECIDE, List.of(), 6));
+        List<DigestBuilder.TenderView> v = builder.prepare(new ClockSnapshot(now, entries, dir), today);
+        Digest due = builder.buildDue(dir.find("misteam"), v, today);
+        Digest pending = builder.buildPending(dir.find("misteam"), v, today, List.of());
+
+        MailComposer.ComposedMail mail = MailComposer.composeDaily(due, pending, APP, 200, now);
+        assertEquals(560, mail.totalRows());
+        assertTrue(mail.htmlBytes() <= MailComposer.BODY_BUDGET_BYTES, "body is " + mail.htmlBytes() + " bytes");
+        assertTrue(mail.html().contains("Due in the next 3 days") && mail.html().contains("Waiting on you over 3 days"));
+        assertTrue(mail.subject().startsWith("Daily tenders: ") && mail.subject().endsWith("(full list attached)"));
+
+        Set<String> inBody = new HashSet<>(bodyIds(mail.html()));
+        assertTrue(inBody.stream().anyMatch(id -> id.startsWith("D")) && inBody.stream().anyMatch(id -> id.startsWith("P")),
+                "both sections have rows in the body");
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(mail.attachment().bytes()))) {
+            assertEquals(260, sheetRows(wb.getSheet("Due tenders")).size());
+            assertEquals(300, sheetRows(wb.getSheet("Waiting tenders")).size());
+            assertNotNull(wb.getSheet("About"));
+        }
+        Set<String> shown = new HashSet<>();
+        for (String[] r : excelRows(mail.attachment().bytes())) if (r[1].equals("Yes")) shown.add(r[0]);
+        assertEquals(inBody, shown, "'Shown in mail' matches the body across both sheets");
+        assertEquals(mail.bodyRows(), shown.size());
+    }
+
+    @Test
+    void smallListsFitInOneMailWithoutExcel() {
+        List<ClockSnapshot.TenderEntry> entries = new ArrayList<>();
+        for (int i = 1; i <= 20; i++) entries.add(entry(due(titled(undecided("D" + i), i), i % 4), DECIDE, List.of(), 1));
+        for (int i = 1; i <= 30; i++) entries.add(entry(due(titled(undecided("P" + i), i), 10), DECIDE, List.of(), 6));
+        List<DigestBuilder.TenderView> v = builder.prepare(new ClockSnapshot(now, entries, dir), today);
+        MailComposer.ComposedMail mail = MailComposer.composeDaily(builder.buildDue(dir.find("misteam"), v, today),
+                builder.buildPending(dir.find("misteam"), v, today, List.of()), APP, 200, now);
+        assertNull(mail.attachment());
+        assertEquals(50, mail.bodyRows());
+        assertEquals(50, bodyIds(mail.html()).size());
     }
 
     @Test

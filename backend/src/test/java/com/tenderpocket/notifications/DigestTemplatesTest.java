@@ -42,7 +42,7 @@ class DigestTemplatesTest {
         Digest d = builder.buildDue(dir.find("misteam"), v, today);
         MailComposer.ComposedMail mail = compose(d, "http://localhost:8085");
 
-        assertEquals("Due soon: 1 today, 1 in next 3 days · TenderPocket · 12 Nov", mail.subject());
+        assertEquals("Daily tenders: 1 due today, 1 due in next 3 days · TenderPocket · 12 Nov", mail.subject());
         assertNull(mail.attachment(), "two rows fit, so no Excel");
         assertTrue(mail.html().contains("Beds &amp; &quot;ICU&quot; &lt;script&gt;"));
         assertFalse(mail.html().contains("<script>"));
@@ -73,7 +73,7 @@ class DigestTemplatesTest {
         List<DigestBuilder.TenderView> v = builder.prepare(new ClockSnapshot(now,
                 List.of(entry(due(undecided("T1"), 1), DECIDE, List.of(), 0)), dir), today);
         MailComposer.ComposedMail mail = compose(builder.buildDue(dir.find("misteam"), v, today), "");
-        assertTrue(mail.subject().startsWith("Due soon"));
+        assertTrue(mail.subject().startsWith("Daily tenders"));
         assertFalse(mail.html().contains("/tenders/"));
     }
 
@@ -83,10 +83,10 @@ class DigestTemplatesTest {
                 entry(due(undecided("T1"), 10), DECIDE, List.of(), 5),
                 entry(due(assigned("T2", "executive"), 9), BID_DOCS, List.of("executive"), 4)), dir), today);
         Digest exec = builder.buildPending(dir.find("executive"), v, today, List.of());
-        assertEquals("Waiting on you: 1 tender over 3 days · TenderPocket · 12 Nov", compose(exec, "").subject());
+        assertEquals("Daily tenders: 1 tender waiting over 3 days · TenderPocket · 12 Nov", compose(exec, "").subject());
         Digest admin = builder.buildPending(dir.find("admin"), v, today, List.of());
         MailComposer.ComposedMail mail = compose(admin, "");
-        assertEquals("Waiting over 3 days: 2 tenders across 2 owners · TenderPocket · 12 Nov", mail.subject());
+        assertEquals("Daily tenders: 2 tenders waiting over 3 days · TenderPocket · 12 Nov", mail.subject());
         assertTrue(mail.html().contains("By owner"));
         assertTrue(mail.html().contains("Generate bid package"));
     }

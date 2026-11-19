@@ -11,13 +11,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Turns a Digest into the mail that is actually sent.
+ * Turns a login's two lists (Due and Pending) into its one daily mail.
  *
- * 1. If every row fits in the body with full details (at most {@code maxRows} rows and under
- *    {@link #BODY_BUDGET_BYTES}, so Gmail never clips the message), that is the mail.
- * 2. Otherwise an Excel file with every row, in full, is attached, and the body lists the most
- *    urgent rows in a compact form (full title, action, wait and due date; the authority is in
- *    the Excel file), as many as fit: at most {@code maxRows}, under the size budget.
+ * The body shows the most urgent rows of each list. When it cannot show every row with full
+ * details, an Excel file with both lists, every row in full, is attached and the body says so.
  *
  * Every row is therefore always in the body, the attachment, or both, and the body says so.
  */
@@ -46,29 +43,49 @@ public final class MailComposer {
         public int bodyRows() { return dueRows.size() + missedRows.size() + pendingRows.size(); }
     }
 
+    /** A mail with one list only; the other section of the daily mail is left empty. */
     public static ComposedMail compose(Digest d, String appUrl, int maxRows, LocalDateTime now) {
-        int total = d.rowCount();
-        String fileName = DigestExcel.fileName(d);
-        int limit = Math.max(0, Math.min(maxRows, total));
+        Digest other = Digest.empty(d.type() == Digest.DigestType.DUE ? Digest.DigestType.PENDING : Digest.DigestType.DUE,
+                d.recipient(), d.date(), d.pendingDays(), d.dueWindowDays());
+        return d.type() == Digest.DigestType.DUE
+                ? composeDaily(d, other, appUrl, maxRows, now)
+                : composeDaily(other, d, appUrl, maxRows, now);
+    }
 
-        // 1. Does everything fit, with full details?
+    /**
+     * The one daily mail of a login: a Due section and a Pending section.
+     *
+     * 1. If both lists fit in the body with full details (each at most {@code maxRows} rows,
+     *    and the whole mail under {@link #BODY_BUDGET_BYTES}), that is the mail.
+     * 2. Otherwise an Excel file with both lists, every row in full, is attached, and each
+     *    section shows its most urgent rows in compact form: the same number per section
+     *    (at most {@code maxRows}), as many as keep the mail under the size budget.
+     */
+    public static ComposedMail composeDaily(Digest due, Digest pending, String appUrl, int maxRows, LocalDateTime now) {
+        int dueTotal = due.rowCount();
+        int pendingTotal = pending.rowCount();
+        String fileName = DigestExcel.fileName(due);
+        int dueLimit = Math.max(0, Math.min(maxRows, dueTotal));
+        int pendingLimit = Math.max(0, Math.min(maxRows, pendingTotal));
+        int maxPerSection = Math.max(dueLimit, pendingLimit);
+
         boolean attach = true;
-        int shown = 0;
-        if (limit == total && fits(view(d, total, null, false), appUrl)) {
+        int perSection = 0;
+        if (dueLimit == dueTotal && pendingLimit == pendingTotal
+                && fits(view(due, dueTotal, null, false), view(pending, pendingTotal, null, false), appUrl)) {
             attach = false;
-            shown = total;
-        } else if (fits(view(d, limit, fileName, true), appUrl)) {
-            // 2. Excel attached; the compact body holds the full limit.
-            shown = limit;
+            perSection = maxPerSection;
+        } else if (fits(view(due, dueLimit, fileName, true), view(pending, pendingLimit, fileName, true), appUrl)) {
+            perSection = maxPerSection;
         } else {
-            // 2b. Long rows: the largest count that fits. Size grows with the row count, so a
+            // Long rows: the largest per-section count that fits. Size grows with the count, so a
             // binary search finds it in a handful of renders.
             int lo = 0;
-            int hi = limit - 1;
+            int hi = maxPerSection - 1;
             while (lo <= hi) {
                 int mid = (lo + hi) >>> 1;
-                if (fits(view(d, mid, fileName, true), appUrl)) {
-                    shown = mid;
+                if (fits(view(due, Math.min(mid, dueLimit), fileName, true), view(pending, Math.min(mid, pendingLimit), fileName, true), appUrl)) {
+                    perSection = mid;
                     lo = mid + 1;
                 } else {
                     hi = mid - 1;
@@ -76,23 +93,27 @@ public final class MailComposer {
             }
         }
 
-        MailView view = view(d, shown, attach ? fileName : null, attach);
-        String html = DigestTemplates.html(view, appUrl);
-        String text = DigestTemplates.text(view, appUrl);
+        MailView dueView = view(due, Math.min(perSection, dueLimit), attach ? fileName : null, attach);
+        MailView pendingView = view(pending, Math.min(perSection, pendingLimit), attach ? fileName : null, attach);
+        String html = DigestTemplates.dailyHtml(dueView, pendingView, appUrl);
+        String text = DigestTemplates.dailyText(dueView, pendingView, appUrl);
 
         Attachment attachment = null;
         if (attach) {
-            byte[] xlsx = DigestExcel.build(d, shownKeys(view), appUrl, now);
-            attachment = new Attachment(fileName, DigestExcel.CONTENT_TYPE, xlsx, total);
+            Set<String> shown = shownKeys(dueView);
+            shown.addAll(shownKeys(pendingView));
+            byte[] xlsx = DigestExcel.build(due, pending, shown, appUrl, now);
+            attachment = new Attachment(fileName, DigestExcel.CONTENT_TYPE, xlsx, dueTotal + pendingTotal);
         }
 
-        String subject = DigestTemplates.subject(d) + (attach ? " (full list attached)" : "");
-        return new ComposedMail(subject, html, text, attachment, total, shown);
+        String subject = DigestTemplates.dailySubject(due, pending) + (attach ? " (full list attached)" : "");
+        return new ComposedMail(subject, html, text, attachment, dueTotal + pendingTotal, dueView.bodyRows() + pendingView.bodyRows());
     }
 
-    private static boolean fits(MailView v, String appUrl) {
-        return bytes(DigestTemplates.html(v, appUrl)) <= BODY_BUDGET_BYTES;
+    private static boolean fits(MailView due, MailView pending, String appUrl) {
+        return bytes(DigestTemplates.dailyHtml(due, pending, appUrl)) <= BODY_BUDGET_BYTES;
     }
+
 
     /** The first {@code n} rows by importance, arranged for display. */
     static MailView view(Digest d, int n, String attachmentName) {
