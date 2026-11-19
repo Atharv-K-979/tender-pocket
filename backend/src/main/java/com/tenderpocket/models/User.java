@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.tenderpocket.cache.DataChangeListener.class)
 @Table(name = "users")
 public class User {
 

@@ -39,6 +39,10 @@ public class WorkflowControllerClearanceTest {
     @Mock
     private WorkflowSyncService workflowSyncService;
 
+    /** Row locks taken by the approve actions; a mock does nothing here. */
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
+
     @InjectMocks
     private WorkflowController workflowController;
 

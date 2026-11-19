@@ -37,6 +37,7 @@ import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdRecei
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved, isBrochurePending, isBrochureUploaded } from '@/lib/tenderStatus';
 import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
+import { fetchJsonWithEtag, getTenderSummary } from '@/lib/clientCache';
 
 interface Toast {
   message: string;
@@ -47,6 +48,9 @@ interface Toast {
 // Values that mean "nobody assigned" even though the column is non-empty. The retired
 // gemSyncEngine importer stored mis_executive as 'Unassigned', and those rows are still in the DB.
 const UNASSIGNED_EXECUTIVE_PLACEHOLDERS = ['unassigned', 'not assigned', 'n/a', 'none', 'null', '-'];
+
+/** Background refresh of the open tender (the server answers "no change" when nothing changed). */
+const TENDER_REFRESH_MS = 15_000;
 
 /** The executive actually assigned to a tender, or '' when none is (blank or a placeholder value). */
 function assignedExecutiveOf(misExecutive: string | null | undefined): string {
@@ -100,6 +104,9 @@ export default function TenderDetailPage() {
 
   // Data States
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
+  // The list row the user clicked, shown in the header while the full tender loads.
+  const [summaryTender, setSummaryTender] = useState<Tender | null>(null);
+  const headerTender = selectedTender || summaryTender;
   const [tenderNotes, setTenderNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
   const [misExecutive, setMisExecutive] = useState('');
@@ -394,6 +401,7 @@ export default function TenderDetailPage() {
     try {
       const userObj = JSON.parse(userStr);
       setCurrentUser(userObj);
+      if (id) setSummaryTender(getTenderSummary(userObj?.username || '', String(id)));
     } catch (e) {
       console.error('Failed to parse user session:', e);
       router.push('/');
@@ -409,27 +417,57 @@ export default function TenderDetailPage() {
 
   // Fetch data once user is loaded with auto-sync polling
   useEffect(() => {
-    if (currentUser && id) {
-      fetchTenderDetails();
-      fetchComments(id);
-      fetchMisTeamMembers();
+    if (!(currentUser && id)) return;
+    fetchTenderDetails();
+    fetchComments(id);
+    fetchMisTeamMembers();
 
-      // Poll updates every 1.5 seconds for near-instant live sync
-      const syncInterval = setInterval(() => {
-        fetchTenderDetails(true);
-        fetchComments(id);
-      }, 1500);
+    // Background refresh every 15 s: never two at once, paused while the browser tab is hidden (and
+    // refreshed as soon as it is shown again). Unchanged data is not re-rendered.
+    let cancelled = false;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-      return () => clearInterval(syncInterval);
-    }
+    const tick = async () => {
+      timer = null;
+      if (cancelled) return;
+      if (!document.hidden && !running) {
+        running = true;
+        try {
+          await Promise.all([fetchTenderDetails(true), fetchComments(id, true)]);
+        } finally {
+          running = false;
+        }
+      }
+      if (!cancelled) timer = setTimeout(tick, TENDER_REFRESH_MS);
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden && !cancelled && !running) {
+        if (timer) clearTimeout(timer);
+        tick();
+      }
+    };
+
+    timer = setTimeout(tick, TENDER_REFRESH_MS);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [currentUser, id]);
+
+  /** Answers depend on who asks: remembered answers are kept per user. */
+  const responseCacheKey = () => `${currentUser?.username || ''}|${currentUser?.role || ''}`;
 
   const fetchTenderDetails = async (isBackground = false) => {
     if (!isBackground && !selectedTender) setLoadingDetails(true);
     try {
-      // Append cache-busting timestamp to avoid browser GET caching
-      const response = await fetchWithAuth(`/api/tenders/${id}?t=${Date.now()}`);
-      const data = await response.json();
+      // "Anything new?": a background refresh of an unchanged tender re-renders nothing.
+      const result = await fetchJsonWithEtag<any>(fetchWithAuth, `/api/tenders/${id}`, responseCacheKey());
+      if (isBackground && !result.changed && dbTenderRef.current) return;
+      const data = result.data || {};
       if (data.success) {
         const tender = data.tender;
         const prevTender = dbTenderRef.current;
@@ -567,12 +605,12 @@ export default function TenderDetailPage() {
     }
   };
 
-  const fetchComments = async (tenderId: string) => {
+  const fetchComments = async (tenderId: string, onlyIfChanged = false) => {
     try {
-      // Append cache-busting timestamp to avoid browser GET caching
-      const response = await fetchWithAuth(`/api/tenders/${tenderId}/comments?t=${Date.now()}`);
-      if (response.ok) {
-        const data = await response.json();
+      const result = await fetchJsonWithEtag<any>(fetchWithAuth, `/api/tenders/${tenderId}/comments`, responseCacheKey());
+      if (onlyIfChanged && !result.changed) return;
+      if (result.ok && result.data) {
+        const data = result.data;
         if (data.success) {
           setComments(data.comments || []);
         }
@@ -1621,13 +1659,13 @@ export default function TenderDetailPage() {
             >
               <ChevronLeft size={16} /> Back to Dashboard
             </button>
-            {selectedTender && (
+            {headerTender && (
               <div>
                 <h1 style={{ margin: 0, fontSize: '22px', fontWeight: '800' }}>
-                  {selectedTender.product_name_as_per_tender || selectedTender.title}
+                  {headerTender.product_name_as_per_tender || headerTender.title}
                 </h1>
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  Tender ID: <strong>{selectedTender.id}</strong> | Reference: <strong>{selectedTender.ref_no || 'N/A'}</strong>
+                  Tender ID: <strong>{headerTender.id}</strong> | Reference: <strong>{headerTender.ref_no || 'N/A'}</strong>
                 </span>
               </div>
             )}
@@ -1642,11 +1680,11 @@ export default function TenderDetailPage() {
               {theme === 'dark' ? <Sun size={15} style={{ color: '#f59e0b' }} /> : <Moon size={15} style={{ color: '#6366f1' }} />}
               <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
             </button>
-            {selectedTender && (
+            {headerTender && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {(() => {
-                  const classification = getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType);
-                  const sourceLabel = getSourceBadgeLabel(selectedTender.source);
+                  const classification = getClassificationDisplay(headerTender.tender_type || headerTender.tenderType);
+                  const sourceLabel = getSourceBadgeLabel(headerTender.source);
                   return (
                     <>
                       <span style={{
@@ -1676,8 +1714,8 @@ export default function TenderDetailPage() {
                     </>
                   );
                 })()}
-                <span className={`status-badge ${selectedTender.status}`} style={{ fontSize: '13px', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
-                  {selectedTender.status}
+                <span className={`status-badge ${headerTender.status}`} style={{ fontSize: '13px', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
+                  {headerTender.status}
                 </span>
               </div>
             )}

@@ -8,7 +8,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "tender_workflow_comments")
+@jakarta.persistence.EntityListeners(com.tenderpocket.cache.DataChangeListener.class)
+@Table(name = "tender_workflow_comments", indexes = {
+    @jakarta.persistence.Index(name = "idx_workflow_comments_tender_created", columnList = "tender_id, created_at")
+})
 public class TenderWorkflowComment {
 
     @Id

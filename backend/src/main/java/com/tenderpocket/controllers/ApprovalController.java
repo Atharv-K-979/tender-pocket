@@ -5,6 +5,9 @@ import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 
 import com.tenderpocket.models.*;
 import com.tenderpocket.repositories.*;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -51,6 +54,9 @@ public class ApprovalController {
 
     @Autowired
     private TenderCommentRepository commentRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -107,250 +113,6 @@ public class ApprovalController {
         } catch (NumberFormatException ignored) { return null; }
     }
 
-    private TenderApprovalRequest ensurePendingApproval(String tenderId, TenderWorkflowStage stage, String requestedBy, String assignedTo,
-                                                        Double emdAmount, String transferMode, String transferRefNo, String receiptUrl, Double tpcPrice) {
-        List<TenderApprovalRequest> list = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tenderId, stage);
-        TenderApprovalRequest existing = list.stream().filter(r -> "PENDING".equalsIgnoreCase(r.getStatus())).findFirst().orElse(null);
-        if (existing == null) {
-            existing = new TenderApprovalRequest(tenderId, stage, requestedBy != null ? requestedBy : "system", assignedTo != null ? assignedTo : "misteam", "PENDING");
-            if (emdAmount != null) existing.setEmdAmount(emdAmount);
-            if (transferMode != null) existing.setTransferMode(transferMode);
-            if (transferRefNo != null) existing.setTransferRefNo(transferRefNo);
-            if (receiptUrl != null) existing.setReceiptFileUrl(receiptUrl);
-            if (tpcPrice != null) existing.setTpcPurchasePrice(tpcPrice);
-            existing.setCreatedAt(java.time.LocalDateTime.now());
-            existing.setUpdatedAt(java.time.LocalDateTime.now());
-            return approvalRepository.save(existing);
-        } else {
-            boolean changed = false;
-            if (emdAmount != null && existing.getEmdAmount() == null) { existing.setEmdAmount(emdAmount); changed = true; }
-            if (transferMode != null && existing.getTransferMode() == null) { existing.setTransferMode(transferMode); changed = true; }
-            if (transferRefNo != null && existing.getTransferRefNo() == null) { existing.setTransferRefNo(transferRefNo); changed = true; }
-            if (receiptUrl != null && existing.getReceiptFileUrl() == null) { existing.setReceiptFileUrl(receiptUrl); changed = true; }
-            if (tpcPrice != null && existing.getTpcPurchasePrice() == null) { existing.setTpcPurchasePrice(tpcPrice); changed = true; }
-            if (changed) {
-                existing.setUpdatedAt(java.time.LocalDateTime.now());
-                return approvalRepository.save(existing);
-            }
-            return existing;
-        }
-    }
-
-    // ── Reconciliation Helper ────────────────────────────────────────────────
-    @Transactional
-    public void reconcileStaleAndDuplicateApprovals() {
-        try {
-            List<TenderApprovalRequest> pending = approvalRepository.findByStatusOrderByCreatedAtDesc("PENDING");
-            if (!pending.isEmpty()) {
-                Set<String> tenderIds = pending.stream().map(TenderApprovalRequest::getTenderId).collect(Collectors.toSet());
-                Map<String, Tender> tenderMap = new HashMap<>();
-                tenderRepository.findAllById(tenderIds).forEach(t -> tenderMap.put(t.getId(), t));
-
-                Map<String, List<TenderApprovalRequest>> grouped = new HashMap<>();
-                for (TenderApprovalRequest req : pending) {
-                    String key = req.getTenderId() + "::" + req.getStage();
-                    grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(req);
-                }
-
-                for (Map.Entry<String, List<TenderApprovalRequest>> entry : grouped.entrySet()) {
-                    List<TenderApprovalRequest> list = entry.getValue();
-                    TenderApprovalRequest latest = list.get(0);
-                    Tender tender = tenderMap.get(latest.getTenderId());
-
-                    // Delete older duplicate requests
-                    for (int i = 1; i < list.size(); i++) {
-                        approvalRepository.delete(list.get(i));
-                    }
-
-                    if (tender == null) continue;
-
-                    boolean isStale = false;
-                    TenderWorkflowStage stage = latest.getStage();
-
-                    if (stage == TenderWorkflowStage.SPEC_CLEARANCE) {
-                        if ("Approved".equalsIgnoreCase(tender.getSpecVerificationStatus()) || 
-                            (tender.getCurrentStage() != null && !"SPEC_CLEARANCE".equalsIgnoreCase(tender.getCurrentStage()))) {
-                            isStale = true;
-                        } else if (!"Pending".equalsIgnoreCase(tender.getSpecVerificationStatus())) {
-                            // Spec has not been generated or submitted for clearance yet; this pending request is premature
-                            approvalRepository.delete(latest);
-                            continue;
-                        }
-                    } else if (stage == TenderWorkflowStage.TPC_PRICING) {
-                        if ((tender.getTpcPurchasePrice() != null && tender.getTpcPurchasePrice() > 0)
-                                || "MIS".equalsIgnoreCase(tender.getPricingRoute())
-                                || (tender.getCurrentStage() != null && List.of("SUBMISSION_READY", "SUBMISSION_PENDING", "SUBMITTED", "WIN_LOSS_PENDING", "WON", "LOST").contains(tender.getCurrentStage().toUpperCase()))) {
-                            isStale = true;
-                        }
-                    } else if (stage == TenderWorkflowStage.MIS_PRICING) {
-                        if ((tender.getMisFinalPrice() != null && tender.getMisFinalPrice() > 0)
-                                || "Approved".equalsIgnoreCase(tender.getPricingStatus())
-                                || (tender.getCurrentStage() != null && List.of("SUBMISSION_READY", "SUBMISSION_PENDING", "SUBMITTED", "WIN_LOSS_PENDING", "WON", "LOST").contains(tender.getCurrentStage().toUpperCase()))) {
-                            isStale = true;
-                        }
-                    } else if (stage == TenderWorkflowStage.PAYMENT_APPROVAL) {
-                        if ("Approved".equalsIgnoreCase(tender.getPaymentStatus()) ||
-                            (tender.getCurrentStage() != null && List.of("DUAL_TRACK", "SUBMISSION_READY", "SUBMISSION_PENDING", "SUBMITTED", "WIN_LOSS_PENDING", "WON", "LOST").contains(tender.getCurrentStage().toUpperCase()))) {
-                            isStale = true;
-                        }
-                    } else if (stage == TenderWorkflowStage.DOC_VERIFICATION) {
-                        if ("Approved".equalsIgnoreCase(tender.getVerificationStatus()) ||
-                            (tender.getCurrentStage() != null && List.of("SUBMISSION_READY", "SUBMISSION_PENDING", "SUBMITTED", "WIN_LOSS_PENDING", "WON", "LOST").contains(tender.getCurrentStage().toUpperCase()))) {
-                            isStale = true;
-                        }
-                    } else if (stage == TenderWorkflowStage.SUBMISSION_PENDING) {
-                        if ("Approved".equalsIgnoreCase(tender.getSubmissionStatus()) ||
-                            (tender.getCurrentStage() != null && List.of("SUBMITTED", "WIN_LOSS_PENDING", "WON", "LOST").contains(tender.getCurrentStage().toUpperCase()))) {
-                            isStale = true;
-                        }
-                    } else if (stage == TenderWorkflowStage.WIN_LOSS_PENDING) {
-                        if ((tender.getOutcomeStatus() != null && !"Pending".equalsIgnoreCase(tender.getOutcomeStatus()))
-                                || "WON".equalsIgnoreCase(tender.getCurrentStage())
-                                || "LOST".equalsIgnoreCase(tender.getCurrentStage())
-                                || "Awarded".equalsIgnoreCase(tender.getStatus())
-                                || "Won".equalsIgnoreCase(tender.getStatus())
-                                || "Not Awarded".equalsIgnoreCase(tender.getStatus())
-                                || "Lost".equalsIgnoreCase(tender.getStatus())) {
-                            isStale = true;
-                        }
-                    }
-
-                    if (isStale) {
-                        latest.setStatus("APPROVED");
-                        latest.setUpdatedAt(java.time.LocalDateTime.now());
-                        approvalRepository.save(latest);
-                    } else if (MIS_TEAM_STAGES.contains(stage)) {
-                        String curAssigned = latest.getAssignedTo();
-                        if (curAssigned != null && List.of("tpc", "tpc team", "clearance", "clearance team", "executive").contains(curAssigned.trim().toLowerCase())) {
-                            String fixedAssignee = tender.getAssignedMisMember() != null && !tender.getAssignedMisMember().isBlank()
-                                    && !List.of("tpc", "tpc team", "clearance", "clearance team", "executive").contains(tender.getAssignedMisMember().trim().toLowerCase())
-                                    ? tender.getAssignedMisMember().trim() : "misteam";
-                            latest.setAssignedTo(fixedAssignee);
-                            latest.setUpdatedAt(java.time.LocalDateTime.now());
-                            approvalRepository.save(latest);
-                        }
-                    }
-                }
-            }
-
-            // ── Auto-reconcile active tenders that need pending approvals ──────────────
-            List<Tender> activeTenders = tenderRepository.findAll();
-            for (Tender t : activeTenders) {
-                if (t.getStatus() != null && List.of("Won", "Lost", "Awarded", "Not Awarded", "Not Participating").contains(t.getStatus())) {
-                    continue;
-                }
-
-                String stage = t.getCurrentStage() != null ? t.getCurrentStage().toUpperCase() : "";
-
-                // 1. SPEC_CLEARANCE: Only ensure pending approval when tech specs have been submitted for clearance
-                if ("Pending".equalsIgnoreCase(t.getSpecVerificationStatus())) {
-                    if (!"Approved".equalsIgnoreCase(t.getSpecVerificationStatus())) {
-                        ensurePendingApproval(t.getId(), TenderWorkflowStage.SPEC_CLEARANCE,
-                                t.getMisExecutive() != null ? t.getMisExecutive() : "executive",
-                                t.getAssignedMisMemberSpec() != null ? t.getAssignedMisMemberSpec() : "clearance",
-                                null, null, null, null, null);
-                    }
-                }
-
-                // 2. PAYMENT_APPROVAL (EMD Payment)
-                if ("PAYMENT_APPROVAL".equalsIgnoreCase(stage) || "EMD_PENDING".equalsIgnoreCase(stage) || "Pending".equalsIgnoreCase(t.getPaymentStatus())) {
-                    if (!"Approved".equalsIgnoreCase(t.getPaymentStatus()) && !"Exempt".equalsIgnoreCase(t.getPaymentStatus())) {
-                        if (t.getPaymentStatus() == null || "None".equalsIgnoreCase(t.getPaymentStatus())) {
-                            t.setPaymentStatus("Pending");
-                            tenderRepository.save(t);
-                        }
-                        String misAssignee = t.getAssignedMisMemberEmd() != null && !t.getAssignedMisMemberEmd().isBlank()
-                                ? t.getAssignedMisMemberEmd()
-                                : (t.getAssignedMisMember() != null && !t.getAssignedMisMember().isBlank() ? t.getAssignedMisMember() : "misteam");
-                        ensurePendingApproval(t.getId(), TenderWorkflowStage.PAYMENT_APPROVAL,
-                                t.getMisExecutive() != null ? t.getMisExecutive() : "executive",
-                                misAssignee,
-                                t.getEmdAmountActual(),
-                                t.getEmdPaymentMode() != null ? t.getEmdPaymentMode() : "NEFT / RTGS",
-                                t.getEmdBeneficiaryName() != null ? t.getEmdBeneficiaryName() : t.getEmdPaymentRef(),
-                                t.getEmdReceiptDocPath(),
-                                null);
-                    }
-                }
-
-                // 3. TPC_PRICING
-                if ("TPC_PRICING".equalsIgnoreCase(stage) || ("DUAL_TRACK".equalsIgnoreCase(stage) && (t.getTpcPurchasePrice() == null || t.getTpcPurchasePrice() <= 0) && (t.getMisFinalPrice() == null || t.getMisFinalPrice() <= 0))) {
-                    ensurePendingApproval(t.getId(), TenderWorkflowStage.TPC_PRICING,
-                            "clearance", "tpc",
-                            null, null, null, null, null);
-                }
-
-                // 4. MIS_PRICING
-                if ("MIS_PRICING".equalsIgnoreCase(stage) && (t.getMisFinalPrice() == null || t.getMisFinalPrice() <= 0)) {
-                    if (t.getAssignedMisMember() != null && List.of("tpc", "tpc team", "clearance", "clearance team", "executive").contains(t.getAssignedMisMember().trim().toLowerCase())) {
-                        t.setAssignedMisMember(null);
-                        tenderRepository.save(t);
-                    }
-                    String misAssignee = t.getAssignedMisMember() != null && !t.getAssignedMisMember().isBlank()
-                            && !List.of("tpc", "tpc team", "clearance", "clearance team", "executive").contains(t.getAssignedMisMember().trim().toLowerCase())
-                            ? t.getAssignedMisMember().trim() : "misteam";
-                    TenderApprovalRequest misReq = ensurePendingApproval(t.getId(), TenderWorkflowStage.MIS_PRICING,
-                            "tpc", misAssignee,
-                            null, null, null, null, t.getTpcPurchasePrice());
-                    if (misReq != null && misReq.getAssignedTo() != null && List.of("tpc", "tpc team", "clearance", "clearance team", "executive").contains(misReq.getAssignedTo().trim().toLowerCase())) {
-                        misReq.setAssignedTo(misAssignee);
-                        approvalRepository.save(misReq);
-                    }
-                }
-
-                // 5. DOC_VERIFICATION
-                if ("DOC_VERIFICATION".equalsIgnoreCase(stage) || "Pending".equalsIgnoreCase(t.getVerificationStatus())) {
-                    if (!"Approved".equalsIgnoreCase(t.getVerificationStatus())) {
-                        String misAssignee = t.getAssignedMisMemberDocs() != null && !t.getAssignedMisMemberDocs().isBlank()
-                                ? t.getAssignedMisMemberDocs()
-                                : (t.getAssignedMisMember() != null && !t.getAssignedMisMember().isBlank() ? t.getAssignedMisMember() : "misteam");
-                        TenderApprovalRequest req = ensurePendingApproval(t.getId(), TenderWorkflowStage.DOC_VERIFICATION,
-                                t.getMisExecutive() != null ? t.getMisExecutive() : "executive",
-                                misAssignee,
-                                null, null, null, null, null);
-                        if (req != null && t.getWorkingPath() != null && req.getWorkingPath() == null) {
-                            req.setWorkingPath(t.getWorkingPath());
-                            approvalRepository.save(req);
-                        }
-                    }
-                }
-
-                // 6. SUBMISSION_PENDING
-                if ("SUBMISSION_PENDING".equalsIgnoreCase(stage) || "Pending".equalsIgnoreCase(t.getSubmissionStatus())) {
-                    if (!"Approved".equalsIgnoreCase(t.getSubmissionStatus())) {
-                        String misAssignee = t.getAssignedMisMemberSubmission() != null && !t.getAssignedMisMemberSubmission().isBlank()
-                                ? t.getAssignedMisMemberSubmission()
-                                : (t.getAssignedMisMember() != null && !t.getAssignedMisMember().isBlank() ? t.getAssignedMisMember() : "misteam");
-                        ensurePendingApproval(t.getId(), TenderWorkflowStage.SUBMISSION_PENDING,
-                                t.getMisExecutive() != null ? t.getMisExecutive() : "executive",
-                                misAssignee,
-                                null, null, null, null, null);
-                    }
-                }
-
-                // 7. WIN_LOSS_PENDING
-                if ("WIN_LOSS_PENDING".equalsIgnoreCase(stage) || "Pending".equalsIgnoreCase(t.getOutcomeStatus())) {
-                    if (!"Won".equalsIgnoreCase(t.getOutcomeStatus()) && !"Lost".equalsIgnoreCase(t.getOutcomeStatus())
-                            && !"Approved".equalsIgnoreCase(t.getOutcomeStatus())) {
-                        String misAssignee = t.getAssignedMisMemberSubmission() != null && !t.getAssignedMisMemberSubmission().isBlank()
-                                ? t.getAssignedMisMemberSubmission()
-                                : (t.getAssignedMisMember() != null && !t.getAssignedMisMember().isBlank() ? t.getAssignedMisMember() : "misteam");
-                        TenderApprovalRequest req = ensurePendingApproval(t.getId(), TenderWorkflowStage.WIN_LOSS_PENDING,
-                                t.getMisExecutive() != null ? t.getMisExecutive() : "executive",
-                                misAssignee,
-                                null, null, null, null, null);
-                        if (req != null && t.getLossReason() != null && req.getLossReasonExecutive() == null) {
-                            req.setLossReasonExecutive(t.getLossReason());
-                            approvalRepository.save(req);
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // Non-blocking: log and allow query to proceed
-        }
-    }
-
     // ── GET /api/approvals/counts ─────────────────────────────────────────────
     /**
      * Returns pending approval counts broken down by stage.
@@ -367,8 +129,7 @@ public class ApprovalController {
                     .body(Map.of("success", false, "error", "Access denied: MIS Team or Admin required"));
         }
 
-        // Clean stale/duplicate pending approvals
-        reconcileStaleAndDuplicateApprovals();
+        // The stale/duplicate clean-up runs in the background (ApprovalReconcileService), not on reads.
 
         String statusParam = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "PENDING";
 
@@ -501,7 +262,9 @@ public class ApprovalController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false, defaultValue = "PENDING") String status,
             @RequestParam(required = false) String team,
-            @RequestParam(required = false, name = "role") String requesterRole) {
+            @RequestParam(required = false, name = "role") String requesterRole,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer limit) {
 
         String username = getAuthenticatedUsername();
         String role = getAuthenticatedRole();
@@ -511,8 +274,7 @@ public class ApprovalController {
                     .body(Map.of("success", false, "error", "Access denied: MIS Team or Admin required"));
         }
 
-        // Clean stale/duplicate pending approvals
-        reconcileStaleAndDuplicateApprovals();
+        // The stale/duplicate clean-up runs in the background (ApprovalReconcileService), not on reads.
 
         String statusParam = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "PENDING";
         boolean isAll = "ALL".equalsIgnoreCase(statusParam);
@@ -642,11 +404,29 @@ public class ApprovalController {
             result.add(dto);
         }
 
+        // Optional paging ("Load more"): without a limit the whole list is returned, as before.
+        int total = result.size();
+        List<ApprovalSummaryDto> pageItems = result;
+        int currentPage = (page != null && page >= 0) ? page : 0;
+        if (limit != null && limit > 0) {
+            int fromIndex = (int) Math.min((long) currentPage * limit, total);
+            int toIndex = (int) Math.min((long) fromIndex + limit, total);
+            pageItems = result.subList(fromIndex, toIndex);
+        }
+        boolean hasMore = limit != null && limit > 0 && (long) (currentPage + 1) * limit < total;
+
         return ResponseEntity.ok(Map.of(
                 "success", true,
-                "approvals", result,
-                "total", result.size()
+                "approvals", pageItems,
+                "total", total,
+                "page", currentPage,
+                "hasMore", hasMore
         ));
+    }
+
+    /** The whole list, without paging. */
+    public ResponseEntity<?> getPendingApprovals(String stage, String search, String status, String team, String requesterRole) {
+        return getPendingApprovals(stage, search, status, team, requesterRole, null, null);
     }
 
     // ── POST /api/approvals/{approvalId}/review ───────────────────────────────
@@ -732,6 +512,13 @@ public class ApprovalController {
         if (!WorkflowPermissions.allowed(role, WorkflowPermissions.reviewAction(approvalReq.getStage().name()))) {
             return WorkflowPermissions.denied();
         }
+        // Lock the tender row, then the request row, and re-read both, so that when several people
+        // approve the same request at once they are handled one after the other: the first is applied
+        // and the others find it no longer PENDING below ("already completed"). Every approval path
+        // locks the tender before its requests, so two of them never wait for each other in a cycle.
+        tenderRepository.findById(approvalReq.getTenderId())
+                .ifPresent(lockedTender -> entityManager.refresh(lockedTender, LockModeType.PESSIMISTIC_WRITE));
+        entityManager.refresh(approvalReq, LockModeType.PESSIMISTIC_WRITE);
 
         // Verify the request is still PENDING
         if (!"PENDING".equalsIgnoreCase(approvalReq.getStatus())) {

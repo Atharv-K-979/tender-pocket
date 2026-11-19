@@ -31,6 +31,10 @@ public class ApprovalControllerWorkflowTest {
     @Mock
     private TenderCommentRepository commentRepository;
 
+    /** Row locks taken by the approve actions; a mock does nothing here. */
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
+
     @InjectMocks
     private ApprovalController approvalController;
 

@@ -163,6 +163,7 @@ class WorkflowPermissionsTest {
         when(repository.findById(1L)).thenReturn(Optional.of(request));
         var controller = new ApprovalController();
         ReflectionTestUtils.setField(controller, "approvalRepository", repository);
+        ReflectionTestUtils.setField(controller, "entityManager", mock(jakarta.persistence.EntityManager.class));
         var response = controller.reviewApproval(1L, Map.of("action", "APPROVED", "comment", "Review"));
         assertEquals(403, response.getStatusCode().value());
         verify(repository, never()).save(any());
@@ -202,6 +203,7 @@ class WorkflowPermissionsTest {
         ReflectionTestUtils.setField(controller, "tenderRepository", tenders);
         ReflectionTestUtils.setField(controller, "approvalRepository", approvals);
         ReflectionTestUtils.setField(controller, "commentRepository", mock(TenderCommentRepository.class));
+        ReflectionTestUtils.setField(controller, "entityManager", mock(jakarta.persistence.EntityManager.class));
         var response = controller.reviewApproval("T-1", Map.of("action", "APPROVED", "comment", "Reviewed"));
         assertEquals(200, response.getStatusCode().value());
         assertEquals(stage.equals("DOC_VERIFICATION") ? "PAYMENT_APPROVAL" : "SUBMISSION_PENDING", tender.getCurrentStage());

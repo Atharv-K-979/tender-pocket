@@ -234,6 +234,9 @@ function isSafeUrl(url?: string | null): boolean {
          trimmed.startsWith('http://');
 }
 
+/** Approval requests shown at a time; "Load more" fetches the next page. */
+const APPROVALS_PAGE_SIZE = 50;
+
 async function parseJsonSafely(res: Response): Promise<any> {
   const text = await res.text();
   try {
@@ -338,14 +341,37 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
 
+  // Identical requests already on their way are shared: opening the screen or changing a filter used
+  // to send the same request twice.
+  const inFlightRef = useRef(new Map<string, Promise<any>>());
+  const getJsonShared = useCallback((url: string): Promise<any> => {
+    const pending = inFlightRef.current.get(url);
+    if (pending) return pending;
+    const request = fetchWithAuthRef.current(url)
+      .then(res => parseJsonSafely(res))
+      .finally(() => inFlightRef.current.delete(url));
+    inFlightRef.current.set(url, request);
+    return request;
+  }, []);
+
+  // Paging of the approvals list: the first APPROVALS_PAGE_SIZE requests; "Load more" shows that many
+  // more. The list is always read from the top (as many as are shown), so a request that moved in
+  // the meantime is neither skipped nor shown twice, and reloading the same list (after an approval,
+  // or Refresh) keeps as many requests on screen as before.
+  const [hasMore, setHasMore] = useState(false);
+  const [totalApprovals, setTotalApprovals] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const lastListQueryRef = useRef<string | null>(null);
+  const shownLimitRef = useRef(APPROVALS_PAGE_SIZE);
+  const listSeqRef = useRef(0);
+
   // ── Data fetching ─────────────────────────────────────────────────────────
 
   const fetchCounts = useCallback(async (tabToUse?: 'PENDING' | 'HISTORY') => {
     try {
       const currentTab = tabToUse !== undefined ? tabToUse : adminTab;
       const statusParam = (isAdmin && currentTab === 'HISTORY') ? 'HISTORY' : 'PENDING';
-      const res = await fetchWithAuthRef.current(`/api/approvals/counts?status=${statusParam}`);
-      const data = await parseJsonSafely(res);
+      const data = await getJsonShared(`/api/approvals/counts?status=${statusParam}`);
       if (data.success) {
         setCounts(data.counts || {});
         if (data.pendingCounts) setPendingStageCounts(data.pendingCounts);
@@ -405,11 +431,21 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
         params.set('status', 'PENDING');
       }
 
-      const res = await fetchWithAuthRef.current(`/api/approvals/pending?${params.toString()}`);
-      const data = await parseJsonSafely(res);
+      const query = params.toString();
+      // The same list again (after an approval, or Refresh): keep as many requests on screen as before.
+      const limit = query === lastListQueryRef.current ? shownLimitRef.current : APPROVALS_PAGE_SIZE;
+      params.set('limit', String(limit));
+      params.set('page', '0');
+      const seq = ++listSeqRef.current;
+      const data = await getJsonShared(`/api/approvals/pending?${params.toString()}`);
+      if (seq !== listSeqRef.current) return; // a newer list request was sent meanwhile
       if (data.success) {
         const rawList = Array.isArray(data.approvals) ? data.approvals : [];
         setApprovals(rawList.map(normalizeApproval));
+        lastListQueryRef.current = query;
+        shownLimitRef.current = limit;
+        setHasMore(Boolean(data.hasMore));
+        setTotalApprovals(typeof data.total === 'number' ? data.total : rawList.length);
       } else {
         showToastRef.current(data.error || 'Failed to load approvals', 'error');
       }
@@ -437,12 +473,44 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
       .catch(() => {});
   }, []);
 
+  const searchEffectPrimedRef = useRef(false);
   useEffect(() => {
+    if (!searchEffectPrimedRef.current) {
+      searchEffectPrimedRef.current = true; // on open the list is already loaded by the effect above
+      return;
+    }
     const timer = setTimeout(() => {
       fetchApprovals(activeStage, search, adminTab, historyStatusFilter, selectedTeam, selectedRole, false);
     }, 400);
     return () => clearTimeout(timer);
   }, [search]);
+
+  const loadMoreApprovals = async () => {
+    if (loadingMore || !hasMore || lastListQueryRef.current == null) return;
+    const limit = shownLimitRef.current + APPROVALS_PAGE_SIZE;
+    const seq = ++listSeqRef.current;
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams(lastListQueryRef.current);
+      params.set('limit', String(limit));
+      params.set('page', '0');
+      const data = await getJsonShared(`/api/approvals/pending?${params.toString()}`);
+      if (seq !== listSeqRef.current) return; // the list was reloaded meanwhile
+      if (data.success) {
+        const rawList = Array.isArray(data.approvals) ? data.approvals : [];
+        setApprovals(rawList.map(normalizeApproval));
+        shownLimitRef.current = limit;
+        setHasMore(Boolean(data.hasMore));
+        if (typeof data.total === 'number') setTotalApprovals(data.total);
+      } else {
+        showToastRef.current(data.error || 'Failed to load approvals', 'error');
+      }
+    } catch {
+      showToastRef.current('Unable to connect to server', 'error');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleTabSwitch = (newTab: 'PENDING' | 'HISTORY') => {
     setAdminTab(newTab);
@@ -1689,6 +1757,13 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
               </div>
             );
           })}
+          {hasMore && (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
+              <button className="btn btn-secondary" onClick={loadMoreApprovals} disabled={loadingMore} style={{ minWidth: '220px' }}>
+                {loadingMore ? 'Loading...' : `Load more (showing ${approvals.length} of ${totalApprovals})`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

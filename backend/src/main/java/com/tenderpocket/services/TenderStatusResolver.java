@@ -1,11 +1,15 @@
 package com.tenderpocket.services;
 
 import com.tenderpocket.models.Tender;
+import com.tenderpocket.utils.TenderDateSort;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * The single definition of a tender's displayed status.
@@ -27,6 +31,11 @@ public final class TenderStatusResolver {
 
     private static final DateTimeFormatter LEGACY_DATE =
             DateTimeFormatter.ofPattern("MMM d yyyy", Locale.ENGLISH);
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /** A value that starts with an ISO day: "2026-12-13", "2026-12-13 17:00:00", "2026-12-13T17:00". */
+    private static final Pattern STARTS_WITH_ISO_DAY = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}");
 
     /**
      * Parses the several date shapes stored across the schema.
@@ -71,9 +80,7 @@ public final class TenderStatusResolver {
      *                 comparison so that "overdue" follows the client's working day.
      */
     public static String resolve(String stored, String dueDate, String assignedAt, String scrapedAt, String publishDate, String misExecutive, String todayIST) {
-        boolean hasPassedDueDate = dueDate != null
-                && !dueDate.isBlank()
-                && dueDate.split(" ")[0].compareTo(todayIST) < 0;
+        boolean hasPassedDueDate = hasPassedDueDate(dueDate, todayIST);
 
         if (eq(stored, "Awarded") || eq(stored, "Won")) return "Won";
         if (eq(stored, "Not Awarded") || eq(stored, "Lost")) return "Lost";
@@ -107,6 +114,33 @@ public final class TenderStatusResolver {
         if (stored == null || stored.isBlank() || eq(stored, "Issued")) return "New";
 
         return stored;
+    }
+
+    /**
+     * True when the due date lies before today (Asia/Kolkata).
+     *
+     * Due dates that start with an ISO day ("2026-12-13", optionally with a time) are compared as
+     * text, exactly as before: for that shape a text comparison is a date comparison. Due dates in
+     * other shapes ("13 Dec 2026", "13-12-2026") went through the same text comparison, which reads
+     * them wrongly: "13 Dec 2026" sorts before "2026-11-19", so a tender due next month showed as
+     * Missed Deadline, while "25 Oct 2026" sorts after it, so an overdue tender never did. Those
+     * are now read as dates. A shape that cannot be read keeps the old comparison.
+     */
+    static boolean hasPassedDueDate(String dueDate, String todayIST) {
+        if (dueDate == null || dueDate.isBlank()) return false;
+        String firstWord = dueDate.split(" ")[0];
+        if (!STARTS_WITH_ISO_DAY.matcher(firstWord).lookingAt()) {
+            long dueMillis = TenderDateSort.key(dueDate);
+            if (dueMillis != TenderDateSort.UNKNOWN) {
+                try {
+                    LocalDate due = Instant.ofEpochMilli(dueMillis).atZone(IST).toLocalDate();
+                    return due.isBefore(LocalDate.parse(todayIST));
+                } catch (Exception ignored) {
+                    // today not in ISO form: keep the old comparison below
+                }
+            }
+        }
+        return firstWord.compareTo(todayIST) < 0;
     }
 
     public static String resolve(Tender t, String todayIST) {

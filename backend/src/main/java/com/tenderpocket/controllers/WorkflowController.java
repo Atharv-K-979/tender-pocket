@@ -6,6 +6,9 @@ import com.tenderpocket.models.*;
 import com.tenderpocket.repositories.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -31,6 +34,9 @@ public class WorkflowController {
 
     @Autowired
     private TenderRepository tenderRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Autowired
     private TenderApprovalRepository approvalRepository;
@@ -262,6 +268,9 @@ public class WorkflowController {
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
         Tender tender = tOpt.get();
+        // Lock the tender row and re-read it, so that two clearance approvals sent at the same moment are
+        // handled one after the other: the second finds the clearance no longer pending.
+        entityManager.refresh(tender, LockModeType.PESSIMISTIC_WRITE);
         if (!"Pending".equals(tender.getSpecVerificationStatus())) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
                     "error", "Specification clearance is not pending."));
@@ -939,6 +948,9 @@ public class WorkflowController {
 
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+        // Lock the tender row first and re-read it: every approval path locks the tender before its
+        // requests, so two of them never wait for each other in a cycle.
+        entityManager.refresh(tOpt.get(), LockModeType.PESSIMISTIC_WRITE);
 
         List<TenderApprovalRequest> requests = approvalRepository.findByTenderIdOrderByCreatedAtDesc(id);
         if (requests.isEmpty()) {
@@ -946,6 +958,9 @@ public class WorkflowController {
         }
 
         TenderApprovalRequest latest = requests.get(0);
+        // Lock the request row and re-read it, so that simultaneous reviews of the same request are
+        // handled one after the other: the second finds it already actioned below.
+        entityManager.refresh(latest, LockModeType.PESSIMISTIC_WRITE);
         if (!WorkflowPermissions.allowed(WorkflowPermissions.reviewAction(latest.getStage().name()))) {
             return WorkflowPermissions.denied();
         }
