@@ -6,8 +6,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * One row per login, mail type and day. The unique key is what limits every login to one Due
- * mail and one Pending mail a day, however many times the job runs. Times are IST.
+ * One row per login, mail type and day. The unique key is what limits every login to one daily
+ * mail (type DAILY) a day, however many times the job runs. Times are IST.
  */
 @Entity
 @Table(name = "email_digest_log",

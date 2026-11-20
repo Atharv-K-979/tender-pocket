@@ -100,32 +100,36 @@ class DailyDigestServiceTest {
     }
 
     @Test
-    void sendsOnlyWhatEachLoginHasAndAdminLast() throws Exception {
+    void sendsOneMailPerLoginWithBothSectionsAndAdminLast() throws Exception {
         when(clock.refresh(any())).thenReturn(snapshot(users()));
         DailyDigestService.RunReport report = service.run("test");
 
         assertEquals("DONE", report.status());
-        assertEquals(List.of(
-                "mis@example.com", "mis@example.com",
-                "exec@example.com", "exec@example.com",
-                "admin@example.com", "admin@example.com"), sentTo());
-        assertEquals(6, report.count("SENT"));
-        assertEquals(4, report.count("NOTHING_TO_REPORT"), "Clearance and TPC have nothing, so they get no mail");
+        assertEquals(List.of("mis@example.com", "exec@example.com", "admin@example.com"), sentTo());
+        assertEquals(3, report.count("SENT"));
+        assertEquals(2, report.count("NOTHING_TO_REPORT"), "Clearance and TPC have nothing, so they get no mail");
+        assertTrue(rows.stream().allMatch(r -> "DAILY".equals(r.getDigestType())));
+
+        ArgumentCaptor<String> html = ArgumentCaptor.forClass(String.class);
+        verify(mailer).send(eq("mis@example.com"), anyString(), html.capture(), anyString(), any());
+        assertTrue(html.getValue().contains("REF-U-SOON") && html.getValue().contains("REF-U-OLD"),
+                "the one MIS mail has both the due-soon tender and the long-waiting tender");
+        assertTrue(html.getValue().contains("Due in the next 3 days") && html.getValue().contains("Waiting on you over 3 days"));
         assertTrue(rows.stream().allMatch(r -> EmailDigestLog.SENT.equals(r.getStatus())));
     }
 
     @Test
-    void neverMoreThanTwoMailsPerLoginPerDay() throws Exception {
+    void neverMoreThanOneMailPerLoginPerDay() throws Exception {
         when(clock.refresh(any())).thenReturn(snapshot(users()));
         service.run("first");
         DailyDigestService.RunReport second = service.run("second");
         DailyDigestService.RunReport third = service.run("third");
 
-        verify(mailer, times(6)).send(anyString(), anyString(), anyString(), anyString(), any());
+        verify(mailer, times(3)).send(anyString(), anyString(), anyString(), anyString(), any());
         assertEquals(0, second.count("SENT"));
-        assertEquals(6, second.count("ALREADY_SENT"));
-        assertEquals(6, third.count("ALREADY_SENT"));
-        assertEquals(6, rows.size());
+        assertEquals(3, second.count("ALREADY_SENT"));
+        assertEquals(3, third.count("ALREADY_SENT"));
+        assertEquals(3, rows.size());
     }
 
     @Test
@@ -133,20 +137,19 @@ class DailyDigestServiceTest {
         when(clock.refresh(any())).thenReturn(snapshot(users()));
         when(mailer.send(eq("exec@example.com"), anyString(), anyString(), anyString(), any()))
                 .thenThrow(new NotificationMailer.SendFailure("Connection timed out", 3))
-                .thenThrow(new NotificationMailer.SendFailure("Connection timed out", 3))
                 .thenReturn(1);
 
         DailyDigestService.RunReport first = service.run("first");
-        assertEquals(2, first.count("FAILED"));
+        assertEquals(1, first.count("FAILED"));
         ArgumentCaptor<String> adminHtml = ArgumentCaptor.forClass(String.class);
-        verify(mailer).send(eq("admin@example.com"), startsWith("Waiting over"), adminHtml.capture(), anyString(), any());
+        verify(mailer).send(eq("admin@example.com"), startsWith("Daily tenders"), adminHtml.capture(), anyString(), any());
         assertTrue(adminHtml.getValue().contains("Delivery report for today"));
         assertTrue(adminHtml.getValue().contains("Connection timed out"));
 
         DailyDigestService.RunReport second = service.run("retry");
-        assertEquals(2, second.count("SENT"), "the two failed executive mails are retried");
-        assertEquals(4, second.count("ALREADY_SENT"));
-        EmailDigestLog execDue = rows.stream().filter(r -> r.getRecipientUsername().equals("executive") && r.getDigestType().equals("DUE")).findFirst().orElseThrow();
+        assertEquals(1, second.count("SENT"), "the failed executive mail is retried");
+        assertEquals(2, second.count("ALREADY_SENT"));
+        EmailDigestLog execDue = rows.stream().filter(r -> r.getRecipientUsername().equals("executive") && r.getDigestType().equals("DAILY")).findFirst().orElseThrow();
         assertEquals(EmailDigestLog.SENT, execDue.getStatus());
         assertEquals(4, execDue.getAttempts());
     }
