@@ -9,7 +9,7 @@
  * Step 6: Final Submission (Submit Tender button unlocks ONLY when BOTH Track A & Track B pass)
  * Step 7: Outcome (Won / Lost / Commercial Evaluation)
  *
- * Parallel: Brochure. After clearance the Brochure Team uploads one brochure (PDF, Word or Excel).
+ * Brochure: after clearance the Brochure Team uploads brochure documents (PDF, Word, Excel or ZIP).
  * It runs alongside Steps 3-7 and never blocks a step. Tenders cleared before the Brochure Team
  * existed have no brochure_status.
  */
@@ -491,7 +491,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     let stageKey = 'DUAL_TRACK_ACTIVE';
     let stageName = 'Dual Track: Pricing & Verification';
     let shortStage = 'Dual Track';
-    let actionTitle = 'Parallel Clearance in Progress';
+    let actionTitle = 'Pricing & Verification in Progress';
     let actionDesc = 'Track A (Commercial Quote) & Track B (Folder Audit) are running simultaneously.';
     let needsActionNow = (pricingPending && (isMisRole || isTpcRole)) || (docsPending && isMisRole);
     let actionButtonText = isMisRole ? 'Review Dual Track' : (isTpcRole ? 'Provide TPC Price' : 'View Clearance');

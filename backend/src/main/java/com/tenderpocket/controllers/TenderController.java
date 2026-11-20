@@ -193,6 +193,13 @@ public class TenderController {
         if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
         if (lower.endsWith(".txt")) return "text/plain";
         if (lower.endsWith(".zip")) return "application/zip";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        if (lower.endsWith(".ppt")) return "application/vnd.ms-powerpoint";
+        if (lower.endsWith(".csv")) return "text/csv";
         return "application/octet-stream";
     }
  
@@ -243,7 +250,7 @@ public class TenderController {
                     System.err.println("Background manual GeM sync failed: " + e.getMessage());
                 }
             });
-            return ResponseEntity.ok(Map.of("success", true, "message", "GeM synchronization started in the background. It will process in parallel."));
+            return ResponseEntity.ok(Map.of("success", true, "message", "GeM synchronization started in the background."));
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -1201,8 +1208,11 @@ public class TenderController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Document uploaded", "document", doc));
     }
 
-    /** File types the Brochure Team can upload: PDF, Word and Excel. */
-    private static final Set<String> BROCHURE_EXTENSIONS = Set.of("pdf", "doc", "docx", "xls", "xlsx");
+    /** File types the Brochure Team can upload: PDF, Word, Excel and ZIP. */
+    private static final Set<String> BROCHURE_EXTENSIONS = Set.of("pdf", "doc", "docx", "xls", "xlsx", "zip");
+
+    /** Most brochure documents accepted in one upload. */
+    private static final int MAX_BROCHURE_FILES_PER_UPLOAD = 10;
 
     private static boolean isBrochureTeam(String role) {
         return "Brochure Team".equals(WorkflowPermissions.canonicalRole(role));
@@ -1214,8 +1224,15 @@ public class TenderController {
                 || WorkflowSyncService.BROCHURE_UPLOADED.equalsIgnoreCase(t.getBrochureStatus());
     }
 
-    /** Checks the file content really is the declared type (PDF header, or ZIP for .docx/.xlsx). */
-    private static boolean brochureContentMatchesExtension(byte[] data, String extension) {
+    /** One accepted upload: the user's file name, its lower-case extension and its bytes. */
+    private record UploadedFile(String originalName, String extension, byte[] data) {}
+
+    /**
+     * Checks the file content really is the declared type: PDF header, ZIP header for
+     * .docx / .xlsx / .pptx / .zip, and the image signatures. Formats without one fixed
+     * signature (.doc, .xls, .ppt, .csv, .txt) are accepted by extension.
+     */
+    private static boolean fileContentMatchesExtension(byte[] data, String extension) {
         if (data == null || data.length < 4) return false;
         switch (extension) {
             case "pdf": {
@@ -1232,154 +1249,429 @@ public class TenderController {
             }
             case "docx":
             case "xlsx":
+            case "pptx":
                 return data[0] == 'P' && data[1] == 'K' && data[2] == 3 && data[3] == 4;
+            case "zip":
+                // Normal archive, or an empty archive (end-of-central-directory record only)
+                return data[0] == 'P' && data[1] == 'K'
+                        && ((data[2] == 3 && data[3] == 4) || (data[2] == 5 && data[3] == 6));
+            case "png":
+                return (data[0] & 0xFF) == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G';
+            case "jpg":
+            case "jpeg":
+                return (data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8 && (data[2] & 0xFF) == 0xFF;
+            case "gif":
+                return data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8';
+            case "webp":
+                return data.length >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
+                        && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P';
             default:
-                return true; // .doc / .xls have several legitimate formats
+                return true;
         }
     }
 
     /**
-     * Brochure upload: after the Clearance Team approves a tender, the Brochure Team uploads one
-     * brochure (PDF, Word or Excel). The file is stored like other tender documents (S3 when
-     * enabled, otherwise public/documents/{id}/) and listed in downloaded_docs, so it shows in the
-     * tender's Document Repository. This runs in parallel with the Tender Executive's work: the
-     * upload never changes the tender's workflow stage. Uploading again replaces the brochure.
+     * Reads one uploaded file and checks its type. Adds it to {@code accepted} and returns null,
+     * or returns the error message for the user.
      */
-    @PostMapping(value = "/{id}/upload-brochure", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
-    @org.springframework.transaction.annotation.Transactional
-    public ResponseEntity<?> uploadBrochure(
-            @PathVariable("id") String id,
-            @RequestParam(value = "file", required = false) org.springframework.web.multipart.MultipartFile file) {
-
-        if (!WorkflowPermissions.allowed(UPLOAD_BROCHURE)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false,
-                    "error", "Only the Brochure Team can upload the brochure."));
-        }
-
-        Optional<Tender> opt = tenderRepository.findById(id);
-        if (opt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
-        }
-        Tender tender = opt.get();
-
-        if (!isInBrochureStep(tender) || !"Approved".equalsIgnoreCase(tender.getSpecVerificationStatus())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
-                    "error", "No brochure has been requested for this tender. The Brochure Team uploads after the Clearance Team approves the tender."));
-        }
-        if (file == null || file.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("success", false,
-                    "error", "Choose a PDF, Word or Excel file to upload."));
-        }
-
+    private static String readUploadedFile(org.springframework.web.multipart.MultipartFile file, Set<String> allowed,
+                                           String allowedLabel, long maxBytes, List<UploadedFile> accepted) {
         // Keep only the file's own name (some browsers send a full path such as C:\fakepath\x.pdf)
         String submittedName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "";
         String originalName = submittedName.substring(Math.max(submittedName.lastIndexOf('/'), submittedName.lastIndexOf('\\')) + 1).trim();
-        if (originalName.isEmpty()) originalName = "brochure";
+        if (originalName.isEmpty()) originalName = "document";
         int dot = originalName.lastIndexOf('.');
         String extension = dot >= 0 ? originalName.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
-        if (!BROCHURE_EXTENSIONS.contains(extension)) {
-            return ResponseEntity.badRequest().body(Map.of("success", false,
-                    "error", "'" + originalName + "' is not allowed. Upload a PDF, Word (.docx / .doc) or Excel (.xlsx / .xls) file."));
+        if (!allowed.contains(extension)) {
+            return "'" + originalName + "' is not allowed. Upload " + allowedLabel + ".";
         }
-
+        if (file.getSize() > maxBytes) {
+            return "'" + originalName + "' is larger than " + (maxBytes / (1024 * 1024)) + " MB.";
+        }
         byte[] data;
         try {
             data = file.getBytes();
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
-                    "error", "Could not read '" + originalName + "': " + e.getMessage()));
+            return "Could not read '" + originalName + "': " + e.getMessage();
         }
-        if (!brochureContentMatchesExtension(data, extension)) {
-            return ResponseEntity.badRequest().body(Map.of("success", false,
-                    "error", "'" + originalName + "' is not a valid ." + extension + " file. Please check the file and upload it again."));
+        if (!fileContentMatchesExtension(data, extension)) {
+            return "'" + originalName + "' is not a valid ." + extension + " file. Please check the file and upload it again.";
         }
+        accepted.add(new UploadedFile(originalName, extension, data));
+        return null;
+    }
 
-        // Existing documents on the tender (kept as-is; an earlier brochure is replaced)
-        List<Map<String, Object>> docsList = new ArrayList<>();
-        if (tender.getDownloadedDocs() != null && !tender.getDownloadedDocs().isBlank()) {
-            try {
-                docsList = mapper.readValue(tender.getDownloadedDocs(),
-                        new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
-            } catch (Exception e) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
-                        "error", "This tender's document list could not be read, so the upload was stopped to avoid losing it."));
-            }
-        }
-        docsList.removeIf(d -> "brochure".equals(String.valueOf(d.get("source"))));
-
-        // Safe stored file name that starts with "brochure". "receipt" is avoided because file
-        // names containing it are treated as confidential EMD proof by the download routes.
+    /**
+     * Safe stored file name built from the user's file name: letters, digits, '.', '_' and '-'
+     * only, starting with {@code prefix} (unless it already starts with {@code keepIfStartsWith}),
+     * and not already in {@code usedNames}. "receipt" is avoided because file names containing it
+     * are treated as confidential EMD proof by the download routes.
+     */
+    private static String safeStoredFileName(String originalName, String extension, String prefix,
+                                             String keepIfStartsWith, Set<String> usedNames) {
+        int dot = originalName.lastIndexOf('.');
         String baseName = (dot >= 0 ? originalName.substring(0, dot) : originalName)
                 .replaceAll("[^a-zA-Z0-9._-]", "_")
                 .replaceAll("\\.{2,}", ".")
                 .replaceAll("\\.+$", "")
                 .replaceAll("(?i)receipt", "rcpt");
         if (baseName.isBlank() || baseName.matches("^[._-]+$")) baseName = "document";
-        if (!baseName.toLowerCase(Locale.ROOT).startsWith("brochure")) baseName = "Brochure_" + baseName;
-        if (baseName.length() > 120) baseName = baseName.substring(0, 120);
-        Set<String> usedNames = new HashSet<>();
-        for (Map<String, Object> d : docsList) {
-            if (d.get("filename") != null) usedNames.add(d.get("filename").toString().toLowerCase(Locale.ROOT));
+        if (keepIfStartsWith == null || !baseName.toLowerCase(Locale.ROOT).startsWith(keepIfStartsWith)) {
+            baseName = prefix + baseName;
         }
+        if (baseName.length() > 120) baseName = baseName.substring(0, 120);
         String fileName = baseName + "." + extension;
         for (int n = 2; usedNames.contains(fileName.toLowerCase(Locale.ROOT)); n++) {
             fileName = baseName + "_" + n + "." + extension;
         }
+        usedNames.add(fileName.toLowerCase(Locale.ROOT));
+        return fileName;
+    }
 
+    /** Deletes a stored tender document: from S3 when enabled, and every local copy. */
+    private void deleteStoredDocument(String tenderId, String fileName) {
+        if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
+            try {
+                objectStorageService.delete("tenders/" + tenderId + "/" + fileName);
+            } catch (Exception e) {
+                System.err.println("[TenderController] Warning deleting " + fileName + " from S3 for " + tenderId + ": " + e.getMessage());
+            }
+        }
+        for (String dir : new String[] { uploadDir, "public/documents", "../backend/public/documents",
+                "../public/documents", "../frontend/public/documents" }) {
+            try {
+                Path base = Paths.get(dir).toAbsolutePath().normalize();
+                Path target = base.resolve(tenderId).resolve(fileName).normalize();
+                if (target.startsWith(base.resolve(tenderId))) Files.deleteIfExists(target);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private static boolean isBrochureDoc(Map<String, Object> doc) {
+        return doc != null && "brochure".equals(String.valueOf(doc.get("source")));
+    }
+
+    /** Reads the tender's document list. Throws when it cannot be read, so nothing is lost by overwriting it. */
+    private List<Map<String, Object>> readDocsList(Tender tender) throws Exception {
+        if (tender.getDownloadedDocs() == null || tender.getDownloadedDocs().isBlank()) return new ArrayList<>();
+        return mapper.readValue(tender.getDownloadedDocs(),
+                new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
+    }
+
+    /**
+     * Brochure summary on the tender, from the brochure documents in the list: "Uploaded" with the
+     * latest document while at least one exists, otherwise "Pending" again (the request stays open).
+     */
+    private static void refreshBrochureSummary(Tender tender, List<Map<String, Object>> docsList) {
+        Map<String, Object> latest = null;
+        for (Map<String, Object> d : docsList) {
+            if (isBrochureDoc(d)) latest = d;
+        }
+        if (latest == null) {
+            tender.setBrochureStatus(WorkflowSyncService.BROCHURE_PENDING);
+            tender.setBrochureFilename(null);
+            tender.setBrochureUploadedBy(null);
+            tender.setBrochureUploadedAt(null);
+            return;
+        }
+        tender.setBrochureStatus(WorkflowSyncService.BROCHURE_UPLOADED);
+        tender.setBrochureFilename(String.valueOf(latest.get("filename")));
+        tender.setBrochureUploadedBy(latest.get("uploaded_by") != null ? String.valueOf(latest.get("uploaded_by")) : null);
+        tender.setBrochureUploadedAt(latest.get("uploaded_at") != null ? String.valueOf(latest.get("uploaded_at")) : null);
+    }
+
+    private void logBrochureActivity(String username, String action, String tenderId, String details) {
         try {
-            persistDocument(id, fileName, data, resolveContentTypeByExtension(fileName));
+            String text = details.length() > 250 ? details.substring(0, 247) + "..." : details;
+            activityLogRepository.save(new ActivityLog(
+                    username, WorkflowPermissions.role(), action, tenderId,
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()), text));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
-                    "error", "Failed to save '" + originalName + "': " + e.getMessage()));
+            System.err.println("[TenderController] Warning saving activity log for brochure change on " + tenderId + ": " + e.getMessage());
+        }
+    }
+
+    /** Checks shared by every brochure document action. Returns the error response, or null when allowed. */
+    private ResponseEntity<?> brochureActionDenied(Optional<Tender> opt) {
+        if (!WorkflowPermissions.allowed(UPLOAD_BROCHURE)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false,
+                    "error", "Only the Brochure Team can upload or change brochure documents."));
+        }
+        if (opt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+        }
+        Tender tender = opt.get();
+        if (!isInBrochureStep(tender) || !"Approved".equalsIgnoreCase(tender.getSpecVerificationStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "No brochure has been requested for this tender. The Brochure Team uploads after the Clearance Team approves the tender."));
+        }
+        return null;
+    }
+
+    private static Map<String, Object> brochureResponse(String message, Tender tender, List<Map<String, Object>> docsList) {
+        List<Map<String, Object>> brochures = new ArrayList<>();
+        for (Map<String, Object> d : docsList) {
+            if (isBrochureDoc(d)) brochures.add(d);
+        }
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("success", true);
+        resp.put("message", message);
+        resp.put("brochures", brochures);
+        resp.put("currentStage", tender.getCurrentStage());
+        resp.put("brochureStatus", tender.getBrochureStatus());
+        resp.put("brochureFilename", tender.getBrochureFilename());
+        return resp;
+    }
+
+    /**
+     * Brochure documents: after the Clearance Team approves a tender, the Brochure Team uploads one
+     * or more brochure documents (PDF, Word, Excel or ZIP). Each file is stored like other tender
+     * documents (S3 when enabled, otherwise public/documents/{id}/) and added to downloaded_docs,
+     * so it shows in the tender's Document Repository. Earlier brochure documents are kept.
+     * Brochure changes never change the tender's workflow stage.
+     */
+    @PostMapping(value = "/{id}/upload-brochure", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<?> uploadBrochure(
+            @PathVariable("id") String id,
+            @RequestParam(value = "file", required = false) List<org.springframework.web.multipart.MultipartFile> files) {
+
+        Optional<Tender> opt = WorkflowPermissions.allowed(UPLOAD_BROCHURE) ? tenderRepository.findById(id) : Optional.empty();
+        ResponseEntity<?> denied = brochureActionDenied(opt);
+        if (denied != null) return denied;
+        Tender tender = opt.get();
+
+        List<org.springframework.web.multipart.MultipartFile> chosen = new ArrayList<>();
+        if (files != null) {
+            for (org.springframework.web.multipart.MultipartFile f : files) {
+                if (f != null && !f.isEmpty()) chosen.add(f);
+            }
+        }
+        if (chosen.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "error", "Choose at least one PDF, Word, Excel or ZIP file to upload."));
+        }
+        if (chosen.size() > MAX_BROCHURE_FILES_PER_UPLOAD) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "error", "Upload at most " + MAX_BROCHURE_FILES_PER_UPLOAD + " brochure documents at a time."));
+        }
+
+        // Check every file first: nothing is saved when one of them is not accepted
+        List<UploadedFile> accepted = new ArrayList<>();
+        for (org.springframework.web.multipart.MultipartFile f : chosen) {
+            String error = readUploadedFile(f, BROCHURE_EXTENSIONS,
+                    "a PDF, Word (.docx / .doc), Excel (.xlsx / .xls) or ZIP file", 50L * 1024 * 1024, accepted);
+            if (error != null) return ResponseEntity.badRequest().body(Map.of("success", false, "error", error));
+        }
+
+        List<Map<String, Object>> docsList;
+        try {
+            docsList = readDocsList(tender);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "This tender's document list could not be read, so the upload was stopped to avoid losing it."));
+        }
+        Set<String> usedNames = new HashSet<>();
+        for (Map<String, Object> d : docsList) {
+            if (d.get("filename") != null) usedNames.add(d.get("filename").toString().toLowerCase(Locale.ROOT));
         }
 
         String username = WorkflowPermissions.username();
-        boolean firstUpload = !WorkflowSyncService.BROCHURE_UPLOADED.equalsIgnoreCase(tender.getBrochureStatus());
+        String uploadedAt = java.time.Instant.now().toString();
+        List<Map<String, Object>> added = new ArrayList<>();
+        List<String> stored = new ArrayList<>();
+        for (UploadedFile u : accepted) {
+            String fileName = safeStoredFileName(u.originalName(), u.extension(), "Brochure_", "brochure", usedNames);
+            try {
+                persistDocument(id, fileName, u.data(), resolveContentTypeByExtension(fileName));
+            } catch (Exception e) {
+                for (String s : stored) deleteStoredDocument(id, s); // keep the upload all-or-nothing
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
+                        "error", "Failed to save '" + u.originalName() + "': " + e.getMessage()));
+            }
+            stored.add(fileName);
+            Map<String, Object> doc = new LinkedHashMap<>();
+            doc.put("name", "Brochure - " + u.originalName());
+            doc.put("filename", fileName);
+            doc.put("local_path", "/documents/" + id + "/" + fileName + "?v=" + System.currentTimeMillis());
+            doc.put("created_date", LocalDate.now().toString());
+            doc.put("uploaded_at", uploadedAt);
+            doc.put("uploaded_by", username);
+            doc.put("size", u.data().length);
+            doc.put("source", "brochure");
+            added.add(doc);
+        }
+        docsList.addAll(added);
+        try {
+            tender.setDownloadedDocs(mapper.writeValueAsString(docsList));
+        } catch (Exception e) {
+            for (String s : stored) deleteStoredDocument(id, s);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
+                    "error", "Saved the files but could not update the tender's document list: " + e.getMessage()));
+        }
+        refreshBrochureSummary(tender, docsList);
+        tenderRepository.save(tender);
 
-        Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("name", "Brochure - " + originalName);
-        doc.put("filename", fileName);
-        doc.put("local_path", "/documents/" + id + "/" + fileName + "?v=" + System.currentTimeMillis());
-        doc.put("created_date", LocalDate.now().toString());
-        doc.put("uploaded_by", username);
-        doc.put("source", "brochure");
-        docsList.add(doc);
+        List<String> names = new ArrayList<>();
+        for (UploadedFile u : accepted) names.add(u.originalName());
+        if (workflowSyncService != null) {
+            workflowSyncService.recordBrochureEvent(id, username, "Brochure document" + (names.size() > 1 ? "s" : "") + " uploaded: " + String.join(", ", names) + ".");
+        }
+        logBrochureActivity(username, "Uploaded Brochure", id, "uploaded brochure document" + (names.size() > 1 ? "s " : " ") + String.join(", ", names));
+
+        String message = added.size() == 1
+                ? "Brochure document uploaded. It is listed in the tender's Document Repository."
+                : added.size() + " brochure documents uploaded. They are listed in the tender's Document Repository.";
+        Map<String, Object> resp = brochureResponse(message, tender, docsList);
+        resp.put("documents", added);
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Edits one brochure document: a new display name, a new file in its place, or both.
+     * The old file is deleted once the new one is saved.
+     */
+    @PostMapping(value = "/{id}/brochures/{fileName:.+}", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<?> editBrochureDocument(
+            @PathVariable("id") String id,
+            @PathVariable("fileName") String fileName,
+            @RequestParam(value = "name", required = false) String name,
+            @RequestParam(value = "file", required = false) org.springframework.web.multipart.MultipartFile file) {
+
+        Optional<Tender> opt = WorkflowPermissions.allowed(UPLOAD_BROCHURE) ? tenderRepository.findById(id) : Optional.empty();
+        ResponseEntity<?> denied = brochureActionDenied(opt);
+        if (denied != null) return denied;
+        Tender tender = opt.get();
+
+        List<Map<String, Object>> docsList;
+        try {
+            docsList = readDocsList(tender);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "This tender's document list could not be read, so the change was stopped to avoid losing it."));
+        }
+        Map<String, Object> doc = null;
+        for (Map<String, Object> d : docsList) {
+            if (isBrochureDoc(d) && fileName.equalsIgnoreCase(String.valueOf(d.get("filename")))) { doc = d; break; }
+        }
+        if (doc == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Brochure document not found."));
+        }
+
+        String newName = name == null ? null : name.replaceAll("[\\p{Cntrl}]", " ").trim();
+        if (newName != null && newName.isEmpty()) newName = null;
+        if (newName != null && newName.length() > 150) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "The document name can have at most 150 characters."));
+        }
+        boolean hasFile = file != null && !file.isEmpty();
+        if (newName == null && !hasFile) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Enter a new name or choose a new file."));
+        }
+
+        String username = WorkflowPermissions.username();
+        String oldFileName = String.valueOf(doc.get("filename"));
+        String oldName = String.valueOf(doc.get("name"));
+        String action;
+        if (hasFile) {
+            List<UploadedFile> accepted = new ArrayList<>();
+            String error = readUploadedFile(file, BROCHURE_EXTENSIONS,
+                    "a PDF, Word (.docx / .doc), Excel (.xlsx / .xls) or ZIP file", 50L * 1024 * 1024, accepted);
+            if (error != null) return ResponseEntity.badRequest().body(Map.of("success", false, "error", error));
+            UploadedFile u = accepted.get(0);
+            Set<String> usedNames = new HashSet<>();
+            for (Map<String, Object> d : docsList) {
+                if (d.get("filename") != null) usedNames.add(d.get("filename").toString().toLowerCase(Locale.ROOT));
+            }
+            String newFileName = safeStoredFileName(u.originalName(), u.extension(), "Brochure_", "brochure", usedNames);
+            try {
+                persistDocument(id, newFileName, u.data(), resolveContentTypeByExtension(newFileName));
+            } catch (Exception e) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
+                        "error", "Failed to save '" + u.originalName() + "': " + e.getMessage()));
+            }
+            doc.put("filename", newFileName);
+            doc.put("local_path", "/documents/" + id + "/" + newFileName + "?v=" + System.currentTimeMillis());
+            doc.put("name", newName != null ? newName : "Brochure - " + u.originalName());
+            doc.put("created_date", LocalDate.now().toString());
+            doc.put("uploaded_at", java.time.Instant.now().toString());
+            doc.put("uploaded_by", username);
+            doc.put("size", u.data().length);
+            action = "Replaced";
+        } else {
+            doc.put("name", newName);
+            action = "Renamed";
+        }
         try {
             tender.setDownloadedDocs(mapper.writeValueAsString(docsList));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
-                    "error", "Saved the file but could not update the tender's document list: " + e.getMessage()));
+                    "error", "Could not update the tender's document list: " + e.getMessage()));
         }
+        refreshBrochureSummary(tender, docsList);
         tenderRepository.save(tender);
+        if (hasFile && !oldFileName.equalsIgnoreCase(String.valueOf(doc.get("filename")))) {
+            deleteStoredDocument(id, oldFileName);
+        }
 
-        // Record the brochure on the tender (status, file, who, when). The workflow stage is not changed.
+        String detail = "Replaced".equals(action)
+                ? "replaced brochure document '" + oldName + "' with '" + doc.get("name") + "'"
+                : "renamed brochure document '" + oldName + "' to '" + doc.get("name") + "'";
         if (workflowSyncService != null) {
-            Tender updated = workflowSyncService.recordBrochureUpload(id, fileName, username);
-            if (updated != null) tender = updated;
-        } else {
-            WorkflowSyncService.applyBrochureUpload(tender, fileName, username);
-            tenderRepository.save(tender);
+            workflowSyncService.recordBrochureEvent(id, username, Character.toUpperCase(detail.charAt(0)) + detail.substring(1) + ".");
         }
+        logBrochureActivity(username, "Replaced".equals(action) ? "Replaced Brochure" : "Renamed Brochure", id, detail);
 
-        try {
-            activityLogRepository.save(new ActivityLog(
-                    username, WorkflowPermissions.role(), firstUpload ? "Uploaded Brochure" : "Replaced Brochure", id,
-                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
-                    (firstUpload ? "uploaded brochure '" : "replaced brochure with '") + originalName + "' as " + fileName));
-        } catch (Exception e) {
-            System.err.println("[TenderController] Warning saving activity log for brochure upload on " + id + ": " + e.getMessage());
-        }
-
-        Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("success", true);
-        resp.put("message", firstUpload
-                ? "Brochure uploaded. It is now listed in the tender's Document Repository."
-                : "Brochure replaced.");
+        Map<String, Object> resp = brochureResponse("Replaced".equals(action) ? "Brochure document replaced." : "Brochure document renamed.", tender, docsList);
         resp.put("document", doc);
-        resp.put("currentStage", tender.getCurrentStage());
-        resp.put("brochureStatus", tender.getBrochureStatus());
-        resp.put("brochureFilename", tender.getBrochureFilename());
         return ResponseEntity.ok(resp);
+    }
+
+    /** Deletes one brochure document. When none is left, the brochure request is pending again. */
+    @DeleteMapping("/{id}/brochures/{fileName:.+}")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<?> deleteBrochureDocument(
+            @PathVariable("id") String id,
+            @PathVariable("fileName") String fileName) {
+
+        Optional<Tender> opt = WorkflowPermissions.allowed(UPLOAD_BROCHURE) ? tenderRepository.findById(id) : Optional.empty();
+        ResponseEntity<?> denied = brochureActionDenied(opt);
+        if (denied != null) return denied;
+        Tender tender = opt.get();
+
+        List<Map<String, Object>> docsList;
+        try {
+            docsList = readDocsList(tender);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "This tender's document list could not be read, so the change was stopped to avoid losing it."));
+        }
+        Map<String, Object> doc = null;
+        for (Map<String, Object> d : docsList) {
+            if (isBrochureDoc(d) && fileName.equalsIgnoreCase(String.valueOf(d.get("filename")))) { doc = d; break; }
+        }
+        if (doc == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Brochure document not found."));
+        }
+        docsList.remove(doc);
+        String storedName = String.valueOf(doc.get("filename"));
+        String username = WorkflowPermissions.username();
+        try {
+            tender.setDownloadedDocs(mapper.writeValueAsString(docsList));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
+                    "error", "Could not update the tender's document list: " + e.getMessage()));
+        }
+        refreshBrochureSummary(tender, docsList);
+        tenderRepository.save(tender);
+        deleteStoredDocument(id, storedName);
+
+        if (workflowSyncService != null) {
+            workflowSyncService.recordBrochureEvent(id, username, "Deleted brochure document '" + doc.get("name") + "'.");
+        }
+        logBrochureActivity(username, "Deleted Brochure", id, "deleted brochure document '" + doc.get("name") + "'");
+
+        return ResponseEntity.ok(brochureResponse("Brochure document deleted.", tender, docsList));
     }
 
     @PatchMapping("/{id}")
@@ -2011,7 +2303,7 @@ public class TenderController {
             if ("Approved".equalsIgnoreCase(val)) {
                 tender.setCurrentStage("BID_DOCS_PREPARATION");
                 logDetails.add("specification cleared; returned to Tender Executive for the bid package");
-                // A new clearance also asks the Brochure Team for the brochure, in parallel
+                // A new clearance also asks the Brochure Team for the brochure (it never blocks a step)
                 if (!"Approved".equalsIgnoreCase(previousSpecStatus)) {
                     WorkflowSyncService.requestBrochure(tender);
                 }
@@ -2761,11 +3053,110 @@ public class TenderController {
         if (commentText == null || commentText.isEmpty() || phase == null || phase.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "comment and phase are required"));
         }
+        if (commentText.length() > MAX_DISCUSSION_MESSAGE_LENGTH) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "error", "The message can have at most " + MAX_DISCUSSION_MESSAGE_LENGTH + " characters."));
+        }
         String createdAt = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
         com.tenderpocket.models.TenderWorkflowComment comment = new com.tenderpocket.models.TenderWorkflowComment(
                 id, phase, username, role, commentText, createdAt
         );
         commentRepository.save(comment);
+        return ResponseEntity.ok(Map.of("success", true, "comment", comment));
+    }
+
+    /** File types that can be attached to a discussion message: images and documents. */
+    private static final Set<String> DISCUSSION_ATTACHMENT_EXTENSIONS = Set.of(
+            "png", "jpg", "jpeg", "gif", "webp",
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "zip");
+
+    /** Most files attached to one discussion message. */
+    private static final int MAX_DISCUSSION_ATTACHMENTS = 5;
+
+    /** The message column holds at most 255 characters. */
+    private static final int MAX_DISCUSSION_MESSAGE_LENGTH = 255;
+
+    /**
+     * Posts a discussion message with attachments (images or documents). The text is optional when
+     * at least one file is attached. Files are stored like other tender documents and opened through
+     * the protected /documents route; they are not added to the Document Repository list.
+     */
+    @PostMapping(value = "/{id}/comments", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> postCommentWithAttachments(
+            @PathVariable("id") String id,
+            @RequestParam(value = "comment", required = false) String commentText,
+            @RequestParam(value = "phase", required = false) String phase,
+            @RequestParam(value = "files", required = false) List<org.springframework.web.multipart.MultipartFile> files) {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
+        String username = WorkflowPermissions.username();
+        String role = WorkflowPermissions.role();
+        String text = commentText == null ? "" : commentText.trim();
+        if (phase == null || phase.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "phase is required"));
+        }
+        if (text.length() > MAX_DISCUSSION_MESSAGE_LENGTH) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "error", "The message can have at most " + MAX_DISCUSSION_MESSAGE_LENGTH + " characters."));
+        }
+        List<org.springframework.web.multipart.MultipartFile> chosen = new ArrayList<>();
+        if (files != null) {
+            for (org.springframework.web.multipart.MultipartFile f : files) {
+                if (f != null && !f.isEmpty()) chosen.add(f);
+            }
+        }
+        if (text.isEmpty() && chosen.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Write a message or attach a file."));
+        }
+        if (chosen.size() > MAX_DISCUSSION_ATTACHMENTS) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "error", "Attach at most " + MAX_DISCUSSION_ATTACHMENTS + " files to one message."));
+        }
+        if (tenderRepository.findById(id).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+        }
+
+        List<UploadedFile> accepted = new ArrayList<>();
+        for (org.springframework.web.multipart.MultipartFile f : chosen) {
+            String error = readUploadedFile(f, DISCUSSION_ATTACHMENT_EXTENSIONS,
+                    "an image (PNG, JPG, GIF, WEBP) or a document (PDF, Word, Excel, PowerPoint, CSV, TXT, ZIP)",
+                    20L * 1024 * 1024, accepted);
+            if (error != null) return ResponseEntity.badRequest().body(Map.of("success", false, "error", error));
+        }
+
+        List<Map<String, Object>> attachments = new ArrayList<>();
+        List<String> stored = new ArrayList<>();
+        Set<String> usedNames = new HashSet<>();
+        String stamp = new SimpleDateFormat("yyyyMMddHHmmssSSS").format(new Date());
+        for (UploadedFile u : accepted) {
+            String fileName = safeStoredFileName(u.originalName(), u.extension(), "Discussion_" + stamp + "_", null, usedNames);
+            try {
+                persistDocument(id, fileName, u.data(), resolveContentTypeByExtension(fileName));
+            } catch (Exception e) {
+                for (String s : stored) deleteStoredDocument(id, s);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
+                        "error", "Failed to save '" + u.originalName() + "': " + e.getMessage()));
+            }
+            stored.add(fileName);
+            Map<String, Object> a = new LinkedHashMap<>();
+            a.put("name", u.originalName());
+            a.put("filename", fileName);
+            a.put("url", "/documents/" + id + "/" + fileName);
+            a.put("content_type", resolveContentTypeByExtension(fileName));
+            a.put("size", u.data().length);
+            attachments.add(a);
+        }
+
+        String createdAt = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+        com.tenderpocket.models.TenderWorkflowComment comment = new com.tenderpocket.models.TenderWorkflowComment(
+                id, phase.trim(), username, role, text, createdAt);
+        try {
+            comment.setAttachments(attachments.isEmpty() ? null : mapper.writeValueAsString(attachments));
+            commentRepository.save(comment);
+        } catch (Exception e) {
+            for (String s : stored) deleteStoredDocument(id, s);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false,
+                    "error", "Could not save the message: " + e.getMessage()));
+        }
         return ResponseEntity.ok(Map.of("success", true, "comment", comment));
     }
 

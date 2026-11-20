@@ -34,6 +34,10 @@ public class TenderWorkflowComment {
     @Column(name = "created_at", nullable = false)
     private String createdAt;
 
+    // Files attached to the message (images or documents) as a JSON list of {name, filename, url, content_type, size}
+    @Column(name = "attachments", columnDefinition = "TEXT")
+    private String attachments;
+
     public TenderWorkflowComment() {}
 
     public TenderWorkflowComment(String tenderId, String phase, String author, String authorRole, String comment, String createdAt) {
@@ -65,4 +69,7 @@ public class TenderWorkflowComment {
 
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+
+    public String getAttachments() { return attachments; }
+    public void setAttachments(String attachments) { this.attachments = attachments; }
 }

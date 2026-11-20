@@ -219,7 +219,7 @@ public class WorkflowSyncService {
                 "Final technical specification sealed with " + ("ALL_COMPLY".equalsIgnoreCase(complianceType) ? "All Comply" : "Deviations")
                 + ". Tender returned to the Tender Executive to generate the bid package. EMD follows the package."
                 + (BROCHURE_PENDING.equalsIgnoreCase(tender.getBrochureStatus())
-                    ? " The Brochure Team uploads the brochure in parallel."
+                    ? " The Brochure Team was asked for the brochure."
                     : "")
                 + ("DEVIATIONS".equalsIgnoreCase(complianceType)
                     ? " Replacement PDF, DOCX, and XLSX files are now the specification documents for the rest of this tender."
@@ -245,7 +245,7 @@ public class WorkflowSyncService {
 
     /**
      * Clearance approved: the Brochure Team is asked for the brochure (brochure_status Pending).
-     * This runs in parallel with the Tender Executive's work; no step waits for the brochure.
+     * The Tender Executive does not wait for it; no step waits for the brochure.
      * A brochure that is already uploaded is kept.
      */
     public static void requestBrochure(Tender tender) {
@@ -254,34 +254,12 @@ public class WorkflowSyncService {
         }
     }
 
-    /** Records the uploaded brochure on the tender. The tender's workflow stage is not changed. */
-    public static void applyBrochureUpload(Tender tender, String filename, String uploadedBy) {
-        tender.setBrochureStatus(BROCHURE_UPLOADED);
-        tender.setBrochureFilename(filename);
-        tender.setBrochureUploadedBy(uploadedBy);
-        // UTC instant with a 'Z' so the browser shows the upload time in the viewer's own time zone
-        tender.setBrochureUploadedAt(java.time.Instant.now().toString());
-    }
-
     /**
-     * The Brochure Team uploaded the brochure. The upload runs in parallel with the bid package,
-     * so the tender stays at whatever step it has reached. Uploading again replaces the document.
+     * Saves a brochure document change (upload, replace, rename, delete) in the tender's comment
+     * history. Brochure changes never move the tender to another workflow step.
      */
-    @Transactional
-    public Tender recordBrochureUpload(String tenderId, String filename, String uploadedBy) {
-        Optional<Tender> tOpt = tenderRepository.findById(tenderId);
-        if (tOpt.isEmpty()) return null;
-        Tender tender = tOpt.get();
-
-        boolean firstUpload = !BROCHURE_UPLOADED.equalsIgnoreCase(tender.getBrochureStatus());
-        applyBrochureUpload(tender, filename, uploadedBy);
-        tenderRepository.save(tender);
-
-        commentRepository.save(new TenderComment(tenderId, "BROCHURE_UPLOAD", uploadedBy, "Brochure Team",
-                firstUpload
-                        ? "Brochure uploaded (" + filename + ")."
-                        : "Brochure replaced with " + filename + "."));
-        return tender;
+    public void recordBrochureEvent(String tenderId, String username, String text) {
+        commentRepository.save(new TenderComment(tenderId, "BROCHURE_UPLOAD", username, "Brochure Team", text));
     }
 
     /**

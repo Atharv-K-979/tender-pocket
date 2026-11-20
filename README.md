@@ -55,7 +55,7 @@ tender-pocket/
 
 ---
 
-## 🔄 GeM Tender Workflow: 7 Steps and the Parallel Brochure
+## 🔄 GeM Tender Workflow: 7 Steps and the Brochure
 
 TenderPocket moves every tender through a strictly gated, sequential, role-based pipeline of seven steps that guarantees specification compliance, commercial pricing confidentiality, document verification, and submission accountability. These are the same steps shown in each tender's **Workflow Pipeline Progress** stepper and on the **Status** dashboard cards. When the Clearance Team grants clearance, the **Brochure Team** is also asked for a product brochure. That upload runs **in parallel** and never blocks a step.
 
@@ -78,8 +78,8 @@ flowchart TD
         S2_REV -->|"Grant Clearance: All Comply or Comply with Deviations"| S2_OK["Specification cleared<br/>Corrected files, if uploaded, replace the AI files"]
     end
 
-    subgraph BROCHURE ["Parallel: Brochure Upload · Brochure Team (never blocks a step)"]
-        BR_PEND["brochure_status = Pending"] --> BR_UP["Brochure Team uploads one brochure<br/>PDF, Word or Excel, up to 50 MB"]
+    subgraph BROCHURE ["Brochure Upload · Brochure Team (never blocks a step)"]
+        BR_PEND["brochure_status = Pending"] --> BR_UP["Brochure Team uploads brochure documents<br/>PDF, Word, Excel or ZIP, up to 50 MB each"]
         BR_UP --> BR_OK["brochure_status = Uploaded<br/>Listed in the Document Repository"]
     end
 
@@ -120,7 +120,7 @@ flowchart TD
     %% Hand-offs between steps (kept outside the subgraphs so every node stays in its own step)
     S1_OK --> S2_GEN
     S2_OK --> S3_GEN
-    S2_OK -.->|"in parallel"| BR_PEND
+    S2_OK -.->|"at the same time"| BR_PEND
     S3_GEN --> S4_CHK
     S4_CHK -->|"Exempt or not applicable"| S5_FORK
     S4_REV -->|"Approved"| S5_FORK
@@ -148,9 +148,9 @@ flowchart TD
 | **5** | **Pricing & Verification (Dual Track)** | Tender Executive, TPC Pricing Team, MIS Team | `DUAL_TRACK`, `TPC_PRICING`, `MIS_PRICING`, `DOC_VERIFICATION` | EMD is approved or exempt | **Track A:** the executive routes pricing to the TPC Pricing Team (confidential purchase price, masked from the executive) or directly to MIS, and MIS sets the final price. **Track B:** MIS audits the bid folder documents. Both tracks must pass. |
 | **6** | **Final Submission** | Tender Executive → MIS Team | `SUBMISSION_READY` → `SUBMISSION_PENDING` | Both tracks are approved | The executive submits the bid on the GeM portal and MIS audits and confirms the filing. |
 | **7** | **Outcome** | MIS Team | `WIN_LOSS_PENDING` → `WON` / `LOST` | The filing is confirmed | MIS records the result: **Won / Awarded**, or **Lost** with the reason. |
-| **Parallel** | **Brochure Upload** | **Brochure Team** | Not changed (`brochure_status`: `Pending` → `Uploaded`) | Clearance is granted | The Brochure Team uploads one brochure (PDF / Word / Excel, up to 50 MB). It is listed in the tender's **Document Repository**. It never blocks a step and never changes `current_stage`. |
+| **Alongside 3–7** | **Brochure Upload** | **Brochure Team** | Not changed (`brochure_status`: `Pending` → `Uploaded`) | Clearance is granted | The Brochure Team uploads one or more brochure documents (PDF / Word / Excel / ZIP, up to 50 MB each) and can rename, replace or delete them. Every document is listed in the tender's **Document Repository**. It never blocks a step and never changes `current_stage`. |
 
-### The Brochure Team (Parallel)
+### The Brochure Team
 
 After the Clearance Team grants clearance (**All Comply** or **Comply with Deviations**), the tender
 goes back to the Tender Executive for the bid package, and at the same time the **Brochure Team**
@@ -159,16 +159,19 @@ can go through every step without one.
 
 1. The Brochure Team logs in (`brochure`). Its dashboard shows **All Tenders**, **Pending Upload**
    and **Uploaded** cards, and its tender list contains only tenders with a brochure request.
-2. It opens a tender and, in the **Brochure Upload (Parallel)** card, uploads one brochure
-   document: PDF, Word (`.docx` / `.doc`) or Excel (`.xlsx` / `.xls`), up to 50 MB. PDF, `.docx`
-   and `.xlsx` files are also checked by content, so a renamed file of another type is rejected.
+2. It opens a tender and, in the **Brochure Upload** card, uploads one or more brochure
+   documents at once (up to 10): PDF, Word (`.docx` / `.doc`), Excel (`.xlsx` / `.xls`) or ZIP,
+   up to 50 MB each. PDF, `.docx`, `.xlsx` and ZIP files are also checked by content, so a renamed
+   file of another type is rejected.
 3. The file is stored with the tender's other documents and listed in the tender's
    **Document Repository** as `Brochure - <file name>` (`brochure_status = Uploaded`). The
    tender stays at whatever step it has reached. The Tender Executive sees a link to the
    brochure in **3. Executive Handover & Document Preparation**.
 
-Uploading again (**Replace Brochure**) replaces the file. Each tender's progress header shows a
-**Brochure Pending** / **Brochure ✓** badge, and the Status page has a **Brochure (Parallel)**
+Uploading again adds more documents. Each document can be renamed, replaced with a new file
+(**Edit**) or deleted (**Delete**). When all
+documents are deleted the brochure request is pending again. Each tender's progress header shows a
+**Brochure Pending** / **Brochure ✓** badge, and the Status page has a **Brochure**
 card that counts active tenders still waiting for a brochure. Tenders cleared before the Brochure
 Team existed have no `brochure_status` and do not appear in its list.
 
@@ -188,7 +191,7 @@ TenderPocket enforces role-based access control (RBAC) at both the Next.js API l
 | **Discover & View Tenders**                           |         ✅         |       ✅       | ✅ (brochure requests) |        ✅        |     ✅     |  ✅  |
 | **Upload Technical Specs**                            |         ✅         |       ❌       |         ❌         |        ❌        |     ❌     |  ✅  |
 | **Approve / Reject Tech Specs**                       |         ❌         |       ✅       |         ❌         |        ❌        |     ❌     |  ✅  |
-| **Upload Brochure (PDF / Word / Excel)**              |         ❌         |       ❌       |         ✅         |        ❌        |     ❌     |  ❌  |
+| **Upload / Edit / Delete Brochure Documents**         |         ❌         |       ❌       |         ✅         |        ❌        |     ❌     |  ❌  |
 | **Input Manufacturer Quote (`tpc_purchase_price`)** |         ❌         |       ❌       |         ❌         |        ✅        |     ❌     |  ✅  |
 | **View Manufacturer Quote (`tpc_purchase_price`)**  | 🚫**MASKED** |       ❌       |   🚫**MASKED**   |        ✅        |     ✅     |  ✅  |
 | **Set Final Selling Price (`mis_final_price`)**     |         ❌         |       ❌       |         ❌         |        ❌        |     ✅     |  ✅  |
@@ -223,7 +226,7 @@ The Approvals Center is a centralized workflow hub accessible via the **Approval
    - `TPC Pricing Team` sees tenders requiring OEM purchase quotes.
    - `MIS Team` sees pricing reviews, document verifications, EMD payments, and submission approvals.
    - `Admin` has a comprehensive view across all pending department stages.
-   - `Brochure Team` has no Approvals Center queue: it uploads the brochure directly on the tender page, in parallel with the other steps, so no approval request is created.
+   - `Brochure Team` has no Approvals Center queue: it uploads the brochure directly on the tender page alongside the other steps, so no approval request is created.
 2. **Request Deduplication & Uniqueness**:
    - Resubmitting a clearance or document request for a tender that already has an active pending request updates the existing record rather than creating duplicate queue items.
 3. **Audit Trail & Feedback History**:
@@ -331,7 +334,7 @@ The backend creates these accounts on the first login, using the passwords set i
 | **`admin`**     | **Admin**            | `ADMIN_DEFAULT_PASSWORD` | Full system oversight, audit logs, user management, overrides.            |
 | **`executive`** | **Tender Executive** | `EXECUTIVE_DEFAULT_PASSWORD` | Specification uploads, bid document prep (DOCX/PDF).                      |
 | **`clearance`** | **Clearance Team**   | `CLEARANCE_DEFAULT_PASSWORD` | Technical specification reviews, approvals, and rework feedback.          |
-| **`brochure`**  | **Brochure Team**    | `BROCHURE_DEFAULT_PASSWORD` | Uploads the brochure (PDF / Word / Excel) for tenders the Clearance Team approved. |
+| **`brochure`**  | **Brochure Team**    | `BROCHURE_DEFAULT_PASSWORD` | Uploads, edits and deletes brochure documents (PDF / Word / Excel / ZIP) for tenders the Clearance Team approved. |
 | **`tpc`**       | **TPC Pricing Team** | `TPC_DEFAULT_PASSWORD` | OEM quotes, manufacturer pricing (confidential).                          |
 | **`misteam`**   | **MIS Team**         | `MISTEAM_DEFAULT_PASSWORD` | Final pricing, doc verification, EMD payments, GeM submissions, outcomes. |
 
