@@ -192,7 +192,7 @@ export default function StatusDashboard({
     const stage5Count = tendersWithStage.filter(i => i.stage.stageNumber === 5 && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined).length;
     const stage6Count = tendersWithStage.filter(i => i.stage.stageNumber === 6 && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined).length;
 
-    // Brochure runs in parallel with Steps 3-6: active tenders still waiting for the Brochure Team
+    // Brochure runs alongside Steps 3-6: active tenders still waiting for the Brochure Team
     const brochurePendingCount = tendersWithStage.filter(i => isBrochurePending(i.tender) && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined).length;
 
     // Post-Submission & Outcome counts (Step 7 + Terminal)
@@ -290,8 +290,8 @@ export default function StatusDashboard({
         filterFn: (i: any) => i.stage.stageNumber === 6 && !i.flags.isWon && !i.flags.isLost && !i.flags.isDeclined
       },
       {
-        key: 'BROCHURE_PARALLEL',
-        title: 'Brochure (Parallel)',
+        key: 'BROCHURE_PENDING',
+        title: 'Brochure',
         group: 'PIPELINE',
         count: brochurePendingCount,
         trend: 'Runs alongside Steps 3–6',
@@ -1156,7 +1156,7 @@ export default function StatusDashboard({
                         </span>
                       </div>
 
-                      {/* Brochure (parallel): shown once the Brochure Team has been asked for it */}
+                      {/* Brochure: shown once the Brochure Team has been asked for it */}
                       {(tender.brochure_status === 'Pending' || tender.brochure_status === 'Uploaded') && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <BookOpen size={14} style={{ color: tender.brochure_status === 'Uploaded' ? '#10b981' : '#14b8a6', flexShrink: 0 }} />

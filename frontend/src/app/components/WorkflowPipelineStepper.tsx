@@ -21,7 +21,7 @@ export default function WorkflowPipelineStepper({
   onActionClick
 }: WorkflowPipelineStepperProps) {
   const stage = resolveTenderStageDetails(tender, currentUser?.role);
-  // The brochure runs in parallel with the pipeline, so it is shown as a badge, not as a step
+  // The brochure runs alongside the pipeline, so it is shown as a badge, not as a step
   const brochurePending = isBrochurePending(tender);
   const brochureUploaded = isBrochureUploaded(tender);
 
@@ -35,7 +35,7 @@ export default function WorkflowPipelineStepper({
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             {(brochurePending || brochureUploaded) && (
               <span
-                title="The Brochure Team uploads the brochure in parallel. It does not block any step."
+                title="The Brochure Team uploads the brochure alongside the other steps. It does not block any step."
                 style={{
                   fontSize: '10px',
                   fontWeight: '600',

@@ -27,10 +27,16 @@ public record Digest(
 
     public enum DigestType { DUE, PENDING }
 
+    /** A list with no rows, used for the empty section of a daily mail. */
+    public static Digest empty(DigestType type, RecipientDirectory.Recipient recipient, LocalDate date, int pendingDays, int dueWindowDays) {
+        return new Digest(type, recipient, date, pendingDays, dueWindowDays, List.of(), List.of(), List.of(), 0, 0,
+                List.of(), List.of(), List.of());
+    }
+
     /** One action on a tender, with how long it has waited. */
     public record WorkLine(PendingActionKey key, Team team, String ownerLabel, long waitingDays) {}
 
-    /** A tender in the Due mail. */
+    /** A tender in the Due section. */
     public record DueRow(Tender tender, LocalDate dueDate, String dueTime, int daysLeft, List<WorkLine> works) {
         /** Someone is already working on it (an executive is assigned), as opposed to awaiting the MIS decision. */
         public boolean inProgress() {
@@ -39,7 +45,7 @@ public record Digest(
     }
 
     /**
-     * One overdue action in the Pending mail.
+     * One overdue action in the Pending section.
      *
      * @param daysLeft null when the tender has no usable due date
      */
@@ -50,10 +56,10 @@ public record Digest(
         }
     }
 
-    /** Admin's per-owner overview at the top of its Pending mail. */
+    /** Admin's per-owner overview at the top of its Pending section. */
     public record OwnerSummary(String ownerLabel, Team team, int waitingCount, long oldestDays, int dueSoonCount, String topAction) {}
 
-    /** One line of the delivery report in Admin's Pending mail. */
+    /** One line of the delivery report in Admin's mail. */
     public record DeliveryLine(String username, String mail, String status, String detail) {
         public boolean isFailure() { return "FAILED".equals(status); }
     }

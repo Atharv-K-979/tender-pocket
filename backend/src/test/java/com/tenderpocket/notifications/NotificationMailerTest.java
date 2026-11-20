@@ -55,14 +55,14 @@ class NotificationMailerTest {
         };
         byte[] bytes = {1, 2, 3, 4};
         mailer.send("mis@example.com", "subject", "<p>html</p>", "text",
-                new MailComposer.Attachment("TenderPocket_misteam_Pending_2026-11-12.xlsx", DigestExcel.CONTENT_TYPE, bytes, 480));
+                new MailComposer.Attachment("TenderPocket_misteam_Daily_2026-11-12.xlsx", DigestExcel.CONTENT_TYPE, bytes, 480));
         assertEquals(1, sent.size());
         jakarta.mail.internet.MimeMessage m = sent.get(0);
         m.saveChanges();
         java.io.ByteArrayOutputStream raw = new java.io.ByteArrayOutputStream();
         m.writeTo(raw);
         String mime = raw.toString(java.nio.charset.StandardCharsets.UTF_8);
-        assertTrue(mime.contains("TenderPocket_misteam_Pending_2026-11-12.xlsx"), "attachment file name");
+        assertTrue(mime.contains("TenderPocket_misteam_Daily_2026-11-12.xlsx"), "attachment file name");
         assertTrue(mime.contains(DigestExcel.CONTENT_TYPE), "attachment content type");
         assertTrue(mime.contains("Content-Disposition: attachment"), "sent as an attachment");
         assertTrue(mime.contains("text/html") && mime.contains("text/plain"), "both body parts");

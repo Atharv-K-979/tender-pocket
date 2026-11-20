@@ -150,6 +150,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         // Backend unreachable or returned 404, continue to on-demand fallback
       }
 
+      // Brochure documents and discussion attachments exist only when a team uploaded them.
+      // A missing one was deleted or replaced: never fetch a GeM / Tender247 document in its place.
+      if (/^(brochure|discussion_)/i.test(path.basename(filenameStr))) {
+        return Response.json({ success: false, error: 'Document file is not available on site.' }, { status: 404 });
+      }
+
       console.log(`[Document Download API] ${filenameStr} missing for Tender ${safeId}. Attempting on-demand retrieval...`);
 
       const targetDir = path.dirname(targetPath);
@@ -239,7 +245,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       '.csv': 'text/csv',
       '.png': 'image/png',
       '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg'
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.doc': 'application/msword',
+      '.xls': 'application/vnd.ms-excel',
+      '.ppt': 'application/vnd.ms-powerpoint',
+      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      '.txt': 'text/plain'
     };
 
     const finalFileName = path.basename(targetPath);

@@ -2,7 +2,6 @@ package com.tenderpocket.notifications;
 
 import com.tenderpocket.models.EmailDigestLog;
 import com.tenderpocket.notifications.Digest.DeliveryLine;
-import com.tenderpocket.notifications.Digest.DigestType;
 import com.tenderpocket.repositories.EmailDigestLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,12 +18,13 @@ import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Sends each login at most two mails a day: the Due mail and the Pending mail.
+ * Sends each login one mail a day with two sections: tenders due soon (Due) and work waiting
+ * more than the set number of days (Pending).
  *
  * Runs at 9:00 IST (NOTIFY_CRON), after the 8:00 tender sync. Team mails go first and Admin's
- * last, so Admin's Pending mail can carry the delivery report for the morning. The
- * email_digest_log unique key (login, mail type, day) guarantees a mail that was sent is never
- * sent again the same day, whether the job is re-run, triggered by hand or the server restarts.
+ * last, so Admin's mail can carry the delivery report for the morning. The email_digest_log
+ * unique key (login, mail type DAILY, day) guarantees a mail that was sent is never sent again
+ * the same day, whether the job is re-run, triggered by hand or the server restarts.
  * A mail that failed may be retried by a later run.
  */
 @Service
@@ -32,6 +32,8 @@ public class DailyDigestService {
 
     private static final Logger log = LoggerFactory.getLogger(DailyDigestService.class);
     private static final long STALE_SENDING_MINUTES = 30;
+    /** Send-log type of the one daily mail. */
+    static final String DAILY = "DAILY";
 
     private final NotificationSettings settings;
     private final PendingClockService clockService;
@@ -119,14 +121,12 @@ public class DailyDigestService {
             List<Outcome> outcomes = new ArrayList<>();
             for (RecipientDirectory.Recipient r : recipients) {
                 if (r.team() == Team.ADMIN) continue;
-                outcomes.add(deliver(builder.buildDue(r, views, today), now));
-                outcomes.add(deliver(builder.buildPending(r, views, today, List.of()), now));
+                outcomes.add(deliver(builder.buildDue(r, views, today), builder.buildPending(r, views, today, List.of()), now));
             }
             List<DeliveryLine> report = deliveryReport(today, snapshot.directory());
             for (RecipientDirectory.Recipient r : recipients) {
                 if (r.team() != Team.ADMIN) continue;
-                outcomes.add(deliver(builder.buildDue(r, views, today), now));
-                outcomes.add(deliver(builder.buildPending(r, views, today, report), now));
+                outcomes.add(deliver(builder.buildDue(r, views, today), builder.buildPending(r, views, today, report), now));
             }
 
             RunReport counted = new RunReport("DONE", null, today, outcomes);
@@ -183,8 +183,7 @@ public class DailyDigestService {
             row.put("due_mail_rows", due.dueRows().size());
             row.put("missed_yesterday_rows", due.missedRows().size());
             row.put("pending_mail_rows", pending.pendingTotal());
-            row.put("due_mail_today", statusToday(r.username(), DigestType.DUE, today, due));
-            row.put("pending_mail_today", statusToday(r.username(), DigestType.PENDING, today, pending));
+            row.put("daily_mail_today", statusToday(r.username(), today, due.isEmpty() && pending.isEmpty()));
             row.put("due_tender_ids", due.dueRows().stream().map(x -> x.tender().getId()).toList());
             row.put("pending_tender_ids", pending.pendingRows().stream().map(x -> x.tender().getId() + ":" + x.work().key().name()).toList());
             logins.add(row);
@@ -193,48 +192,50 @@ public class DailyDigestService {
         return out;
     }
 
-    private String statusToday(String username, DigestType type, LocalDate today, Digest digest) {
-        Optional<EmailDigestLog> row = digestLogRepository.findByRecipientUsernameAndDigestTypeAndSentDate(username, type.name(), today);
+    private String statusToday(String username, LocalDate today, boolean nothingToReport) {
+        Optional<EmailDigestLog> row = digestLogRepository.findByRecipientUsernameAndDigestTypeAndSentDate(username, DAILY, today);
         if (row.isPresent()) return row.get().getStatus();
-        return digest.isEmpty() ? "NOTHING_TO_REPORT" : "WILL_SEND";
+        return nothingToReport ? "NOTHING_TO_REPORT" : "WILL_SEND";
     }
 
-    private Outcome deliver(Digest digest, LocalDateTime now) {
-        RecipientDirectory.Recipient r = digest.recipient();
-        String mail = digest.type().name();
-        if (digest.isEmpty()) {
+    /** Sends a login's one daily mail (Due section + Pending section), unless both are empty. */
+    private Outcome deliver(Digest due, Digest pending, LocalDateTime now) {
+        RecipientDirectory.Recipient r = due.recipient();
+        String mail = DAILY;
+        int items = due.itemCount() + pending.itemCount();
+        if (due.isEmpty() && pending.isEmpty()) {
             return new Outcome(r.username(), r.team().getLabel(), mail, "NOTHING_TO_REPORT", r.email(), 0, null, null);
         }
 
-        EmailDigestLog claim = claim(r.username(), mail, digest.date(), now);
+        EmailDigestLog claim = claim(r.username(), mail, due.date(), now);
         if (claim == null) {
-            return new Outcome(r.username(), r.team().getLabel(), mail, "ALREADY_SENT", r.email(), digest.itemCount(), null,
+            return new Outcome(r.username(), r.team().getLabel(), mail, "ALREADY_SENT", r.email(), items, null,
                     "This mail was already sent (or is being sent) today");
         }
 
         String to = r.email();
         claim.setRecipientEmail(to);
-        claim.setItemCount(digest.itemCount());
+        claim.setItemCount(items);
         try {
             if (to == null || to.isBlank()) {
                 throw new NotificationMailer.SendFailure("No email address for login '" + r.username()
                         + "'. Set it in users.email or add " + r.username() + "=<email> to NOTIFY_RECIPIENTS", 0);
             }
-            MailComposer.ComposedMail composed = MailComposer.compose(digest, settings.getAppUrl(), settings.getMaxRows(), now);
+            MailComposer.ComposedMail composed = MailComposer.composeDaily(due, pending, settings.getAppUrl(), settings.getMaxRows(), now);
             claim.setSubject(truncate(composed.subject(), 500));
             int attempts = mailer.send(to, composed.subject(), composed.html(), composed.text(), composed.attachment());
             finish(claim, EmailDigestLog.SENT, attempts, null);
             String detail = composed.attachment() == null ? null
                     : composed.bodyRows() + " rows in the mail, all " + composed.totalRows() + " in " + composed.attachment().fileName();
-            return new Outcome(r.username(), r.team().getLabel(), mail, "SENT", to, digest.itemCount(), composed.subject(), detail);
+            return new Outcome(r.username(), r.team().getLabel(), mail, "SENT", to, items, composed.subject(), detail);
         } catch (NotificationMailer.SendFailure e) {
             finish(claim, EmailDigestLog.FAILED, e.getAttempts(), e.getMessage());
-            return new Outcome(r.username(), r.team().getLabel(), mail, "FAILED", to, digest.itemCount(), claim.getSubject(), e.getMessage());
+            return new Outcome(r.username(), r.team().getLabel(), mail, "FAILED", to, items, claim.getSubject(), e.getMessage());
         } catch (RuntimeException e) {
             String error = e.getClass().getSimpleName() + ": " + e.getMessage();
             log.error("[Notifications] Could not build or send {} mail for {}: {}", mail, r.username(), error, e);
             finish(claim, EmailDigestLog.FAILED, 0, error);
-            return new Outcome(r.username(), r.team().getLabel(), mail, "FAILED", to, digest.itemCount(), claim.getSubject(), error);
+            return new Outcome(r.username(), r.team().getLabel(), mail, "FAILED", to, items, claim.getSubject(), error);
         }
     }
 
@@ -275,13 +276,17 @@ public class DailyDigestService {
         }
     }
 
-    /** Today's team mails from the send log, for Admin's Pending mail. */
+    /** Today's team mails from the send log, for Admin's mail. */
     private List<DeliveryLine> deliveryReport(LocalDate today, RecipientDirectory directory) {
         List<DeliveryLine> lines = new ArrayList<>();
         for (EmailDigestLog row : digestLogRepository.findBySentDateOrderByIdAsc(today)) {
             RecipientDirectory.Recipient r = directory.find(row.getRecipientUsername());
             if (r != null && r.team() == Team.ADMIN) continue;
-            String mail = "DUE".equals(row.getDigestType()) ? "Due" : "Pending";
+            String mail = switch (row.getDigestType()) {
+                case "DUE" -> "Due";
+                case "PENDING" -> "Pending";
+                default -> "Daily";
+            };
             String detail = EmailDigestLog.FAILED.equals(row.getStatus())
                     ? row.getErrorMessage()
                     : (row.getRecipientEmail() == null ? "" : "to " + row.getRecipientEmail())

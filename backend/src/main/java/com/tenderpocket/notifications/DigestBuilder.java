@@ -24,14 +24,14 @@ import java.util.stream.Collectors;
  * MailComposer decides how many fit in the mail body and puts all of them in the Excel file
  * when the body cannot hold everything.
  *
- * Due mail: live tenders due today up to dueWindowDays ahead. MIS and Admin see all of them;
+ * Due section: live tenders due today up to dueWindowDays ahead. MIS and Admin see all of them;
  * an executive sees the tenders assigned to them; anyone else sees the ones currently waiting
  * on them. Admin also gets tenders whose due date was yesterday and that were never filed.
  *
- * Pending mail: actions that have waited more than pendingDays, on tenders due later than the
+ * Pending section: actions that have waited more than pendingDays, on tenders due later than the
  * Due window (or with no due date), plus filed tenders still awaiting MIS confirmation. Each
- * login sees the actions it owns; Admin sees all of them. A tender in a login's Due mail is
- * therefore never also in that login's Pending mail the same day.
+ * login sees the actions it owns; Admin sees all of them. A tender in a login's Due section is
+ * therefore never also in that login's Pending section the same day.
  */
 public class DigestBuilder {
 
@@ -44,7 +44,7 @@ public class DigestBuilder {
     }
 
     /**
-     * Due mail order of importance, also the order rows are shown in: nearest deadline first;
+     * Due section order of importance, also the order rows are shown in: nearest deadline first;
      * on the same day, tenders already being worked on before undecided ones; then by time.
      */
     public static final Comparator<DueRow> DUE_ORDER = Comparator.comparingInt(DueRow::daysLeft)
@@ -59,8 +59,8 @@ public class DigestBuilder {
             .thenComparing(r -> String.valueOf(r.tender().getId()));
 
     /**
-     * Pending mail order of importance, used to choose which rows go in the body: work already
-     * under way first, then rows that never reach the Due mail (no due date, or filed and
+     * Pending section order of importance, used to choose which rows go in the body: work already
+     * under way first, then rows that never reach the Due section (no due date, or filed and
      * awaiting confirmation), then the nearest deadline, then the longest wait.
      */
     public static final Comparator<PendingRow> PENDING_PRIORITY = Comparator.comparing((PendingRow r) -> r.inProgress() ? 0 : 1)

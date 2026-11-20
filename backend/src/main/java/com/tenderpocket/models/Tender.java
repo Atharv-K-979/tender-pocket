@@ -252,9 +252,9 @@ public class Tender {
     @Column(name = "spec_compliance_type")
     private String specComplianceType;
 
-    // Brochure step (after Clearance approval, before the Tender Executive's bid package).
-    // null = tender was cleared before this step existed, "Pending" = waiting for the
-    // Brochure Team, "Uploaded" = brochure uploaded and tender handed to the Tender Executive.
+    // Brochure: requested when the Clearance Team approves the tender; it never blocks a step.
+    // null = no brochure requested (cleared before the Brochure Team existed), "Pending" = waiting
+    // for the Brochure Team, "Uploaded" = at least one brochure document is uploaded.
     @Column(name = "brochure_status")
     private String brochureStatus;
 

@@ -85,7 +85,7 @@ class WorkflowPermissionsTest {
         ReflectionTestUtils.setField(workflow, "tenderRepository", repository);
         ReflectionTestUtils.setField(tenders, "tenderRepository", repository);
         var actions = List.of(UPLOAD_SPEC, APPROVE_SPEC, SET_TPC_PRICE, SET_MIS_PRICE, GENERATE_BIDS,
-                RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME, UPLOAD_BROCHURE);
+                RECORD_PAYMENT, RECORD_SUBMISSION, RECORD_OUTCOME, UPLOAD_BROCHURE, UPLOAD_BROCHURE, UPLOAD_BROCHURE);
         var responses = List.of(
             workflow.sendClearanceRequest("missing", "Admin", "spoofed", Map.of()),
             workflow.approveClearance("missing", "spoofed", Map.of()),
@@ -95,7 +95,9 @@ class WorkflowPermissionsTest {
             workflow.submitPaymentRequest("missing", "spoofed", Map.of()),
             workflow.submitSubmissionRequest("missing", "spoofed", Map.of()),
             workflow.submitWinLossRequest("missing", "spoofed", Map.of()),
-            tenders.uploadBrochure("missing", null));
+            tenders.uploadBrochure("missing", null),
+            tenders.editBrochureDocument("missing", "Brochure_x.pdf", "New name", null),
+            tenders.deleteBrochureDocument("missing", "Brochure_x.pdf"));
         for (int i = 0; i < actions.size(); i++) {
             assertEquals(WorkflowPermissions.allowed(role, actions.get(i)) ? 404 : 403,
                     responses.get(i).getStatusCode().value(), actions.get(i).name());

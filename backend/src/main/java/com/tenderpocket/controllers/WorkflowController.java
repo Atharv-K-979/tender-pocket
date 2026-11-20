@@ -458,7 +458,7 @@ public class WorkflowController {
         String finalComment = (comment != null && !comment.isBlank()) ? comment : defaultComment;
         String handoff = " Tender returned to the Tender Executive to generate the bid package."
                 + (com.tenderpocket.services.WorkflowSyncService.BROCHURE_PENDING.equalsIgnoreCase(tender.getBrochureStatus())
-                    ? " The Brochure Team uploads the brochure in parallel."
+                    ? " The Brochure Team was asked for the brochure."
                     : "");
         commentRepository.save(new TenderComment(id, "SPEC_CLEARANCE", username, "Clearance Team",
                 finalComment + " [" + compType + "." + handoff + "]"));
@@ -770,7 +770,7 @@ public class WorkflowController {
         }
         if (!isEmdSettled(tender)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
-                    "error", "EMD must be approved or exempt before document verification. Pricing runs in parallel and is not required first."));
+                    "error", "EMD must be approved or exempt before document verification. Pricing runs at the same time and is not required first."));
         }
         String downloadedDocsVal = body.get("downloadedDocs");
         if (downloadedDocsVal == null) downloadedDocsVal = body.get("downloaded_docs");

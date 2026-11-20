@@ -18,7 +18,8 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Renders the mail body for the rows MailComposer chose. The HTML uses tables, a small head
+ * Renders the one daily mail of a login (a Due section and a Pending section) for the rows
+ * MailComposer chose. The HTML uses tables, a small head
  * style block and inline styles, so Gmail and Outlook show it the same way. Titles and
  * authorities are never shortened; when the body cannot show every row, it says so and the
  * attached Excel file has all of them. A plain-text part with the same rows is always included.
@@ -58,60 +59,67 @@ public final class DigestTemplates {
 
     // ── Subjects ────────────────────────────────────────────────────────────
 
-    /** Subject from the full digest (every row, not just the ones in the body). */
-    public static String subject(Digest d) {
-        String suffix = " · TenderPocket · " + d.date().format(SHORT);
-        if (d.type() == Digest.DigestType.DUE) {
-            long today = d.dueTodayCount();
-            long later = d.dueRows().size() - today;
-            int missed = d.missedRows().size();
-            String main;
-            if (today > 0 && later > 0) {
-                main = "Due soon: " + today + " today, " + later + " in next " + d.dueWindowDays() + " days";
-            } else if (today > 0) {
-                main = "Due today: " + plural(today, "tender");
-            } else if (later > 0) {
-                main = "Due soon: " + plural(later, "tender") + " in next " + d.dueWindowDays() + " days";
-            } else {
-                return "Missed yesterday: " + plural(missed, "tender") + suffix;
-            }
-            if (missed > 0) main += " · " + missed + " missed yesterday";
-            return main + suffix;
+    /** Subject from both full lists (every row, not just the ones in the body). */
+    public static String dailySubject(Digest due, Digest pending) {
+        List<String> parts = new java.util.ArrayList<>();
+        long today = due.dueTodayCount();
+        long later = due.dueRows().size() - today;
+        if (today > 0) parts.add(today + " due today");
+        if (later > 0) parts.add(later + " due in next " + due.dueWindowDays() + " days");
+        if (!due.missedRows().isEmpty()) parts.add(due.missedRows().size() + " missed yesterday");
+        if (pending.pendingTenderCount() > 0) {
+            parts.add(plural(pending.pendingTenderCount(), "tender") + " waiting over " + pending.pendingDays() + " days");
         }
-        long failures = d.delivery().stream().filter(DeliveryLine::isFailure).count();
-        if (d.isAdmin()) {
-            if (d.pendingTotal() == 0) {
-                return failures > 0 ? "Delivery report: " + plural(failures, "mail") + " failed" + suffix
-                        : "Routing check: some work has no one to mail" + suffix;
-            }
-            long teams = d.ownerSummary().size();
-            return "Waiting over " + d.pendingDays() + " days: " + plural(d.pendingTenderCount(), "tender")
-                    + " across " + plural(teams, "owner") + suffix;
-        }
-        return "Waiting on you: " + plural(d.pendingTenderCount(), "tender") + " over " + d.pendingDays() + " days" + suffix;
+        long failures = pending.delivery().stream().filter(DeliveryLine::isFailure).count();
+        if (failures > 0) parts.add(plural(failures, "mail") + " failed");
+        if (parts.isEmpty()) parts.add("routing problems to fix");
+        return "Daily tenders: " + String.join(", ", parts) + " · TenderPocket · " + due.date().format(SHORT);
     }
 
     // ── HTML ────────────────────────────────────────────────────────────────
 
-    public static String html(MailView v, String appUrl) {
-        return v.digest().type() == Digest.DigestType.DUE ? dueHtml(v, appUrl) : pendingHtml(v, appUrl);
+    /** The daily mail: shared header and attachment notice, the Due section, the Pending section, footer. */
+    public static String dailyHtml(MailView due, MailView pending, String appUrl) {
+        Digest d = due.digest();
+        StringBuilder b = new StringBuilder(32768);
+        open(b, d, "Your daily tender update", "Tenders due in the next " + d.dueWindowDays()
+                + " days, and work waiting " + (d.isAdmin() ? "" : "on you ") + "for more than " + d.pendingDays() + " days.");
+        attachmentNotice(b, due, pending);
+        dueSection(b, due, appUrl);
+        pendingSection(b, pending, appUrl);
+        attachmentFooter(b, due, pending);
+        adminExtras(b, pending.digest());
+        close(b, d, appUrl);
+        return b.toString();
     }
 
-    public static String text(MailView v, String appUrl) {
-        return v.digest().type() == Digest.DigestType.DUE ? dueText(v, appUrl) : pendingText(v, appUrl);
+    public static String dailyText(MailView due, MailView pending, String appUrl) {
+        Digest d = due.digest();
+        StringBuilder t = new StringBuilder();
+        textHeader(t, d, "Your daily tender update");
+        textAttachmentNotice(t, due, pending);
+        dueText(t, due, appUrl);
+        pendingText(t, pending, appUrl);
+        textFooter(t, d, appUrl);
+        return t.toString();
     }
 
-    private static String dueHtml(MailView v, String appUrl) {
+    /** A big heading that starts one of the two sections. */
+    private static void sectionHeading(StringBuilder b, String title, String lead) {
+        b.append("<div style=\"font-size:18px;font-weight:700;margin:26px 0 2px;padding-top:14px;border-top:2px solid ")
+                .append(LINE).append(";\">").append(esc(title)).append("</div>")
+                .append(p(esc(lead), MUTED, 13));
+    }
+
+    private static void dueSection(StringBuilder b, MailView v, String appUrl) {
         Digest d = v.digest();
-        StringBuilder b = new StringBuilder(16384);
         long today = d.dueTodayCount();
         String lead = d.dueRows().isEmpty()
                 ? "No tenders are due in the next " + d.dueWindowDays() + " days."
                 : plural(d.dueRows().size(), "tender") + " due by " + d.date().plusDays(d.dueWindowDays()).format(SHORT)
                 + (today > 0 ? ", " + today + " of them today" : "") + ". Each row shows who has to act now.";
-        open(b, d, "Due in the next " + d.dueWindowDays() + " days", lead);
-        attachmentNotice(b, v);
-        if (v.hasAttachment()) dueSummary(b, d);
+        sectionHeading(b, "Due in the next " + d.dueWindowDays() + " days", lead);
+        if (v.hasAttachment() && d.rowCount() > 0) dueSummary(b, d);
 
         Map<Integer, List<DueRow>> groups = DigestBuilder.groupInOrder(v.dueRows(), DueRow::daysLeft);
         Map<Integer, Long> totals = countBy(d.dueRows());
@@ -127,9 +135,6 @@ public final class DigestTemplates {
             b.append(p("These were due yesterday and were never marked as submitted. The last column shows who held them.", MUTED, 13));
             dueTable(b, v.missedRows(), d, appUrl, v.compact());
         }
-        attachmentFooter(b, v);
-        close(b, d, appUrl);
-        return b.toString();
     }
 
     private static void dueTable(StringBuilder b, List<DueRow> rows, Digest d, String appUrl, boolean compact) {
@@ -184,11 +189,10 @@ public final class DigestTemplates {
                 .append(td(String.valueOf(a + c), "")).append("</tr>");
     }
 
-    private static String dueText(MailView v, String appUrl) {
+    private static void dueText(StringBuilder t, MailView v, String appUrl) {
         Digest d = v.digest();
-        StringBuilder t = new StringBuilder();
-        textHeader(t, d, "Due in the next " + d.dueWindowDays() + " days");
-        textAttachmentNotice(t, v);
+        t.append("\n== DUE IN THE NEXT ").append(d.dueWindowDays()).append(" DAYS ==\n");
+        if (d.rowCount() == 0) t.append("No tenders are due in the next ").append(d.dueWindowDays()).append(" days.\n");
         Map<Integer, List<DueRow>> groups = DigestBuilder.groupInOrder(v.dueRows(), DueRow::daysLeft);
         for (Map.Entry<Integer, List<DueRow>> g : groups.entrySet()) {
             int days = g.getKey();
@@ -199,8 +203,6 @@ public final class DigestTemplates {
             t.append("\nMISSED YESTERDAY\n");
             for (DueRow r : v.missedRows()) dueTextRow(t, r, appUrl);
         }
-        textFooter(t, d, appUrl);
-        return t.toString();
     }
 
     private static void dueTextRow(StringBuilder t, DueRow r, String appUrl) {
@@ -215,11 +217,10 @@ public final class DigestTemplates {
         if (link != null) t.append("    ").append(link).append('\n');
     }
 
-    // ── Pending mail ────────────────────────────────────────────────────────
+    // ── Pending section ────────────────────────────────────────────────────────
 
-    private static String pendingHtml(MailView v, String appUrl) {
+    private static void pendingSection(StringBuilder b, MailView v, String appUrl) {
         Digest d = v.digest();
-        StringBuilder b = new StringBuilder(16384);
         String title = d.isAdmin() ? "Waiting over " + d.pendingDays() + " days" : "Waiting on you over " + d.pendingDays() + " days";
         String lead = d.pendingTotal() == 0
                 ? "No work has been waiting more than " + d.pendingDays() + " days."
@@ -227,9 +228,8 @@ public final class DigestTemplates {
                 ? plural(d.pendingTotal(), "action") + " on " + plural(d.pendingTenderCount(), "tender")
                   + " have sat with the same owner for more than " + d.pendingDays() + " days."
                 : "These steps are yours and have waited more than " + d.pendingDays()
-                  + " days. Tenders due within " + d.dueWindowDays() + " days are in your Due mail instead.";
-        open(b, d, title, lead);
-        attachmentNotice(b, v);
+                  + " days. Tenders due within " + d.dueWindowDays() + " days are in the Due section above.";
+        sectionHeading(b, title, lead);
 
         if (d.isAdmin() && !d.ownerSummary().isEmpty()) {
             groupHeading(b, "By owner", INK);
@@ -245,7 +245,7 @@ public final class DigestTemplates {
             }
             b.append("</table>");
         }
-        if (v.hasAttachment()) pendingSummary(b, d);
+        if (v.hasAttachment() && d.rowCount() > 0) pendingSummary(b, d);
 
         if (d.isAdmin()) {
             Map<String, List<PendingRow>> byOwner = DigestBuilder.groupInOrder(v.pendingRows(), r -> r.work().ownerLabel());
@@ -265,8 +265,10 @@ public final class DigestTemplates {
                 pendingTable(b, g.getValue(), appUrl, v.compact());
             }
         }
-        attachmentFooter(b, v);
+    }
 
+    /** Admin only: routing problems and the delivery report, after both sections. */
+    private static void adminExtras(StringBuilder b, Digest d) {
         if (d.isAdmin() && !d.notes().isEmpty()) {
             groupHeading(b, "Routing problems to fix", RED);
             b.append("<ul style=\"margin:0 0 8px 18px;padding:0;font-size:13px;color:").append(INK).append(";\">");
@@ -285,8 +287,6 @@ public final class DigestTemplates {
             }
             b.append("</table>");
         }
-        close(b, d, appUrl);
-        return b.toString();
     }
 
     private static void pendingTable(StringBuilder b, List<PendingRow> rows, String appUrl, boolean compact) {
@@ -328,11 +328,11 @@ public final class DigestTemplates {
         b.append(td("<strong>" + (total[0] + total[1] + total[2]) + "</strong>", "")).append("</tr></table>");
     }
 
-    private static String pendingText(MailView v, String appUrl) {
+    private static void pendingText(StringBuilder t, MailView v, String appUrl) {
         Digest d = v.digest();
-        StringBuilder t = new StringBuilder();
-        textHeader(t, d, d.isAdmin() ? "Waiting over " + d.pendingDays() + " days" : "Waiting on you over " + d.pendingDays() + " days");
-        textAttachmentNotice(t, v);
+        t.append("\n== ").append((d.isAdmin() ? "Waiting over " : "Waiting on you over ").toUpperCase(Locale.ROOT))
+                .append(d.pendingDays()).append(" DAYS ==\n");
+        if (d.rowCount() == 0) t.append("No work has been waiting more than ").append(d.pendingDays()).append(" days.\n");
         if (d.isAdmin()) {
             for (OwnerSummary s : d.ownerSummary()) {
                 t.append("  ").append(s.ownerLabel()).append(": ").append(s.waitingCount()).append(" waiting, oldest ")
@@ -360,8 +360,6 @@ public final class DigestTemplates {
                 t.append('\n');
             }
         }
-        textFooter(t, d, appUrl);
-        return t.toString();
     }
 
     static String bandLabel(int band, int dueWindowDays) {
@@ -376,39 +374,42 @@ public final class DigestTemplates {
 
     // ── Attachment notices ──────────────────────────────────────────────────
 
-    private static void attachmentNotice(StringBuilder b, MailView v) {
-        if (!v.hasAttachment()) return;
-        int total = v.digest().rowCount();
+    private static void attachmentNotice(StringBuilder b, MailView due, MailView pending) {
+        if (!due.hasAttachment()) return;
+        int total = due.digest().rowCount() + pending.digest().rowCount();
+        int shown = due.bodyRows() + pending.bodyRows();
         b.append("<div style=\"background:").append(BLUE_BG).append(";border:1px solid #b9d3e6;color:").append(BLUE)
                 .append(";padding:10px 12px;border-radius:6px;font-size:13px;line-height:1.5;margin:10px 0 4px;\">")
                 .append("<strong>Full list attached.</strong> ");
-        if (v.bodyRows() < total) {
-            b.append("This mail shows the <strong>").append(v.bodyRows()).append(" most urgent</strong> of <strong>")
+        if (shown < total) {
+            b.append("This mail shows the <strong>").append(shown).append(" most urgent</strong> of <strong>")
                     .append(total).append("</strong> rows. ");
         } else {
             b.append("This mail lists all <strong>").append(total).append("</strong> rows in short form. ");
         }
         b.append("All ").append(total).append(" rows, with full titles, authorities and links, are in the attached Excel file <strong>")
-                .append(esc(v.attachmentName())).append("</strong>.</div>");
+                .append(esc(due.attachmentName())).append("</strong> (one sheet for each section).</div>");
     }
 
-    private static void attachmentFooter(StringBuilder b, MailView v) {
-        if (!v.hasAttachment()) return;
-        int total = v.digest().rowCount();
-        String text = v.bodyRows() < total
-                ? "Shown above: " + v.bodyRows() + " of " + total + " rows. The other " + (total - v.bodyRows())
-                  + " are in the attached Excel file " + esc(v.attachmentName()) + ", together with every row shown here."
-                : "All " + total + " rows are shown above in short form. The attached Excel file " + esc(v.attachmentName())
+    private static void attachmentFooter(StringBuilder b, MailView due, MailView pending) {
+        if (!due.hasAttachment()) return;
+        int total = due.digest().rowCount() + pending.digest().rowCount();
+        int shown = due.bodyRows() + pending.bodyRows();
+        String text = shown < total
+                ? "Shown above: " + shown + " of " + total + " rows. The other " + (total - shown)
+                  + " are in the attached Excel file " + esc(due.attachmentName()) + ", together with every row shown here."
+                : "All " + total + " rows are shown above in short form. The attached Excel file " + esc(due.attachmentName())
                   + " has every row in full, including the authority.";
         b.append(p(text, BLUE, 13));
     }
 
-    private static void textAttachmentNotice(StringBuilder t, MailView v) {
-        if (!v.hasAttachment()) return;
-        int total = v.digest().rowCount();
+    private static void textAttachmentNotice(StringBuilder t, MailView due, MailView pending) {
+        if (!due.hasAttachment()) return;
+        int total = due.digest().rowCount() + pending.digest().rowCount();
+        int shown = due.bodyRows() + pending.bodyRows();
         t.append("\nFULL LIST ATTACHED: this mail shows ")
-                .append(v.bodyRows() < total ? "the " + v.bodyRows() + " most urgent of " + total : "all " + total)
-                .append(" rows. All ").append(total).append(" rows, in full, are in the attached Excel file ").append(v.attachmentName()).append(".\n");
+                .append(shown < total ? "the " + shown + " most urgent of " + total : "all " + total)
+                .append(" rows. All ").append(total).append(" rows, in full, are in the attached Excel file ").append(due.attachmentName()).append(".\n");
     }
 
     private static String countText(long shown, long total) {
@@ -442,9 +443,9 @@ public final class DigestTemplates {
     private static void close(StringBuilder b, Digest d, String appUrl) {
         b.append("</td></tr><tr><td style=\"padding:14px 24px 20px;border-top:1px solid ").append(LINE)
                 .append(";font-size:12px;color:").append(MUTED).append(";line-height:1.5;\">")
-                .append("You get at most two TenderPocket mails a day: tenders due in the next ").append(d.dueWindowDays())
-                .append(" days, and work waiting on you for more than ").append(d.pendingDays())
-                .append(" days. A mail is skipped when there is nothing to report.");
+                .append("You get one TenderPocket mail a day with tenders due in the next ").append(d.dueWindowDays())
+                .append(" days and work waiting on you for more than ").append(d.pendingDays())
+                .append(" days. It is skipped when there is nothing to report.");
         if (appUrl != null && !appUrl.isBlank()) {
             b.append(" <a href=\"").append(esc(appUrl)).append("\" style=\"color:#0a5f7d;\">Open TenderPocket</a>");
         }
@@ -512,7 +513,7 @@ public final class DigestTemplates {
     }
 
     private static void textFooter(StringBuilder t, Digest d, String appUrl) {
-        t.append("\nYou get at most two TenderPocket mails a day. A mail is skipped when there is nothing to report.\n");
+        t.append("\nYou get one TenderPocket mail a day. It is skipped when there is nothing to report.\n");
         if (appUrl != null && !appUrl.isBlank()) t.append("Open TenderPocket: ").append(appUrl).append('\n');
     }
 
