@@ -26,7 +26,11 @@ import java.util.stream.Collectors;
  * This clean-up used to run on every Approvals Center read (counts and list), which made the screen
  * scan every tender on each open. It now runs in the background instead: a few seconds after a
  * committed tender or approval-request change (at most every 15 seconds while changes keep coming),
- * and every 10 minutes as a safety net. The clean-up logic itself is unchanged.
+ * and every 10 minutes as a safety net.
+ *
+ * A request is never closed while the "missing request" rules would open it again at once (for example a
+ * tender at WIN_LOSS_PENDING whose outcome still has its starting value "None"). Without that check the two
+ * rules undo each other on every run and add one approval row each time.
  */
 @Service
 public class ApprovalReconcileService {
@@ -130,7 +134,44 @@ public class ApprovalReconcileService {
         }
     }
 
-    // ── Reconciliation (unchanged logic, formerly run on every counts / pending read) ─────────
+    /**
+     * Whether the "missing request" rules below want a pending request for this step of the tender.
+     * Mirrors those rules (status skip list, then the condition of each numbered step) exactly.
+     */
+    static boolean isStepNeeded(Tender t, TenderWorkflowStage step) {
+        if (t.getStatus() != null && List.of("Won", "Lost", "Awarded", "Not Awarded", "Not Participating").contains(t.getStatus())) {
+            return false;
+        }
+        String stage = t.getCurrentStage() != null ? t.getCurrentStage().toUpperCase() : "";
+        if (step == null) return false;
+        switch (step) {
+            case SPEC_CLEARANCE:
+                return "Pending".equalsIgnoreCase(t.getSpecVerificationStatus());
+            case PAYMENT_APPROVAL:
+                return ("PAYMENT_APPROVAL".equalsIgnoreCase(stage) || "EMD_PENDING".equalsIgnoreCase(stage) || "Pending".equalsIgnoreCase(t.getPaymentStatus()))
+                        && !"Approved".equalsIgnoreCase(t.getPaymentStatus()) && !"Exempt".equalsIgnoreCase(t.getPaymentStatus());
+            case TPC_PRICING:
+                return "TPC_PRICING".equalsIgnoreCase(stage) || ("DUAL_TRACK".equalsIgnoreCase(stage)
+                        && (t.getTpcPurchasePrice() == null || t.getTpcPurchasePrice() <= 0)
+                        && (t.getMisFinalPrice() == null || t.getMisFinalPrice() <= 0));
+            case MIS_PRICING:
+                return "MIS_PRICING".equalsIgnoreCase(stage) && (t.getMisFinalPrice() == null || t.getMisFinalPrice() <= 0);
+            case DOC_VERIFICATION:
+                return ("DOC_VERIFICATION".equalsIgnoreCase(stage) || "Pending".equalsIgnoreCase(t.getVerificationStatus()))
+                        && !"Approved".equalsIgnoreCase(t.getVerificationStatus());
+            case SUBMISSION_PENDING:
+                return ("SUBMISSION_PENDING".equalsIgnoreCase(stage) || "Pending".equalsIgnoreCase(t.getSubmissionStatus()))
+                        && !"Approved".equalsIgnoreCase(t.getSubmissionStatus());
+            case WIN_LOSS_PENDING:
+                return ("WIN_LOSS_PENDING".equalsIgnoreCase(stage) || "Pending".equalsIgnoreCase(t.getOutcomeStatus()))
+                        && !"Won".equalsIgnoreCase(t.getOutcomeStatus()) && !"Lost".equalsIgnoreCase(t.getOutcomeStatus())
+                        && !"Approved".equalsIgnoreCase(t.getOutcomeStatus());
+            default:
+                return false;
+        }
+    }
+
+    // ── Reconciliation (formerly run on every counts / pending read) ─────────
     // Not transactional: each save commits on its own, as it always has.
     public void reconcileStaleAndDuplicateApprovals() {
         try {
@@ -207,6 +248,11 @@ public class ApprovalReconcileService {
                                 || "Lost".equalsIgnoreCase(tender.getStatus())) {
                             isStale = true;
                         }
+                    }
+
+                    // Keep the request pending when the rules below would open it again straight away.
+                    if (isStale && isStepNeeded(tender, stage)) {
+                        isStale = false;
                     }
 
                     if (isStale) {
