@@ -1,9 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
-
 :root {
-  /* Fonts */
-  --font-heading: 'Outfit', -apple-system, sans-serif;
-  --font-body: 'Plus Jakarta Sans', -apple-system, sans-serif;
+  /* Fonts: loaded in layout.tsx (next/font), served from this website */
+  --font-heading: var(--font-outfit, 'Outfit'), -apple-system, sans-serif;
+  --font-body: var(--font-plus-jakarta-sans, 'Plus Jakarta Sans'), -apple-system, sans-serif;
 
   /* Harmonious Color Palette - Smooth & Modern Light Mode */
   --bg-app: #f8fafc;
@@ -438,6 +436,30 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
   color: var(--text-primary);
   line-height: 1;
+}
+
+/* Until analytics arrive, metric numbers show a soft placeholder instead of a misleading 0. */
+.metrics-pending .metric-number {
+  position: relative;
+  color: transparent;
+}
+
+.metrics-pending .metric-number::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 0.8em;
+  border-radius: 6px;
+  background: var(--border-color);
+  animation: metric-placeholder-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes metric-placeholder-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.9; }
 }
 
 .metric-trend {

@@ -4,7 +4,11 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "tender_approval_requests")
+@jakarta.persistence.EntityListeners(com.tenderpocket.cache.DataChangeListener.class)
+@Table(name = "tender_approval_requests", indexes = {
+    @Index(name = "idx_approval_tender_stage_status", columnList = "tender_id, stage, status"),
+    @Index(name = "idx_approval_status_stage", columnList = "status, stage")
+})
 public class TenderApprovalRequest {
 
     @Id

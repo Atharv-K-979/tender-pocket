@@ -46,6 +46,11 @@ public class TenderControllerTest {
         MockitoAnnotations.openMocks(this);
         SecurityContextHolder.clearContext();
 
+        // The list endpoint reads tenders through the in-memory list snapshot, backed here by the mocked repository.
+        com.tenderpocket.cache.TenderListSnapshot snapshot = new com.tenderpocket.cache.TenderListSnapshot();
+        org.springframework.test.util.ReflectionTestUtils.setField(snapshot, "tenderRepository", tenderRepository);
+        org.springframework.test.util.ReflectionTestUtils.setField(tenderController, "tenderListSnapshot", snapshot);
+
         tender1 = new Tender();
         tender1.setId("T1");
         tender1.setRefNo("REF1");
@@ -1643,5 +1648,115 @@ public class TenderControllerTest {
         Map<String, Object> clear = new HashMap<>();
         clear.put("source_id", "");
         assertEquals(HttpStatus.OK, tenderController.updateTender("Clearance Team", "clearance", "T1", clear).getStatusCode());
+    }
+
+    // ── Server-side paging, real-date sorting and the Tender Repository rules ─────────────
+
+    @SuppressWarnings("unchecked")
+    private List<Tender> listTenders(Map<String, Object> body) {
+        return (List<Tender>) body.get("tenders");
+    }
+
+    private Map<?, ?> listAsAdmin(String sortBy, String order, Integer page, Integer limit, String view, Boolean corrigendumOnly) {
+        ResponseEntity<?> response = tenderController.getTenders("Admin", "admin", null, null, null, null, null, null, null,
+                sortBy, order, page, limit, view, corrigendumOnly);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        return (Map<?, ?>) response.getBody();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testNewestFirstSortsMixedDateFormatsByRealTime() {
+        authenticate("admin", "Admin");
+        tender1.setScrapedAt("Wed Nov 18 12:39:00 IST 2026");
+        tender2.setScrapedAt("2026-11-19 09:00:00");
+        tender3.setScrapedAt("Sun Nov 15 08:00:00 GMT 2026");
+        tender4.setScrapedAt("2026-11-17T10:00:00Z");
+
+        List<Tender> tenders = (List<Tender>) listAsAdmin("scraped_at", "desc", null, null, null, null).get("tenders");
+        assertEquals(List.of("T2", "T1", "T4", "T3"), tenders.stream().map(Tender::getId).toList());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testDueDateSortReadsDayMonthYearFormats() {
+        authenticate("admin", "Admin");
+        tender1.setDueDate("8 Oct 2026");
+        tender2.setDueDate("2026-10-05 17:00:00");
+        tender3.setDueDate("12-10-2026");
+        tender4.setDueDate("2026-10-10");
+
+        List<Tender> tenders = (List<Tender>) listAsAdmin("due_date", "asc", null, null, null, null).get("tenders");
+        assertEquals(List.of("T2", "T1", "T4", "T3"), tenders.stream().map(Tender::getId).toList());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testPagingReturnsOnePageAndServerTotals() {
+        authenticate("admin", "Admin");
+
+        Map<?, ?> all = listAsAdmin("estimated_cost", "asc", null, null, null, null);
+        Map<?, ?> second = listAsAdmin("estimated_cost", "asc", 1, 2, null, null);
+
+        List<String> allIds = ((List<Tender>) all.get("tenders")).stream().map(Tender::getId).toList();
+        List<String> secondIds = ((List<Tender>) second.get("tenders")).stream().map(Tender::getId).toList();
+        assertEquals(allIds.subList(2, 4), secondIds);
+        assertEquals(4, second.get("totalElements"));
+        assertEquals(2, second.get("totalPages"));
+        assertEquals(1, second.get("currentPage"));
+
+        Map<?, ?> beyond = listAsAdmin("estimated_cost", "asc", 5, 2, null, null);
+        assertTrue(((List<Tender>) beyond.get("tenders")).isEmpty());
+        assertEquals(4, beyond.get("totalElements"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testRepositoryCorrigendumAlertsOnly() {
+        authenticate("admin", "Admin");
+        tender2.setCorrigendumRemark("Yes");
+        tender3.setNotes("Corrigendum issued: due date extended");
+
+        Map<?, ?> body = listAsAdmin("scraped_at", "desc", 0, 20, "repository", true);
+        List<String> ids = ((List<Tender>) body.get("tenders")).stream().map(Tender::getId).sorted().toList();
+        assertEquals(List.of("T2", "T3"), ids);
+        assertEquals(2, body.get("totalElements"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testRepositoryTpcPendingNeedsTenderRoutedToTpc() {
+        authenticate("tpc_user", "TPC Pricing Team");
+        // Spec approved but not routed to TPC: the list's TPC "Pending" filter keeps it,
+        // the Tender Repository's rule (routed to TPC) does not.
+        tender3.setSpecVerificationStatus("Approved");
+        tender3.setCurrentStage("EMD_PAYMENT");
+        tender3.setPricingRoute(null);
+        tender3.setTpcPurchasePrice(null);
+        tender3.setMisFinalPrice(null);
+        tender3.setStatus(null);
+
+        ResponseEntity<?> plain = tenderController.getTenders("TPC Pricing Team", "tpc_user", null, "Pending", null, null, null,
+                null, null, "scraped_at", "desc", null, null, null, null);
+        ResponseEntity<?> repository = tenderController.getTenders("TPC Pricing Team", "tpc_user", null, "Pending", null, null, null,
+                null, null, "scraped_at", "desc", null, null, "repository", null);
+
+        List<String> plainIds = ((List<Tender>) ((Map<?, ?>) plain.getBody()).get("tenders")).stream().map(Tender::getId).toList();
+        List<String> repositoryIds = ((List<Tender>) ((Map<?, ?>) repository.getBody()).get("tenders")).stream().map(Tender::getId).toList();
+        assertTrue(plainIds.contains("T3"));
+        assertFalse(repositoryIds.contains("T3"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testListShowsChangesCommittedAfterTheSnapshotWasBuilt() {
+        authenticate("admin", "Admin");
+        listAsAdmin("scraped_at", "desc", null, null, null, null); // builds the snapshot
+
+        tender1.setTitle("Renamed tender");
+        com.tenderpocket.cache.DataVersion.tenderDataChanged(); // what a committed save reports
+
+        List<Tender> tenders = (List<Tender>) listAsAdmin("scraped_at", "desc", null, null, null, null).get("tenders");
+        assertEquals("Renamed tender", tenders.stream().filter(t -> "T1".equals(t.getId())).findFirst().orElseThrow().getTitle());
     }
 }

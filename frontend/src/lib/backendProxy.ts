@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8090';
 
+/** Statuses whose response must not have a body (a Response with one would throw). */
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
+/** JSON responses smaller than this are sent uncompressed (gzip would not pay off). */
+const MIN_GZIP_BYTES = 1024;
+
 export async function proxyToBackend(
   request: Request,
   backendPath: string,
@@ -22,6 +28,10 @@ export async function proxyToBackend(
     if (usernameHeader) headers['x-user-username'] = usernameHeader;
 
     const method = options?.method || request.method;
+
+    // "Anything new?": the backend answers 304 Not Modified when the data still has this ETag.
+    const ifNoneMatch = request.headers.get('if-none-match');
+    if (ifNoneMatch && method === 'GET') headers['If-None-Match'] = ifNoneMatch;
     let requestBody: any = undefined;
 
     if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
@@ -48,17 +58,38 @@ export async function proxyToBackend(
       headers,
       body: requestBody,
       cache: 'no-store',
+      // A read the browser has given up on (page left, newer request sent) stops here too.
+      // Writes are never cancelled half-way.
+      signal: method === 'GET' ? request.signal : undefined,
     });
+
+    const etag = response.headers.get('etag');
+    if (NULL_BODY_STATUSES.has(response.status)) {
+      return new Response(null, { status: response.status, headers: etag ? { ETag: etag } : undefined });
+    }
 
     const responseContentType = response.headers.get('content-type') || '';
     if (responseContentType.includes('application/json')) {
-      const data = await response.json();
-      return NextResponse.json(data, { status: response.status });
+      // Pass the JSON through unchanged, without decoding and re-encoding large lists.
+      const responseHeaders = new Headers({ 'Content-Type': responseContentType, 'Vary': 'Accept-Encoding' });
+      if (etag) responseHeaders.set('ETag', etag);
+      // Next.js compresses pages but not API responses: gzip JSON here (a tender list is ~10x smaller).
+      const declaredLength = Number(response.headers.get('content-length') || '0');
+      const acceptsGzip = /\bgzip\b/i.test(request.headers.get('accept-encoding') || '');
+      if (acceptsGzip && response.body && (declaredLength === 0 || declaredLength >= MIN_GZIP_BYTES)) {
+        responseHeaders.set('Content-Encoding', 'gzip');
+        return new Response(response.body.pipeThrough(new CompressionStream('gzip')), { status: response.status, headers: responseHeaders });
+      }
+      return new Response(response.body, { status: response.status, headers: responseHeaders });
     } else {
       const text = await response.text();
       return new NextResponse(text, { status: response.status, headers: { 'Content-Type': responseContentType } });
     }
   } catch (error) {
+    if (request.signal?.aborted) {
+      // The browser closed the request; nobody is waiting for an answer.
+      return new Response(null, { status: 499 });
+    }
     console.error(`Error proxying ${request.method} ${backendPath} to backend:`, error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : String(error) },

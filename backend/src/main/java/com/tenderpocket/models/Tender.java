@@ -12,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tenderpocket.utils.TenderClassifier;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.tenderpocket.cache.DataChangeListener.class)
 @Table(name = "tenders", indexes = {
     @Index(name = "idx_tenders_status", columnList = "status"),
     @Index(name = "idx_tenders_due_date", columnList = "due_date"),

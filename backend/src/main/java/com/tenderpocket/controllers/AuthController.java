@@ -1,4 +1,7 @@
 package com.tenderpocket.controllers;
+
+import com.tenderpocket.cache.DataVersion;
+import com.tenderpocket.cache.TtlCache;
 import com.tenderpocket.config.WorkflowPermissions;
 import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 
@@ -121,15 +124,17 @@ public class AuthController {
 
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         if (!WorkflowPermissions.allowed(MANAGE_USERS)) {
-            List<Map<String, String>> directory = (userRepository != null ? userRepository.findAll() : Collections.<User>emptyList()).stream()
-                    .map(user -> {
-                        Map<String, String> m = new HashMap<>();
-                        m.put("username", user.getUsername());
-                        m.put("role", user.getRole());
-                        m.put("email", user.getEmail() != null ? user.getEmail() : "");
-                        return m;
-                    }).toList();
-            return ResponseEntity.ok(Map.of("success", true, "users", directory));
+            return ResponseEntity.ok(usersCache.get("directory", DataVersion.users(), () -> {
+                List<Map<String, String>> directory = (userRepository != null ? userRepository.findAll() : Collections.<User>emptyList()).stream()
+                        .map(user -> {
+                            Map<String, String> m = new HashMap<>();
+                            m.put("username", user.getUsername());
+                            m.put("role", user.getRole());
+                            m.put("email", user.getEmail() != null ? user.getEmail() : "");
+                            return m;
+                        }).toList();
+                return Map.of("success", true, "users", directory);
+            }));
         }
         userRole = WorkflowPermissions.role();
         if ((userRole == null || userRole.isEmpty()) && authHeader != null && authHeader.startsWith("Bearer ")) {
@@ -144,6 +149,15 @@ public class AuthController {
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, Tender Executive, Clearance Team, or TPC Team only"));
         }
 
+        // The per-executive counts are statistics and may be up to five minutes old; the list itself is
+        // rebuilt as soon as a user account changes.
+        return ResponseEntity.ok(usersCache.get("managed", DataVersion.users(), this::computeManagedUsers));
+    }
+
+    /** User lists with per-executive statistics: five minutes at most, cleared on any account change. */
+    private final TtlCache<String, Map<String, Object>> usersCache = new TtlCache<>(5 * 60_000, 4);
+
+    private Map<String, Object> computeManagedUsers() {
         List<User> rawUsers = userRepository.findAll();
         List<Map<String, Object>> usersList = new ArrayList<>();
 
@@ -205,7 +219,7 @@ public class AuthController {
             usersList.add(uMap);
         }
 
-        return ResponseEntity.ok(Map.of("success", true, "users", usersList));
+        return Map.of("success", true, "users", usersList);
     }
 
     @PostMapping("/users")

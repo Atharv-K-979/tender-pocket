@@ -53,6 +53,8 @@ public class Tender247RefNoBackfill {
                     notOnTender247++;
                 } else if (tenderRepository.fillMissingRefNo(tender.getId(), refNo, TenderClassifier.classify(refNo)) > 0) {
                     filled++;
+                    // A bulk update skips JPA entity events, so tell the read caches about it directly.
+                    com.tenderpocket.cache.DataVersion.tenderDataChanged();
                 }
             } catch (Exception e) {
                 failed++;

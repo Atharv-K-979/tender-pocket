@@ -1,4 +1,5 @@
 package com.tenderpocket.controllers;
+import com.tenderpocket.cache.TenderListSnapshot;
 import com.tenderpocket.config.WorkflowPermissions;
 import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 
@@ -47,6 +48,13 @@ public class TenderController {
 
     @Autowired
     private TenderRepository tenderRepository;
+
+    @Autowired
+    private com.tenderpocket.cache.TenderListSnapshot tenderListSnapshot;
+
+    /** Location and sector filter lists, rebuilt after any tender change. */
+    private final com.tenderpocket.cache.TtlCache<String, Map<String, List<String>>> listFilterOptions =
+            new com.tenderpocket.cache.TtlCache<>(60_000, 500);
 
     @Autowired
     private com.tenderpocket.repositories.TenderApprovalRepository approvalRepository;
@@ -308,31 +316,38 @@ public class TenderController {
             @RequestParam(value = "sortBy", required = false, defaultValue = "scraped_at") String sortBy,
             @RequestParam(value = "order", required = false, defaultValue = "desc") String order,
             @RequestParam(value = "page", required = false) Integer page,
-            @RequestParam(value = "limit", required = false) Integer limit) {
+            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestParam(value = "view", required = false) String view,
+            @RequestParam(value = "corrigendumOnly", required = false) Boolean corrigendumOnly) {
 
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         userRole = resolveUserRole(userRole);
         username = resolveUsername(username);
 
-        // Scope database query by executive when applicable to prevent full-table heap allocation
-        List<Tender> list;
-        if ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) {
-            list = tenderRepository.findByMisExecutive(username);
-        } else if (misExecutive != null && !misExecutive.isBlank()) {
-            list = tenderRepository.findByMisExecutive(misExecutive);
-        } else {
-            list = tenderRepository.findAll();
-        }
-        List<Tender> filtered = new ArrayList<>();
-
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+        boolean isExecutiveRole = "MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole);
         boolean isTpcRole = "TPC Pricing Team".equalsIgnoreCase(userRole) || "TPC Team".equalsIgnoreCase(userRole);
         boolean isBrochureRole = isBrochureTeam(userRole);
         boolean canViewTpcPrice = WorkflowPermissions.allowed(userRole, VIEW_TPC_PRICE);
+        boolean repositoryView = "repository".equalsIgnoreCase(view);
 
-        for (Tender t : list) {
+        // Tenders come from the in-memory list snapshot (rebuilt after every change) instead of a
+        // full table read per request. Each item is already in list shape, with its status resolved
+        // for todayIST. The rules below are the same ones this endpoint has always applied.
+        List<TenderListSnapshot.Item> filtered = new ArrayList<>();
+        for (TenderListSnapshot.Item item : tenderListSnapshot.items(todayIST)) {
+            Tender t = item.tender();
+
+            // Same rows the database query used to select: an executive's own tenders, or the
+            // tenders of the requested executive (exact matches, as the SQL equality was).
+            if (isExecutiveRole) {
+                if (!username.equals(t.getMisExecutive())) continue;
+            } else if (misExecutive != null && !misExecutive.isBlank()) {
+                if (!misExecutive.equals(t.getMisExecutive())) continue;
+            }
+
             // Apply role restriction
-            if (("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) && !username.equalsIgnoreCase(t.getMisExecutive())) {
+            if (isExecutiveRole && !username.equalsIgnoreCase(t.getMisExecutive())) {
                 continue;
             }
             if (("Clearance Team".equalsIgnoreCase(userRole) || "Specification Team".equalsIgnoreCase(userRole))) {
@@ -357,9 +372,8 @@ public class TenderController {
                 continue;
             }
 
-            // Resolve dynamic status
-            String resolvedStatus = resolveStatus(t, todayIST);
-            t.setStatus(resolvedStatus);
+            // Status resolved for todayIST when the snapshot was built
+            String resolvedStatus = t.getStatus();
 
             // Filter by search query
             if (search != null && !search.isEmpty()) {
@@ -447,62 +461,88 @@ public class TenderController {
                 continue;
             }
 
-            // Create safe response copy to prevent mutating managed JPA entity and strip heavy payload fields
-            Tender responseItem = createSummaryResponseCopy(t);
+            // Price the caller can see: hidden prices are removed from the response below.
+            Double visibleTpcPrice = canViewTpcPrice ? t.getTpcPurchasePrice() : null;
 
-            // Apply pricing confidentiality
-            if (!canViewTpcPrice) {
-                responseItem.setTpcPurchasePrice(null);
-                responseItem.setAiDetailsSummary(null);
-                responseItem.setAiHistorySummary(null);
+            // Tender Repository filters, applied here so the repository can be paged on the server.
+            if (Boolean.TRUE.equals(corrigendumOnly) && !isCorrigendumAlert(t)) {
+                continue;
+            }
+            if (repositoryView && status != null && !status.trim().isEmpty()
+                    && !matchesRepositoryStatus(t, status, userRole, isBrochureRole, visibleTpcPrice)) {
+                continue;
             }
 
-            filtered.add(responseItem);
+            filtered.add(item);
         }
 
-        // Dynamic Sorting
+        // Dynamic Sorting. Dates are compared by their real time (they are stored as text in several
+        // formats); ties are broken by tender id so that page boundaries are stable.
         String safeSortBy = (sortBy != null && List.of("scraped_at", "due_date", "estimated_cost").contains(sortBy)) ? sortBy : "scraped_at";
         boolean isAsc = "asc".equalsIgnoreCase(order);
 
         filtered.sort((a, b) -> {
-            int cmp = 0;
+            int cmp;
             if ("due_date".equalsIgnoreCase(safeSortBy)) {
-                String da = a.getDueDate() != null ? a.getDueDate() : "";
-                String db = b.getDueDate() != null ? b.getDueDate() : "";
-                cmp = da.compareTo(db);
+                cmp = Long.compare(a.dueDateKey(), b.dueDateKey());
             } else if ("estimated_cost".equalsIgnoreCase(safeSortBy)) {
-                Double ca = a.getEstimatedCost() != null ? a.getEstimatedCost() : 0.0;
-                Double cb = b.getEstimatedCost() != null ? b.getEstimatedCost() : 0.0;
+                Double ca = a.tender().getEstimatedCost() != null ? a.tender().getEstimatedCost() : 0.0;
+                Double cb = b.tender().getEstimatedCost() != null ? b.tender().getEstimatedCost() : 0.0;
                 cmp = ca.compareTo(cb);
             } else {
-                String sa = a.getScrapedAt() != null ? a.getScrapedAt() : "";
-                String sb = b.getScrapedAt() != null ? b.getScrapedAt() : "";
-                cmp = sa.compareTo(sb);
+                cmp = Long.compare(a.scrapedAtKey(), b.scrapedAtKey());
             }
-            return isAsc ? cmp : -cmp;
+            if (!isAsc) cmp = -cmp;
+            if (cmp == 0) {
+                String ia = a.tender().getId() != null ? a.tender().getId() : "";
+                String ib = b.tender().getId() != null ? b.tender().getId() : "";
+                cmp = ia.compareTo(ib);
+            }
+            return cmp;
         });
 
         // Get filter options
-        List<String> locations = ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole))
-                ? tenderRepository.findUniqueLocationsByExecutive(username)
-                : "Specification Team".equalsIgnoreCase(userRole)
-                ? tenderRepository.findUniqueLocationsBySpecMember(username)
-                : tenderRepository.findUniqueLocations();
-        List<String> sectors = ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole))
-                ? tenderRepository.findUniqueSectorsByExecutive(username)
-                : "Specification Team".equalsIgnoreCase(userRole)
-                ? tenderRepository.findUniqueSectorsBySpecMember(username)
-                : tenderRepository.findUniqueSectors();
+        String filterScope = isExecutiveRole ? "executive:" + username
+                : "Specification Team".equalsIgnoreCase(userRole) ? "spec:" + username
+                : "all";
+        Map<String, List<String>> filterOptions = listFilterOptions.get(filterScope, com.tenderpocket.cache.DataVersion.tenderData(), () -> {
+            String scopedUser = filterScope.substring(filterScope.indexOf(':') + 1);
+            List<String> locations = filterScope.startsWith("executive:")
+                    ? tenderRepository.findUniqueLocationsByExecutive(scopedUser)
+                    : filterScope.startsWith("spec:")
+                    ? tenderRepository.findUniqueLocationsBySpecMember(scopedUser)
+                    : tenderRepository.findUniqueLocations();
+            List<String> sectors = filterScope.startsWith("executive:")
+                    ? tenderRepository.findUniqueSectorsByExecutive(scopedUser)
+                    : filterScope.startsWith("spec:")
+                    ? tenderRepository.findUniqueSectorsBySpecMember(scopedUser)
+                    : tenderRepository.findUniqueSectors();
+            return Map.of("locations", locations, "sectors", sectors);
+        });
 
         int totalElements = filtered.size();
         int totalPages = (limit != null && limit > 0) ? (int) Math.ceil((double) totalElements / limit) : 1;
         int currentPage = (page != null && page >= 0) ? page : 0;
 
-        List<Tender> resultList = filtered;
+        List<TenderListSnapshot.Item> pageItems = filtered;
         if (limit != null && limit > 0) {
-            int fromIndex = Math.min(currentPage * limit, totalElements);
-            int toIndex = Math.min(fromIndex + limit, totalElements);
-            resultList = filtered.subList(fromIndex, toIndex);
+            int fromIndex = (int) Math.min((long) currentPage * limit, totalElements);
+            int toIndex = (int) Math.min((long) fromIndex + limit, totalElements);
+            pageItems = filtered.subList(fromIndex, toIndex);
+        }
+
+        // Snapshot items are shared between requests: copy before hiding the prices this role may not see.
+        List<Tender> resultList = new ArrayList<>(pageItems.size());
+        for (TenderListSnapshot.Item item : pageItems) {
+            if (canViewTpcPrice) {
+                resultList.add(item.tender());
+            } else {
+                Tender responseItem = TenderListSnapshot.summaryCopy(item.tender());
+                responseItem.setTpcPurchasePrice(null);
+                responseItem.setAiDetailsSummary(null);
+                responseItem.setAiHistorySummary(null);
+                resultList.add(responseItem);
+            }
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -511,7 +551,7 @@ public class TenderController {
         response.put("totalElements", totalElements);
         response.put("totalPages", totalPages);
         response.put("currentPage", currentPage);
-        response.put("filters", Map.of("locations", locations, "sectors", sectors));
+        response.put("filters", filterOptions);
 
         return ResponseEntity.ok(response);
     }
@@ -528,19 +568,80 @@ public class TenderController {
             Double maxCost,
             String sortBy,
             String order) {
-        return getTenders(userRole, username, search, status, location, sector, misExecutive, minCost, maxCost, sortBy, order, null, null);
+        return getTenders(userRole, username, search, status, location, sector, misExecutive, minCost, maxCost, sortBy, order, null, null, null, null);
     }
 
-    private Tender createSummaryResponseCopy(Tender source) {
-        if (source == null) return null;
-        Tender copy = new Tender();
-        org.springframework.beans.BeanUtils.copyProperties(source, copy);
-        // Exclude heavy text and blob fields from list responses to reduce payload size by ~90%
-        copy.setAiDetailsSummary(null);
-        copy.setAiHistorySummary(null);
-        copy.setDownloadedDocs(null);
-        copy.setLossReason(null);
-        return copy;
+    /** "Corrigendum Alerts Only" in the Tender Repository: a corrigendum flag, or a note mentioning one. */
+    private static boolean isCorrigendumAlert(Tender t) {
+        return "Yes".equals(t.getCorrigendumRemark())
+                || (t.getNotes() != null && t.getNotes().toLowerCase(Locale.ROOT).contains("corrigendum"));
+    }
+
+    /**
+     * The Tender Repository's status rules, which the browser used to apply to the downloaded list
+     * after this endpoint's own status filter. They are applied here unchanged so the repository
+     * can be paged on the server: status aliases (New also matches Issued, Submitted also Filed, ...)
+     * and the meaning of Pending / Approved / Rejected for the Brochure, TPC and Clearance teams.
+     */
+    private static boolean matchesRepositoryStatus(Tender t, String statusFilter, String userRole,
+                                                   boolean brochureRole, Double visibleTpcPrice) {
+        String s = lowerTrim(t.getStatus());
+        String f = lowerTrim(statusFilter);
+        String stage = t.getCurrentStage() != null ? t.getCurrentStage() : "";
+        String spec = t.getSpecVerificationStatus() != null ? t.getSpecVerificationStatus().toLowerCase(Locale.ROOT) : "";
+
+        // Brochure Team
+        if (brochureRole && (f.equals("pending") || f.equals("uploaded"))) {
+            String brochure = t.getBrochureStatus() != null ? t.getBrochureStatus().toLowerCase(Locale.ROOT) : "";
+            return brochure.equals(f);
+        }
+
+        // TPC Pricing Team
+        // Role names are compared ignoring case: the role read from the login token is upper case.
+        if ("TPC Pricing Team".equalsIgnoreCase(userRole) || "TPC Team".equalsIgnoreCase(userRole)) {
+            if (f.equals("pending")) {
+                // The browser also accepted track_a_pricing_status === 'TPC_PENDING', but tenders have
+                // no such field, so that condition never matched and is left out.
+                boolean routedToTpc = ("TPC".equals(t.getPricingRoute()) || stage.toUpperCase(Locale.ROOT).equals("TPC_PRICING"))
+                        && !"MIS".equals(t.getPricingRoute());
+                return routedToTpc
+                        && (visibleTpcPrice == null || visibleTpcPrice == 0)
+                        && !s.equals("rejected") && !stage.equals("REJECTED_TPC");
+            }
+            if (f.equals("approved")) {
+                return visibleTpcPrice != null && visibleTpcPrice > 0;
+            }
+            if (f.equals("rejected")) {
+                return s.equals("rejected") || stage.equals("REJECTED_TPC");
+            }
+        }
+
+        // Clearance Team
+        if ("Clearance Team".equalsIgnoreCase(userRole) || "Specification Team".equalsIgnoreCase(userRole)) {
+            if (f.equals("pending")) {
+                return spec.equals("pending") || spec.isEmpty() || spec.equals("not started");
+            }
+            if (f.equals("approved")) return spec.equals("approved");
+            if (f.equals("rejected")) return spec.equals("rejected");
+        }
+
+        switch (f) {
+            case "participating": return s.equals("participating");
+            case "not participating": return s.equals("not participating");
+            case "new": return s.equals("new") || s.equals("issued");
+            case "lapsed": return s.equals("lapsed");
+            case "submitted": return s.equals("submitted") || s.equals("filed");
+            case "won": return s.equals("won") || s.equals("awarded");
+            case "lost": return s.equals("lost") || s.equals("not awarded");
+            case "pending": return spec.equals("pending") || stage.toLowerCase(Locale.ROOT).contains("pending");
+            case "approved": return spec.equals("approved");
+            case "rejected": return spec.equals("rejected") || s.equals("rejected");
+            default: return s.equals(f);
+        }
+    }
+
+    private static String lowerTrim(String value) {
+        return value != null ? value.toLowerCase(Locale.ROOT).trim() : "";
     }
 
     private Tender createResponseCopy(Tender source) {
@@ -3160,15 +3261,25 @@ public class TenderController {
         return ResponseEntity.ok(Map.of("success", true, "comment", comment));
     }
 
+    /** Executive statistics may be up to five minutes old; they are shared by every caller. */
+    private final com.tenderpocket.cache.TtlCache<String, Map<String, Object>> statsCache =
+            new com.tenderpocket.cache.TtlCache<>(5 * 60_000, 4);
+
     @GetMapping("/stats")
     public ResponseEntity<?> getStats() {
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
+        return ResponseEntity.ok(statsCache.getComputed(LocalDate.now().toString(), this::computeStats));
+    }
+
+    private com.tenderpocket.cache.TtlCache.Computed<Map<String, Object>> computeStats() {
         List<Object[]> rows;
+        boolean complete = true; // false: shown as before, but not kept (the next request tries again)
         try {
             rows = tenderRepository.findStatusHistoryStats();
         } catch (Exception e) {
             System.out.println("[Stats] Status history query fallback: " + e.getMessage());
             rows = Collections.emptyList();
+            complete = false;
         }
         Map<String, Map<String, Object>> statsMap = new HashMap<>();
 
@@ -3231,7 +3342,8 @@ public class TenderController {
             }
         }
 
-        return ResponseEntity.ok(Map.of("success", true, "stats", new ArrayList<>(statsMap.values())));
+        return new com.tenderpocket.cache.TtlCache.Computed<>(
+                Map.of("success", true, "stats", new ArrayList<>(statsMap.values())), complete);
     }
 
     @GetMapping("/documents/{id}/{fileName:.+}")
